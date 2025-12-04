@@ -1,0 +1,97 @@
+/* 易淘主题色覆盖 */
+:root {
+  --el-color-primary: #ff6a00;
+  --el-color-primary-light-3: #ff8533;
+  --el-color-primary-light-5: #ff9f66;
+  --el-color-primary-light-7: #ffb899;
+  --el-color-primary-light-8: #ffc4b3;
+  --el-color-primary-light-9: #ffd0cc;
+  --el-color-primary-dark-2: #cc5500;
+}
+
+/* 按钮样式 */
+.el-button--primary {
+  background-color: #ff6a00;
+  border-color: #ff6a00;
+}
+
+.el-button--primary:hover {
+  background-color: #ff8533;
+  border-color: #ff8533;
+}
+
+.el-button--primary:focus {
+  background-color: #ff8533;
+  border-color: #ff8533;
+}
+
+/* 链接样式 */
+.el-link--primary {
+  color: #ff6a00;
+}
+
+.el-link--primary:hover {
+  color: #ff8533;
+}
+
+/* 菜单激活状态 */
+.el-menu-item.is-active {
+  color: #ff6a00;
+  border-bottom-color: #ff6a00;
+}
+
+/* 标签页激活状态 */
+.el-tabs__active-bar {
+  background-color: #ff6a00;
+}
+
+.el-tabs__item.is-active {
+  color: #ff6a00;
+}
+
+/* 分页器激活状态 */
+.el-pagination button.is-active {
+  background-color: #ff6a00;
+  border-color: #ff6a00;
+}
+
+/* 单选框选中状态 */
+.el-radio__input.is-checked .el-radio__inner {
+  background-color: #ff6a00;
+  border-color: #ff6a00;
+}
+
+/* 复选框选中状态 */
+.el-checkbox__input.is-checked .el-checkbox__inner {
+  background-color: #ff6a00;
+  border-color: #ff6a00;
+}
+
+/* 输入框聚焦状态 */
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px #ff6a00 inset;
+}
+
+/* 选择器聚焦状态 */
+.el-select .el-input.is-focus .el-input__wrapper {
+  box-shadow: 0 0 0 1px #ff6a00 inset;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
