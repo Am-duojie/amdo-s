@@ -1,6 +1,15 @@
 <template>
   <div class="publish-page xy-theme">
-    <PageHeader :hideSearch="true" />
+    <div class="recycle-entry-banner" @click="$router.push('/recycle')">
+      <div class="banner-left">
+        <span class="recycle-icon">♻️</span>
+        <span class="recycle-title">官方质检回收</span>
+      </div>
+      <div class="banner-right">
+        <span class="banner-desc">专业质检 · 极速打款 · 安心回收</span>
+        <el-button type="primary" size="small">去回收</el-button>
+      </div>
+    </div>
     <div class="publish-container">
       <el-card class="publish-card">
         <template #header>
@@ -103,7 +112,6 @@ import { useRouter } from 'vue-router'
 import { Plus, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import api from '@/utils/api'
-import PageHeader from '@/components/PageHeader.vue'
 
 const router = useRouter()
 
@@ -211,6 +219,25 @@ const handleSubmit = async () => {
 </script>
 
 <style scoped>
+.recycle-entry-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px auto 8px;
+  padding: 12px 16px;
+  max-width: 1200px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ff6600, #ff8833);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(255, 102, 0, 0.25);
+}
+.recycle-entry-banner .banner-left { display: flex; align-items: center; gap: 8px; }
+.recycle-entry-banner .recycle-icon { font-size: 20px; }
+.recycle-entry-banner .recycle-title { font-weight: 700; font-size: 15px; }
+.recycle-entry-banner .banner-right { display: flex; align-items: center; gap: 10px; }
+.recycle-entry-banner .banner-desc { opacity: 0.9; font-size: 13px; }
+.recycle-entry-banner:hover { filter: brightness(1.02); }
 .publish-page {
   background: #f5f7f9;
   min-height: 100vh;

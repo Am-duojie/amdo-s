@@ -1,6 +1,6 @@
 <template>
   <div class="order-detail-page">
-    <PageHeader :hideSearch="true" />
+    
     <div class="container">
       <el-card class="order-card">
         <template #header>
@@ -216,7 +216,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { PictureFilled } from '@element-plus/icons-vue'
-import PageHeader from '@/components/PageHeader.vue'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
 

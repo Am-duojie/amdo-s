@@ -1,6 +1,6 @@
 <template>
   <div class="messages-page">
-    <PageHeader :hideSearch="true" />
+    
     <div class="messages-container">
       <el-card class="messages-card">
         <el-row class="messages-row">
@@ -77,7 +77,6 @@ import { ElMessage } from 'element-plus'
 import api from '@/utils/api'
 import { useAuthStore } from '@/stores/auth'
 import websocket from '@/utils/websocket'
-import PageHeader from '@/components/PageHeader.vue'
 
 const route = useRoute()
 const authStore = useAuthStore()

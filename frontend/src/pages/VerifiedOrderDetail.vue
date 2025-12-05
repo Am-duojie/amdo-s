@@ -1,6 +1,6 @@
 <template>
   <div class="verified-order-detail-page">
-    <PageHeader :theme="'blue'" :verifiedMode="true" />
+    
     
     <div class="container">
       <div class="breadcrumb">
@@ -129,7 +129,6 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import PageHeader from '@/components/PageHeader.vue'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
 
@@ -482,4 +481,3 @@ onMounted(() => {
   }
 }
 </style>
-

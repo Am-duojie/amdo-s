@@ -4,10 +4,12 @@ import ErrorHandler from './errorHandler'
 // API基础地址配置
 // 本地开发: http://127.0.0.1:8000/api
 // 生产环境: http://你的服务器IP:8000/api 或 https://你的域名/api
+/** @type {string} */
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
 
 console.log('API基础地址:', API_BASE_URL)
 
+/** @type {import('axios').AxiosInstance} */
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {

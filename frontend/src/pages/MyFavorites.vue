@@ -1,6 +1,6 @@
 <template>
   <div class="my-favorites-page">
-    <PageHeader :hideSearch="true" />
+    
     <div class="container">
       <el-card class="favorites-card">
         <template #header>
@@ -63,7 +63,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { PictureFilled } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
-import PageHeader from '@/components/PageHeader.vue'
 
 const favorites = ref([])
 const loading = ref(false)
@@ -277,7 +276,6 @@ const formatDate = (dateString) => {
   }
 }
 </style>
-
 
 
 

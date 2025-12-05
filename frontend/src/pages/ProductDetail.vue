@@ -1,116 +1,6 @@
 <template>
   <div class="product-detail-page xianyu-style">
-    <!-- 1) 顶部导航 - 易淘风格 -->
-    <header class="header-sticky">
-      <div class="header-content">
-        <!-- Logo -->
-        <div class="brand-logo" @click="router.push('/')">
-          <span class="logo-icon">🛒</span>
-          <span class="logo-text">易淘</span>
-        </div>
-
-        <!-- 搜索区 - 使用Element Plus组件 -->
-        <div class="search-section">
-          <el-input
-            v-model="searchKeyword"
-            :placeholder="searchPlaceholder"
-            size="large"
-            class="custom-search-input"
-            @keyup.enter="handleSearchKeyword"
-          >
-            <template #prefix>
-              <el-icon><Search /></el-icon>
-            </template>
-            <template #append>
-              <el-button 
-                @click="handleSearchKeyword"
-                :icon="Search"
-                type="primary"
-              >
-                搜索
-              </el-button>
-            </template>
-          </el-input>
-        </div>
-
-        <!-- 右侧用户区 -->
-        <div class="user-section">
-          <template v-if="authStore.user">
-            <div class="user-dropdown">
-              <div
-                class="user-info"
-                role="button"
-                aria-haspopup="true"
-                aria-expanded="false"
-              >
-                <div class="user-avatar-block">
-                  <img
-                    v-if="authStore.user.avatar"
-                    :src="authStore.user.avatar"
-                    class="user-avatar"
-                    alt="用户头像"
-                  />
-                  <div v-else class="user-avatar-default">{{ userInitial }}</div>
-                </div>
-                <div class="user-meta">
-                  <span class="user-meta-name">{{ userDisplayName }}</span>
-                  <span class="user-meta-desc">个人中心</span>
-                </div>
-                <span class="dropdown-arrow" aria-hidden="true">▼</span>
-              </div>
-              <div class="custom-dropdown">
-                <div class="user-profile-card">
-                  <div class="profile-header">
-                    <img v-if="authStore.user.avatar" :src="authStore.user.avatar" class="profile-avatar" />
-                    <div v-else class="profile-avatar-default">{{ userInitial }}</div>
-                    <div class="profile-info">
-                      <div class="profile-name">{{ authStore.user.username }}</div>
-                      <div class="profile-stats">
-                        <span class="stat-item">0 粉丝</span>
-                        <span class="stat-divider">|</span>
-                        <span class="stat-item">0 关注</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="profile-menu">
-                    <div class="profile-menu-item" @click="handleUserMenuCommand('orders')">
-                      <span class="menu-text">我买到的</span>
-                      <span class="menu-arrow">›</span>
-                    </div>
-                    <div class="profile-menu-item" @click="handleUserMenuCommand('products')">
-                      <span class="menu-text">我卖出的</span>
-                      <span class="menu-arrow">›</span>
-                    </div>
-                    <div class="profile-menu-item" @click="handleUserMenuCommand('favorites')">
-                      <span class="menu-text">我的收藏</span>
-                      <span class="menu-arrow">›</span>
-                    </div>
-                    <div class="profile-menu-item" @click="handleUserMenuCommand('messages')">
-                      <span class="menu-text">消息中心</span>
-                      <span class="menu-arrow">›</span>
-                    </div>
-                    <div class="profile-menu-item" @click="handleUserMenuCommand('profile')">
-                      <span class="menu-text">个人中心</span>
-                      <span class="menu-arrow">›</span>
-                    </div>
-                  </div>
-                  <div class="logout-item" @click="handleUserMenuCommand('logout')">
-                    <span class="logout-text">退出登录</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="order-link" @click="router.push('/profile?tab=bought')">
-              <span class="order-icon">📋</span>
-              <span>订单</span>
-            </div>
-          </template>
-          <template v-else>
-            <div class="login-btn" @click="goToLogin">登录/注册</div>
-          </template>
-        </div>
-      </div>
-    </header>
+    
 
     <!-- 加载中 -->
     <div v-if="loading" class="loading-container">
@@ -455,11 +345,12 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Star, StarFilled, ChatDotRound, PictureFilled, Share, CircleCheck, Location, Shop, Search } from '@element-plus/icons-vue'
+import { Star, StarFilled, ChatDotRound, PictureFilled, Share, CircleCheck, Location, Shop } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
 import { useAuthStore } from '@/stores/auth'
 import { getImageUrl } from '@/utils/image'
+import { useSearchHotWords } from '@/composables/useSearchHotWords'
 
 const route = useRoute()
 const router = useRouter()
@@ -490,18 +381,8 @@ const checkingPayment = ref(false)
 const currentOrderId = ref(null)
 let paymentCheckTimer = null
 
-// 搜索相关
-const searchKeyword = ref('')
-const hotWords = ref([])
-
-// 动态搜索提示
-const searchPlaceholder = computed(() => {
-  if (hotWords.value.length >= 3) {
-    const samples = hotWords.value.slice(0, 3)
-    return `搜索好物，例如 ${samples.join(' / ')}`
-  }
-  return '搜索二手好物'
-})
+// 搜索相关 - 统一组合式函数
+const { searchKeyword, searchPlaceholder, loadHotWords, goSearch } = useSearchHotWords()
 
 const conditionMap = { 
   new: '全新', 
@@ -511,42 +392,7 @@ const conditionMap = {
   poor: '成色较旧' 
 }
 
-// 加载热词
-const loadHotWords = async () => {
-  try {
-    const res = await api.get('/products/', { 
-      params: { status: 'active', page_size: 30 } 
-    })
-    const productList = res.data.results || res.data
-    
-    if (!productList || productList.length === 0) return
-    
-    // 从商品标题中提取关键词
-    const words = []
-    productList.forEach(product => {
-      if (product.title) {
-        const title = product.title.trim()
-        const keyword = title.length > 12 ? title.substring(0, 8) : title
-        if (keyword.length >= 2 && !words.includes(keyword)) {
-          words.push(keyword)
-        }
-      }
-    })
-    
-    hotWords.value = words.slice(0, 10)
-  } catch (err) {
-    console.error('加载热词失败:', err)
-  }
-}
-
-// 搜索处理
-const handleSearchKeyword = () => {
-  if (searchKeyword.value.trim()) {
-    router.push({ path: '/products', query: { search: searchKeyword.value } })
-  } else {
-    router.push('/products')
-  }
-}
+const handleSearchKeyword = () => goSearch(router)
 
 // 用户菜单处理
 const handleUserMenuCommand = async (command) => {
@@ -838,27 +684,7 @@ const handleShare = () => {
 </script>
 
 <style scoped>
-.xianyu-style {
-  --brand: #ffe400;
-  --brand-orange: #ff6600;
-  --primary: #ffe400;
-  --primary-dark: #ffd600;
-  --price-color: #ff2442;
-  --text-primary: #222;
-  --text-secondary: #666;
-  --text-muted: #999;
-  --text-light: #999;
-  --border-color: #f0f0f0;
-  --bg-page: #f5f5f5;
-  --bg-white: #fff;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-full: 50px;
-  --shadow-sm: 0 2px 8px rgba(0,0,0,0.04);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
-}
+.xianyu-style {}
 
 .product-detail-page {
   background: var(--bg-page);
@@ -950,31 +776,40 @@ const handleShare = () => {
   max-width: 580px;
 }
 
-.custom-search-input {
+.search-box {
+  display: flex;
   height: 44px;
-}
-
-.custom-search-input :deep(.el-input__wrapper) {
+  background: var(--bg-white);
   border-radius: 22px;
+  overflow: hidden;
   box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-  padding-left: 16px;
 }
 
-.custom-search-input :deep(.el-input__prefix) {
-  color: var(--text-light);
-}
-
-.custom-search-input :deep(.el-input-group__append) {
-  border-radius: 0 22px 22px 0;
+.search-box .search-input {
+  flex: 1;
   border: none;
-  box-shadow: none;
+  padding: 0 20px;
+  font-size: 14px;
+  outline: none;
+  background: transparent;
 }
+.search-box .search-input::placeholder { color: var(--text-light); }
 
-.custom-search-input :deep(.el-input-group__append .el-button) {
-  border-radius: 0 22px 22px 0;
-  height: 44px;
+.search-box .search-btn {
   padding: 0 24px;
+  background: var(--brand-orange);
+  border: none;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.2s;
 }
+.search-box .search-btn:hover { background: #ff7722; }
+.search-box .search-btn .search-icon { font-size: 13px; }
 
 /* 用户区域 */
 .user-section {

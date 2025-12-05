@@ -1,6 +1,6 @@
 <template>
   <div class="recycle-page">
-    <PageHeader />
+    
     
     <div class="recycle-container">
       <!-- 顶部横幅 -->
@@ -204,7 +204,6 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import PageHeader from '@/components/PageHeader.vue'
 import api from '@/utils/api'
 
 const router = useRouter()
@@ -923,4 +922,3 @@ onMounted(() => {
   }
 }
 </style>
-

@@ -1,112 +1,5 @@
 <template>
   <div class="xy-home">
-    <!-- 1) 顶部导航 - 易淘风格 -->
-    <header class="header-sticky">
-      <div class="header-content">
-        <!-- Logo -->
-        <div class="brand-logo" @click="router.push('/')">
-          <span class="logo-icon">🛒</span>
-          <span class="logo-text">易淘</span>
-        </div>
-
-        <!-- 搜索区 -->
-        <div class="search-section">
-          <div class="search-box">
-            <input 
-              v-model="searchKeyword" 
-              :placeholder="searchPlaceholder" 
-              @keyup.enter="handleSearch"
-              class="search-input"
-            />
-            <button class="search-btn" @click="handleSearch">
-              <span class="search-icon">🔍</span>搜索
-            </button>
-          </div>
-        </div>
-
-        <!-- 右侧用户区 -->
-        <div class="user-section">
-          <template v-if="authStore.user">
-            <!-- 订单入口 -->
-            <div class="order-link" @click="goToOrders">
-              <span class="order-icon">📋</span>
-              <span class="order-text">订单</span>
-            </div>
-            
-            <!-- 悬停展开菜单 -->
-            <div class="user-dropdown">
-              <div
-                class="user-info"
-                role="button"
-                aria-haspopup="true"
-                aria-expanded="false"
-              >
-                <div class="user-avatar-block">
-                  <img
-                    v-if="authStore.user.avatar"
-                    :src="authStore.user.avatar"
-                    class="user-avatar"
-                    alt="用户头像"
-                  />
-                  <div v-else class="user-avatar-default">{{ userInitial }}</div>
-                </div>
-                <div class="user-meta">
-                  <span class="user-meta-name">{{ userDisplayName }}</span>
-                  <span class="user-meta-desc">个人中心</span>
-                </div>
-                <span class="dropdown-arrow" aria-hidden="true">▼</span>
-              </div>
-              
-              <!-- 自定义下拉菜单 -->
-              <div class="custom-dropdown">
-                <!-- 用户信息卡片 -->
-                <div class="user-profile-card">
-                  <div class="profile-header">
-                    <img v-if="authStore.user.avatar" :src="authStore.user.avatar" class="profile-avatar" />
-                    <div v-else class="profile-avatar-default">{{ userInitial }}</div>
-                    <div class="profile-info">
-                      <div class="profile-name">{{ authStore.user.username }}</div>
-                      <div class="profile-stats">
-                        <span class="stat-item">0 粉丝</span>
-                        <span class="stat-divider">|</span>
-                        <span class="stat-item">0 关注</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <!-- 功能选项 -->
-                  <div class="profile-menu">
-                    <div class="profile-menu-item" @click="handleUserMenuCommand('trade')">
-                      <span class="menu-text">我的交易</span>
-                      <span class="menu-count">0</span>
-                      <span class="menu-arrow">›</span>
-                    </div>
-                    <div class="profile-menu-item" @click="handleUserMenuCommand('favorites')">
-                      <span class="menu-text">我的收藏</span>
-                      <span class="menu-count">0</span>
-                      <span class="menu-arrow">›</span>
-                    </div>
-                    <div class="profile-menu-item" @click="handleUserMenuCommand('settings')">
-                      <span class="menu-text">账户设置</span>
-                      <span class="menu-count">0</span>
-                      <span class="menu-arrow">›</span>
-                    </div>
-                  </div>
-                  
-                  <!-- 退出登录 -->
-                  <div class="logout-item" @click="handleUserMenuCommand('logout')">
-                    <span class="logout-text">退出登录</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
-          <template v-else>
-            <div class="login-btn" @click="goToLogin">登录/注册</div>
-          </template>
-        </div>
-      </div>
-    </header>
 
     <!-- 2) 首屏区域 - 分类和推荐统一大框 -->
     <div class="hero-section">
@@ -273,17 +166,7 @@
       </div>
     </main>
 
-    <!-- 右侧浮动操作栏 -->
-    <div class="floating-sidebar">
-      <div class="floating-btn publish-btn" @click="goToPublish" v-if="authStore.user">
-        <el-icon class="btn-icon"><Plus /></el-icon>
-        <span class="btn-text">发布闲置</span>
-      </div>
-      <div class="floating-btn publish-btn" @click="goToLogin" v-else>
-        <el-icon class="btn-icon"><Plus /></el-icon>
-        <span class="btn-text">发布闲置</span>
-      </div>
-    </div>
+    
 
     <!-- 4) 页脚（简洁） -->
     <footer class="simple-footer">
@@ -300,23 +183,19 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowRight, Document, List, Star, ChatDotRound, User, SwitchButton, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
 import { useAuthStore } from '@/stores/auth'
+import { getResults } from '@/utils/responseGuard'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
-// 用户信息计算属性
-const userDisplayName = computed(() => authStore.user?.nickname || authStore.user?.username || '易淘用户')
-const userInitial = computed(() => authStore.user?.username?.charAt(0)?.toUpperCase() || 'U')
-
-// 搜索与状态
-const searchKeyword = ref('')
+// 状态
 const activeCategory = ref(null)
 const activeTab = ref('recommend')
 const loading = ref(false)
@@ -324,47 +203,6 @@ const loadingMore = ref(false)
 const hasMore = ref(true)
 const products = ref([])
 
-// 热词（从数据库商品动态生成）
-const hotWords = ref([])
-
-// 动态搜索提示（从热词中随机选取）
-const searchPlaceholder = computed(() => {
-  if (hotWords.value.length >= 3) {
-    const samples = hotWords.value.slice(0, 3)
-    return `搜索好物，例如 ${samples.join(' / ')}`
-  }
-  return '搜索二手好物'
-})
-
-// 加载热词（从数据库获取更多商品生成）
-const loadHotWords = async () => {
-  try {
-    const res = await api.get('/products/', { 
-      params: { status: 'active', page_size: 30 } 
-    })
-    const productList = res.data.results || res.data
-    
-    if (!productList || productList.length === 0) return
-    
-    // 从商品标题中提取关键词
-    const words = []
-    productList.forEach(product => {
-      if (product.title) {
-        // 提取标题的核心关键词（前8个字符或完整短标题）
-        const title = product.title.trim()
-        const keyword = title.length > 12 ? title.substring(0, 8) : title
-        if (keyword.length >= 2 && !words.includes(keyword)) {
-          words.push(keyword)
-        }
-      }
-    })
-    
-    // 取最多10个热词
-    hotWords.value = words.slice(0, 10)
-  } catch (err) {
-    console.error('加载热词失败:', err)
-  }
-}
 
 // 数码分类
 const categories = ref([])
@@ -455,10 +293,6 @@ const formatPriceDecimal = (price) => {
   return decimal ? `.${decimal}` : ''
 }
 
-const handleSearch = () => {
-  // 这里只做导航占位，可跳转到列表并带上关键字
-  router.push({ path: '/products', query: { search: searchKeyword.value } })
-}
 
 const switchTab = (id) => {
   activeTab.value = id
@@ -468,9 +302,7 @@ const switchTab = (id) => {
 
 const goToPublish = () => router.push('/publish')
 const goToDetail = (id) => router.push(`/products/${id}`)
-const goToLogin = () => router.push('/login')
 const goToProfile = () => router.push('/profile')
-const goToOrders = () => router.push('/profile?tab=bought')
 const goToVerifiedProducts = () => router.push('/verified-products')
 const goToVerifiedDetail = (id) => {
   // 跳转到官方验货商品详情页
@@ -522,8 +354,7 @@ const handleUserMenuCommand = async (command) => {
 const loadCategories = async () => {
   try {
     const res = await api.get('/categories/')
-    // 后端使用了 DRF 分页，这里兼容 results / 非分页两种结构
-    let allCategories = res.data?.results || res.data || []
+    let allCategories = getResults(res.data)
     
     // 按数码产品重要性排序
     const categoryOrder = ['手机', '平板', '笔记本电脑', '台式电脑', '摄影摄像', '智能手表', '耳机音响', '游戏设备', '数码配件', '其他数码']
@@ -560,7 +391,7 @@ const loadProducts = async (append = false) => {
     }
 
     const res = await api.get('/products/', { params })
-    const newProducts = res.data.results || res.data
+    const newProducts = getResults(res.data)
 
     if (append) products.value.push(...newProducts)
     else products.value = newProducts
@@ -583,34 +414,27 @@ onMounted(async () => {
     await authStore.init()
   }
   loadCategories()
-  loadHotWords()
   loadProducts()
   loadCategoryProducts()
+  const onScrollLoadMore = () => {
+    if (loadingMore.value || loading.value || !hasMore.value) return
+    const scrollBottom = window.innerHeight + window.scrollY
+    const docHeight = document.documentElement.scrollHeight || document.body.scrollHeight
+    if (scrollBottom >= docHeight - 200) loadMore()
+  }
+  window.addEventListener('scroll', onScrollLoadMore, { passive: true })
+  onBeforeUnmount(() => {
+    window.removeEventListener('scroll', onScrollLoadMore)
+  })
 })
 </script>
 
 <style scoped>
 /* ==================== 易淘官网风格 - 精致美观版 ==================== */
 .xy-home {
-  --brand: #ffe400;
-  --brand-orange: #ff6600;
-  --price-color: #ff2442;
-  --text-primary: #222;
-  --text-secondary: #666;
-  --text-light: #999;
-  --bg-page: #f5f5f5;
-  --bg-white: #fff;
-  --radius-sm: 8px;
-  --radius-md: 12px;
   margin: 0;
   padding: 0;
   width: 100%;
-  --radius-lg: 16px;
-  --radius-full: 50px;
-  --shadow-sm: 0 2px 8px rgba(0,0,0,0.04);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
-  
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
   background: var(--bg-page);
   min-height: 100vh;
@@ -1435,74 +1259,6 @@ onMounted(async () => {
   font-size: 11px;
 }
 
-/* ==================== 右侧浮动操作栏 ==================== */
-.floating-sidebar {
-  position: fixed;
-  right: 20px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 999;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.floating-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  min-height: 56px;
-  background: #fff;
-  border-radius: 28px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  padding: 12px 8px;
-  border: 1px solid rgba(255, 102, 0, 0.1);
-}
-
-.floating-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(255, 102, 0, 0.25);
-  background: linear-gradient(135deg, #fff8e6 0%, #fff3cd 100%);
-  border-color: rgba(255, 102, 0, 0.3);
-}
-
-.floating-btn:active {
-  transform: translateY(0);
-}
-
-.publish-btn {
-  background: linear-gradient(135deg, #ff6600 0%, #ff8833 100%);
-  color: #fff;
-  border: none;
-  box-shadow: 0 4px 16px rgba(255, 102, 0, 0.4);
-}
-
-.publish-btn:hover {
-  background: linear-gradient(135deg, #ff7722 0%, #ff9944 100%);
-  box-shadow: 0 6px 24px rgba(255, 102, 0, 0.5);
-  transform: translateY(-3px) scale(1.05);
-}
-
-.btn-icon {
-  font-size: 24px;
-  margin-bottom: 4px;
-}
-
-.btn-text {
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.2;
-  text-align: center;
-  white-space: nowrap;
-}
-
-.publish-btn .btn-text {
-  color: #fff;
-}
 
 /* ==================== 响应式 ==================== */
 @media (max-width: 1240px) {
@@ -1560,22 +1316,5 @@ onMounted(async () => {
   .flow-tabs { gap: 8px; }
   .flow-tabs .tab-item { padding: 6px 14px; }
   .flow-tabs .tab-item .tab-title { font-size: 12px; }
-  .floating-sidebar {
-    right: 10px;
-    bottom: 80px;
-    top: auto;
-    transform: none;
-  }
-  .floating-btn {
-    width: 50px;
-    min-height: 50px;
-    padding: 10px 6px;
-  }
-  .btn-icon {
-    font-size: 20px;
-  }
-  .btn-text {
-    font-size: 11px;
-  }
 }
 </style>

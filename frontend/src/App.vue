@@ -1,5 +1,7 @@
 <template>
   <div class="app-wrapper">
+    <PageHeader :hideSearch="hideSearch" :theme="theme" :verifiedMode="verifiedMode" />
+    <SidebarQuickActions />
     <el-main class="main-content">
       <router-view />
     </el-main>
@@ -7,6 +9,15 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+import PageHeader from '@/components/PageHeader.vue'
+import SidebarQuickActions from '@/components/SidebarQuickActions.vue'
+
+const route = useRoute()
+const hideSearch = computed(() => route.meta?.hideSearch === true)
+const theme = computed(() => (route.meta?.theme === 'blue' ? 'blue' : 'yellow'))
+const verifiedMode = computed(() => route.meta?.verifiedMode === true)
 </script>
 
 <style scoped>

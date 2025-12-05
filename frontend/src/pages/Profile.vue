@@ -1,6 +1,6 @@
 <template>
   <div class="profile-page xianyu-style">
-    <PageHeader :hideSearch="true" />
+    
     <div class="profile-container">
       <!-- 左侧边栏 -->
       <div class="sidebar">
@@ -423,7 +423,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { User, ShoppingBag, Star, Setting, ArrowDown, Location, PictureFilled } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
-import PageHeader from '@/components/PageHeader.vue'
 
 const route = useRoute()
 const router = useRouter()

@@ -1,6 +1,6 @@
 <template>
   <div class="my-products-page">
-    <PageHeader :hideSearch="true" />
+    
     <div class="products-container">
       <el-card header="我的商品" class="products-card">
         <template #header>
@@ -79,7 +79,6 @@ import { ElMessageBox } from 'element-plus'
 import { Plus, PictureFilled } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import ErrorHandler from '@/utils/errorHandler'
-import PageHeader from '@/components/PageHeader.vue'
 import { getImageUrl } from '@/utils/image'
 
 const products = ref([])

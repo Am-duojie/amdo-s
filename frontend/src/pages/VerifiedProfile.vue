@@ -1,6 +1,6 @@
 <template>
   <div class="verified-profile-page">
-    <PageHeader :theme="'blue'" :verifiedMode="true" />
+    
     
     <div class="profile-container">
       <!-- 左侧边栏 -->
@@ -538,7 +538,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import PageHeader from '@/components/PageHeader.vue'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
 import { useAuthStore } from '@/stores/auth'

@@ -3,30 +3,17 @@
     <div class="header-content">
       <!-- Logo -->
       <div class="brand-logo" @click="router.push('/')">
-        <span class="logo-icon">🛒</span>
         <span class="logo-text">易淘</span>
       </div>
 
-      <!-- 官方质检回收入口 -->
-      <div class="recycle-entry" @click="goToRecycle">
-        <span class="recycle-icon">♻️</span>
-        <span class="recycle-text">官方质检回收</span>
-      </div>
+      
 
       <!-- 搜索区 -->
-      <div v-if="!hideSearch" class="search-section">
-        <div class="search-box">
-          <input 
-            v-model="searchKeyword" 
-            :placeholder="searchPlaceholder" 
-            @keyup.enter="handleSearch"
-            class="search-input"
-          />
-          <button class="search-btn" @click="handleSearch">
-            <span class="search-icon">🔍</span>搜索
-          </button>
-        </div>
-      </div>
+      <SearchBox v-if="!hideSearch"
+        v-model="searchKeyword"
+        :placeholder="searchPlaceholder"
+        @search="handleSearch"
+      />
 
       <!-- 右侧用户区 -->
       <div class="user-section">
@@ -56,9 +43,7 @@
               </div>
               <div class="user-meta">
                 <span class="user-meta-name">{{ userDisplayName }}</span>
-                <span class="user-meta-desc">个人中心</span>
               </div>
-              <span class="dropdown-arrow" aria-hidden="true">▼</span>
             </div>
             
             <!-- 自定义下拉菜单 -->
@@ -119,6 +104,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
 import { useAuthStore } from '@/stores/auth'
+import SearchBox from '@/components/SearchBox.vue'
 
 // Props
 const props = defineProps({
@@ -311,7 +297,7 @@ onMounted(() => {
   margin: 0 auto;
   display: flex;
   align-items: center;
-  gap: 40px;
+  gap: 20px;
   padding: 0 20px;
   width: 100%;
 }
@@ -322,61 +308,23 @@ onMounted(() => {
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
-    border-radius: 16px;
-    background: rgba(255,255,255,0.8);
-    backdrop-filter: blur(10px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    transition: all 0.2s ease;
+    padding: 8px 12px;
+    border-radius: 8px;
+    transition: opacity 0.2s ease;
   }
   .brand-logo:hover { 
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.12);
-    background: rgba(255,255,255,0.95);
-  }
-  .logo-icon {
-    font-size: 32px;
-    line-height: 1;
-    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+    opacity: 0.9;
   }
   .logo-text { 
-    font-size: 36px; 
-    font-weight: 900; 
-    background: linear-gradient(135deg, #ff6600, #ff8833);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    font-size: 28px; 
+    font-weight: 800; 
+    color: #2b2b2b;
     line-height: 1;
-    letter-spacing: -1px;
+    letter-spacing: 0.5px;
   }
 
 /* 官方质检回收入口 */
-.recycle-entry {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  background: linear-gradient(135deg, #ff6600, #ff8833);
-  border-radius: 12px;
-  cursor: pointer;
-  color: #fff;
-  font-size: 15px;
-  font-weight: 700;
-  white-space: nowrap;
-  transition: all 0.25s ease;
-  box-shadow: 0 4px 16px rgba(255, 102, 0, 0.3);
-  border: 2px solid rgba(255, 255, 255, 0.4);
-  flex-shrink: 0;
-  position: relative;
-  z-index: 10;
-}
-.recycle-entry:hover {
-  background: linear-gradient(135deg, #ff7722, #ff9944);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(255, 102, 0, 0.4);
-  border-color: rgba(255, 255, 255, 0.6);
-}
+/* 头部不再显示回收入口 */
 
 /* 蓝色主题下的回收入口 */
 .blue-theme .recycle-entry {
@@ -505,7 +453,7 @@ onMounted(() => {
 .user-section {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   flex-shrink: 0;
   margin-left: auto;
   justify-content: flex-end;
@@ -514,30 +462,11 @@ onMounted(() => {
 .user-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   cursor: pointer;
-  padding: 10px 16px;
-  border-radius: 14px;
-  background: rgba(255,255,255,0.92);
-  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-  border: 1px solid rgba(255,255,255,0.4);
-}
-.user-dropdown:hover .user-info { 
-  background: #fff8e6;
-  border-color: rgba(255,106,0,0.3);
-  box-shadow: 0 6px 18px rgba(255,106,0,0.12);
 }
 
-.dropdown-arrow {
-  font-size: 12px;
-  color: #666;
-  margin-left: 2px;
-  transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1), color 0.1s linear;
-}
-.user-dropdown:hover .dropdown-arrow {
-  color: #ff6600;
-  transform: rotate(180deg);
-}
+.dropdown-arrow { display: none; }
 
 .user-avatar-block {
   width: 34px;
@@ -554,25 +483,15 @@ onMounted(() => {
 
 .user-meta-name {
   font-size: 14px;
-  color: #222;
+  color: #333;
   font-weight: 600;
-  max-width: 120px;
+  max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.user-dropdown:hover .user-meta-name {
-  color: #ff6600;
-}
 
-.user-meta-desc {
-  font-size: 11px;
-  color: #999;
-  letter-spacing: 0.2px;
-}
-.user-dropdown:hover .user-meta-desc {
-  color: #ffb347;
-}
+.user-meta-desc { display: none; }
 
 /* 自定义下拉菜单 */
 .user-dropdown {
@@ -743,29 +662,11 @@ onMounted(() => {
   height: 100%;
   border-radius: 50%;
   flex-shrink: 0;
+  border: none;
+  box-shadow: none;
 }
-.user-avatar { 
-  object-fit: cover; 
-  border: 2px solid rgba(255,106,0,0.15);
-  transition: all 0.25s ease;
-}
-.user-dropdown:hover .user-avatar {
-  border-color: rgba(255,106,0,0.4);
-}
-.user-avatar-default {
-  background: linear-gradient(135deg, #ff6600, #ff8833);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  font-weight: 700;
-  border: 2px solid rgba(255,106,0,0.15);
-  transition: all 0.25s ease;
-}
-.user-dropdown:hover .user-avatar-default {
-  border-color: rgba(255,106,0,0.4);
-}
+.user-avatar { object-fit: cover; }
+.user-avatar-default { background: #ddd; color: #666; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; }
 .user-name {
   font-size: 14px;
   color: #222;
@@ -782,27 +683,12 @@ onMounted(() => {
 .order-link {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: 14px;
-  color: #222;
+  color: #333;
   cursor: pointer;
-  padding: 10px 16px;
-  border-radius: 12px;
-  background: rgba(255,255,255,0.85);
-  backdrop-filter: blur(8px);
-  transition: all 0.25s ease;
-  font-weight: 500;
-  border: 1px solid rgba(255,255,255,0.3);
 }
-.order-link:hover { 
-  background: #fff8e6;
-  border-color: rgba(255,106,0,0.2);
-  color: #ff6600; 
-}
-.order-link .order-icon {
-  font-size: 18px;
-  line-height: 1;
-}
+.order-link .order-icon { display: inline-flex; font-size: 14px; }
 
 .login-btn {
   font-size: 14px;
@@ -873,4 +759,3 @@ onMounted(() => {
   }
 }
 </style>
-

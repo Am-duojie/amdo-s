@@ -1,6 +1,6 @@
 <template>
   <div class="checkout-page">
-    <PageHeader :hideSearch="true" />
+    
     <!-- 加载中 -->
     <div v-if="loading" class="loading-container">
       <el-skeleton :rows="8" animated />
@@ -210,7 +210,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { CircleCheckFilled, Select, Plus, Minus, PictureFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import api from '@/utils/api'
-import PageHeader from '@/components/PageHeader.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getImageUrl } from '@/utils/image'
 

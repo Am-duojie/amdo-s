@@ -1,112 +1,5 @@
 <template>
   <div class="xy-product-list">
-    <!-- 1) 顶部导航 - 易淘风格 -->
-    <header class="header-sticky">
-      <div class="header-content">
-        <!-- Logo -->
-        <div class="brand-logo" @click="router.push('/')">
-          <span class="logo-icon">🛒</span>
-          <span class="logo-text">易淘</span>
-        </div>
-
-        <!-- 搜索区 -->
-        <div class="search-section">
-          <div class="search-box">
-            <input 
-              v-model="searchText" 
-              :placeholder="searchPlaceholder" 
-              @keyup.enter="handleSearch"
-              class="search-input"
-            />
-            <button class="search-btn" @click="handleSearch">
-              <span class="search-icon">🔍</span>搜索
-            </button>
-          </div>
-        </div>
-
-        <!-- 右侧用户区 -->
-        <div class="user-section">
-          <template v-if="authStore.user">
-            <!-- 订单入口 -->
-            <div class="order-link" @click="goToOrders">
-              <span class="order-icon">📋</span>
-              <span class="order-text">订单</span>
-            </div>
-            
-            <!-- 悬停展开菜单 -->
-            <div class="user-dropdown">
-              <div
-                class="user-info"
-                role="button"
-                aria-haspopup="true"
-                aria-expanded="false"
-              >
-                <div class="user-avatar-block">
-                  <img
-                    v-if="authStore.user.avatar"
-                    :src="authStore.user.avatar"
-                    class="user-avatar"
-                    alt="用户头像"
-                  />
-                  <div v-else class="user-avatar-default">{{ userInitial }}</div>
-                </div>
-                <div class="user-meta">
-                  <span class="user-meta-name">{{ userDisplayName }}</span>
-                  <span class="user-meta-desc">个人中心</span>
-                </div>
-                <span class="dropdown-arrow" aria-hidden="true">▼</span>
-              </div>
-              
-              <!-- 自定义下拉菜单 -->
-              <div class="custom-dropdown">
-                <!-- 用户信息卡片 -->
-                <div class="user-profile-card">
-                  <div class="profile-header">
-                    <img v-if="authStore.user.avatar" :src="authStore.user.avatar" class="profile-avatar" />
-                    <div v-else class="profile-avatar-default">{{ userInitial }}</div>
-                    <div class="profile-info">
-                      <div class="profile-name">{{ authStore.user.username }}</div>
-                      <div class="profile-stats">
-                        <span class="stat-item">0 粉丝</span>
-                        <span class="stat-divider">|</span>
-                        <span class="stat-item">0 关注</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <!-- 功能选项 -->
-                  <div class="profile-menu">
-                    <div class="profile-menu-item" @click="handleUserMenuCommand('trade')">
-                      <span class="menu-text">我的交易</span>
-                      <span class="menu-count">0</span>
-                      <span class="menu-arrow">›</span>
-                    </div>
-                    <div class="profile-menu-item" @click="handleUserMenuCommand('favorites')">
-                      <span class="menu-text">我的收藏</span>
-                      <span class="menu-count">0</span>
-                      <span class="menu-arrow">›</span>
-                    </div>
-                    <div class="profile-menu-item" @click="handleUserMenuCommand('settings')">
-                      <span class="menu-text">账户设置</span>
-                      <span class="menu-count">0</span>
-                      <span class="menu-arrow">›</span>
-                    </div>
-                  </div>
-                  
-                  <!-- 退出登录 -->
-                  <div class="logout-item" @click="handleUserMenuCommand('logout')">
-                    <span class="logout-text">退出登录</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
-          <template v-else>
-            <div class="login-btn" @click="goToLogin">登录/注册</div>
-          </template>
-        </div>
-      </div>
-    </header>
 
     <!-- 主内容区域 -->
     <main class="main-content">
@@ -264,14 +157,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
 import { useAuthStore } from '@/stores/auth'
+import { getResults, getCount } from '@/utils/responseGuard'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
-// 用户信息计算属性
-const userDisplayName = computed(() => authStore.user?.nickname || authStore.user?.username || '易淘用户')
-const userInitial = computed(() => authStore.user?.username?.charAt(0)?.toUpperCase() || 'U')
+// 头部由 PageHeader 负责显示用户信息
 
 const products = ref([])
 const categories = ref([])
@@ -333,8 +225,7 @@ const loadHotWords = async () => {
   }
 }
 
-const goToLogin = () => router.push('/login')
-const goToOrders = () => router.push('/profile?tab=bought')
+// 登录与订单入口由 PageHeader 统一管理
 
 onMounted(() => {
   loadCategories()
@@ -345,6 +236,13 @@ onMounted(() => {
 // 监听路由中的 category 变化（从首页分类点击跳转时生效）
 watch(() => route.query.category, (val) => {
   filters.value.category = val ? String(val) : ''
+  pagination.value.current = 1
+  loadProducts()
+})
+
+// 当路由中的 search 变化（来自头部搜索），同步并刷新
+watch(() => route.query.search, (val) => {
+  searchText.value = val || ''
   pagination.value.current = 1
   loadProducts()
 })
@@ -371,8 +269,7 @@ watch([() => filters.value.category, () => filters.value.condition, () => filter
 const loadCategories = async () => {
   try {
     const res = await api.get('/categories/')
-    // 兼容 DRF 分页结构：优先使用 results
-    categories.value = res.data?.results || res.data || []
+    categories.value = getResults(res.data)
   } catch (error) {
     console.error('加载分类失败:', error)
   }
@@ -397,20 +294,8 @@ const loadProducts = async () => {
     }
     
     const res = await api.get('/products/', { params })
-    
-    // 处理分页数据
-    if (res.data.results) {
-      // DRF 分页格式
-      products.value = res.data.results
-      pagination.value.total = res.data.count || 0
-    } else if (Array.isArray(res.data)) {
-      // 数组格式
-      products.value = res.data
-      pagination.value.total = res.data.length
-    } else {
-      products.value = []
-      pagination.value.total = 0
-    }
+    products.value = getResults(res.data)
+    pagination.value.total = getCount(res.data)
     
     console.log('加载商品成功:', {
       page: pagination.value.current,
@@ -468,67 +353,12 @@ const formatPriceDecimal = (price) => {
   return decimal ? `.${decimal}` : ''
 }
 
-// 处理用户菜单命令
-const handleUserMenuCommand = async (command) => {
-  switch (command) {
-    case 'trade':
-      router.push('/profile?tab=bought')  // 跳转到我的交易（默认显示我买到的）
-      break
-    case 'favorites':
-      router.push('/profile?tab=favorites')  // 跳转到我的收藏
-      break
-    case 'settings':
-      router.push('/profile?tab=address')  // 跳转到账户设置（默认显示收货地址）
-      break
-    case 'products':
-      router.push('/profile')
-      break
-    case 'orders':
-      router.push('/profile?tab=bought')
-      break
-    case 'messages':
-      router.push('/messages')
-      break
-    case 'profile':
-      router.push('/profile')
-      break
-    case 'logout':
-      try {
-        await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-          confirmButtonText: '确定',
-          cancelButtonText: '取消',
-          type: 'warning'
-        })
-        authStore.logout()
-        ElMessage.success('已退出登录')
-        router.push('/')
-      } catch {
-        // 取消退出
-      }
-      break
-  }
-}
+// 用户菜单由 PageHeader 统一管理
 </script>
 
 <style scoped>
 /* ==================== 易淘官网风格 - 与主页统一 ==================== */
 .xy-product-list {
-  --brand: #ffe400;
-  --brand-orange: #ff6600;
-  --price-color: #ff2442;
-  --text-primary: #222;
-  --text-secondary: #666;
-  --text-light: #999;
-  --bg-page: #f5f5f5;
-  --bg-white: #fff;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-full: 50px;
-  --shadow-sm: 0 2px 8px rgba(0,0,0,0.04);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
-  
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
   background: var(--bg-page);
   min-height: 100vh;

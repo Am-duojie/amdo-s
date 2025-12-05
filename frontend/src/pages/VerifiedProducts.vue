@@ -1,6 +1,6 @@
 <template>
   <div class="verified-products-page">
-    <PageHeader :theme="'blue'" :verifiedMode="true" />
+    
     
     <!-- 主内容区域 -->
     <div class="main-container">
@@ -197,7 +197,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import PageHeader from '@/components/PageHeader.vue'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
 import { useAuthStore } from '@/stores/auth'
