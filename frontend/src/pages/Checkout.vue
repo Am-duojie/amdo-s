@@ -136,6 +136,7 @@
       width="460px"
       :close-on-click-modal="false"
       class="payment-dialog"
+      :append-to-body="true"
     >
       <div class="payment-options">
         <div 
@@ -208,7 +209,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { CircleCheckFilled, Select, Plus, Minus, PictureFilled } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
 import { useAuthStore } from '@/stores/auth'
 import { getImageUrl } from '@/utils/image'
@@ -350,11 +351,15 @@ const createPayment = async () => {
       order_id: currentOrderId.value,
       payment_method: paymentType.value
     })
-    
-    qrcodeUrl.value = res.data.qrcode_url
-    
-    // 开始轮询支付状态
-    startPaymentCheck()
+
+    const { success, error, qrcode_url } = res.data || {}
+    if (success && qrcode_url) {
+      qrcodeUrl.value = qrcode_url
+      startPaymentCheck()
+      ElMessage.success('支付二维码已生成')
+    } else {
+      ElMessage.error(error || '支付创建失败')
+    }
   } catch (error) {
     ElMessage.error(error.response?.data?.error || '支付创建失败')
   } finally {

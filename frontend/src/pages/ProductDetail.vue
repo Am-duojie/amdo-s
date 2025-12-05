@@ -197,7 +197,7 @@
     </div>
 
     <!-- 下单对话框 -->
-    <el-dialog v-model="showOrderDialog" title="确认购买" width="480px" @close="resetOrderForm" class="order-dialog">
+    <el-dialog v-model="showOrderDialog" title="确认购买" width="480px" @close="resetOrderForm" class="order-dialog" :append-to-body="true">
       <div v-if="product" class="order-product-preview">
         <div class="preview-image">
           <img v-if="product.images?.length" :src="getImageUrl(product.images[0].image)" />
@@ -241,6 +241,7 @@
       width="460px"
       :close-on-click-modal="false"
       class="payment-dialog"
+      :append-to-body="true"
     >
       <div class="payment-options">
         <div 

@@ -496,6 +496,15 @@ const handleImageError = (e) => {
 
 onMounted(() => {
   loadCategories()
+  if (route.query?.search) {
+    searchKeyword.value = String(route.query.search)
+  }
+  loadProducts()
+})
+
+watch(() => route.query.search, (val) => {
+  searchKeyword.value = val ? String(val) : ''
+  pagination.value.current = 1
   loadProducts()
 })
 </script>

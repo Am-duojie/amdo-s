@@ -42,41 +42,29 @@
         </div>
       </div>
 
-      <!-- 优惠活动 -->
-      <div class="promo-section">
-        <div class="promo-card" @click="handlePromo('phone')">
-          <div class="promo-content">
-            <span class="promo-amount">¥500 最高</span>
-            <span class="promo-desc">12月手机回收...</span>
-          </div>
-          <button class="promo-btn">去使用</button>
-        </div>
-        <div class="promo-card" @click="handlePromo('digital')">
-          <div class="promo-content">
-            <span class="promo-amount">¥500 最高</span>
-            <span class="promo-desc">12月数码回收...</span>
-          </div>
-          <button class="promo-btn">去使用</button>
-        </div>
-      </div>
+      
 
-      <!-- 服务保障 -->
-      <div class="guarantee-section">
-        <div class="guarantee-item">
-          <span class="guarantee-icon">✓</span>
-          <span class="guarantee-text">超时赔</span>
+      <!-- 流程介绍 -->
+      <div class="steps-section">
+        <div class="step-item">
+          <div class="step-icon">📝</div>
+          <div class="step-title">提交设备信息</div>
+          <div class="step-desc">一分钟填写品牌型号、成色与配件</div>
         </div>
-        <div class="guarantee-item">
-          <span class="guarantee-icon">✓</span>
-          <span class="guarantee-text">护隐私</span>
+        <div class="step-item">
+          <div class="step-icon">🔍</div>
+          <div class="step-title">专业质检</div>
+          <div class="step-desc">工程师当面验机，支持复检保障</div>
         </div>
-        <div class="guarantee-item">
-          <span class="guarantee-icon">✓</span>
-          <span class="guarantee-text">丢损赔</span>
+        <div class="step-item">
+          <div class="step-icon">💰</div>
+          <div class="step-title">现场打款</div>
+          <div class="step-desc">确认价格后现场极速打款</div>
         </div>
-        <div class="guarantee-item">
-          <span class="guarantee-icon">✓</span>
-          <span class="guarantee-text">可复检</span>
+        <div class="step-item">
+          <div class="step-icon">✅</div>
+          <div class="step-title">完成回收</div>
+          <div class="step-desc">数据隐私擦除，售后可复检</div>
         </div>
       </div>
 
@@ -99,6 +87,17 @@
             <div class="device-label">{{ device.label }}</div>
             <div v-if="device.hot" class="hot-badge">热</div>
           </div>
+        </div>
+      </div>
+
+      <!-- 上门城市选择 -->
+      <div class="city-service-section">
+        <div class="city-header">
+          <span class="city-title">支持上门城市</span>
+          <span class="city-sub">同城可当面验机</span>
+        </div>
+        <div class="city-list">
+          <button v-for="city in cities" :key="city" class="city-chip" :class="{ active: activeCity === city }" @click="activeCity = city">{{ city }}</button>
         </div>
       </div>
 
@@ -196,6 +195,31 @@
           立即回收
         </button>
       </div>
+
+      <!-- 常见问题 -->
+      <div class="faq-section">
+        <div class="faq-item" @click="toggleFaq(0)">
+          <div class="faq-q">
+            数据会被彻底擦除吗？
+            <span class="arrow">{{ openedFaq[0] ? '▲' : '▼' }}</span>
+          </div>
+          <div v-if="openedFaq[0]" class="faq-a">支持安全擦除并提供证明，隐私保障。</div>
+        </div>
+        <div class="faq-item" @click="toggleFaq(1)">
+          <div class="faq-q">
+            价格如何计算？
+            <span class="arrow">{{ openedFaq[1] ? '▲' : '▼' }}</span>
+          </div>
+          <div v-if="openedFaq[1]" class="faq-a">根据品牌型号、成色、配件和市场行情综合评估。</div>
+        </div>
+        <div class="faq-item" @click="toggleFaq(2)">
+          <div class="faq-q">
+            回收流程耗时多久？
+            <span class="arrow">{{ openedFaq[2] ? '▲' : '▼' }}</span>
+          </div>
+          <div v-if="openedFaq[2]" class="faq-a">通常当天完成验机与打款，支持加急。</div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -215,6 +239,10 @@ const bonus = ref(150)
 const showEstimateForm = ref(false)
 const estimating = ref(false)
 const estimateResult = ref(null)
+const cities = ['北京','上海','深圳','广州','杭州','成都']
+const activeCity = ref('深圳')
+const openedFaq = ref([false, false, false])
+const toggleFaq = (i) => { openedFaq.value[i] = !openedFaq.value[i] }
 
 const deviceTypes = [
   { type: 'phone', label: '苹果', icon: '🍎', hot: true },
@@ -393,9 +421,6 @@ const goToEstimate = () => {
   showEstimateForm.value = true
 }
 
-const handlePromo = (type) => {
-  ElMessage.info(`跳转到${type === 'phone' ? '手机' : '数码'}回收活动页面`)
-}
 
 onMounted(() => {
   // 可以尝试检测用户设备
@@ -540,91 +565,25 @@ onMounted(() => {
 }
 
 /* 优惠活动 */
-.promo-section {
+
+/* 流程 */
+.steps-section {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   margin-bottom: 24px;
 }
-
-.promo-card {
-  background: #fff;
-  border: 2px solid #ff6600;
-  border-radius: 12px;
-  padding: 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.promo-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(255, 102, 0, 0.2);
-}
-
-.promo-content {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.promo-amount {
-  font-size: 20px;
-  font-weight: 900;
-  color: #ff4444;
-}
-
-.promo-desc {
-  font-size: 14px;
-  color: #666;
-}
-
-.promo-btn {
-  padding: 8px 16px;
-  background: #ff6600;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-/* 服务保障 */
-.guarantee-section {
-  display: flex;
-  justify-content: space-around;
+.step-item {
   background: #fff;
   border-radius: 12px;
   padding: 20px;
-  margin-bottom: 24px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  text-align: center;
 }
+.step-icon { font-size: 28px; margin-bottom: 8px; }
+.step-title { font-weight: 700; margin-bottom: 6px; }
+.step-desc { font-size: 13px; color: #666; }
 
-.guarantee-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.guarantee-icon {
-  width: 32px;
-  height: 32px;
-  background: #4caf50;
-  color: #fff;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 900;
-}
-
-.guarantee-text {
-  font-size: 14px;
-  color: #666;
-}
 
 /* 设备类型 */
 .device-type-section {
@@ -634,6 +593,15 @@ onMounted(() => {
   margin-bottom: 24px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.1);
 }
+
+/* 城市服务 */
+.city-service-section { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+.city-header { display: flex; gap: 12px; align-items: baseline; margin-bottom: 12px; }
+.city-title { font-size: 16px; font-weight: 700; }
+.city-sub { font-size: 13px; color: #666; }
+.city-list { display: flex; gap: 8px; flex-wrap: wrap; }
+.city-chip { padding: 8px 12px; border-radius: 20px; border: 1px solid #eee; background: #fafafa; cursor: pointer; font-size: 13px; }
+.city-chip.active { background: #fff5e6; border-color: #ff6600; color: #ff6600; }
 
 .section-title {
   font-size: 20px;
@@ -880,6 +848,13 @@ onMounted(() => {
   margin-top: 32px;
   margin-bottom: 40px;
 }
+
+/* FAQ */
+.faq-section { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+.faq-item { padding: 12px 6px; border-bottom: 1px solid #eee; cursor: pointer; }
+.faq-item:last-child { border-bottom: none; }
+.faq-q { font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+.faq-a { font-size: 13px; color: #666; margin-top: 8px; }
 
 .recycle-now-btn {
   padding: 20px 60px;

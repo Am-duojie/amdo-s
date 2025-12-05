@@ -173,10 +173,11 @@ const loadHotWords = async () => {
 
 // 搜索处理
 const handleSearch = () => {
-  if (searchKeyword.value.trim()) {
-    router.push({ path: '/products', query: { search: searchKeyword.value } })
+  const kw = searchKeyword.value.trim()
+  if (props.verifiedMode) {
+    router.push({ path: '/verified-products', query: kw ? { search: kw } : {} })
   } else {
-    router.push('/products')
+    router.push({ path: '/products', query: kw ? { search: kw } : {} })
   }
 }
 
