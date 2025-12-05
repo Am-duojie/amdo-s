@@ -523,7 +523,17 @@ const loadCategories = async () => {
   try {
     const res = await api.get('/categories/')
     // 后端使用了 DRF 分页，这里兼容 results / 非分页两种结构
-    categories.value = res.data?.results || res.data || []
+    let allCategories = res.data?.results || res.data || []
+    
+    // 按数码产品重要性排序
+    const categoryOrder = ['手机', '平板', '笔记本电脑', '台式电脑', '摄影摄像', '智能手表', '耳机音响', '游戏设备', '数码配件', '其他数码']
+    allCategories.sort((a, b) => {
+      const indexA = categoryOrder.indexOf(a.name)
+      const indexB = categoryOrder.indexOf(b.name)
+      return indexA - indexB
+    })
+    
+    categories.value = allCategories
   } catch (err) {
     console.error('加载分类失败:', err)
     categories.value = []

@@ -5,26 +5,18 @@ from django.utils import timezone
 
 class Category(models.Model):
     """商品分类"""
-    # 添加类型字段，区分易淘和官方验分类
-    TYPE_CHOICES = [
-        ('xy', '易淘'),
-        ('verified', '官方验'),
-    ]
-    
     name = models.CharField(max_length=50, verbose_name='分类名称')
     description = models.TextField(blank=True, verbose_name='分类描述')
-    type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='xy', verbose_name='分类类型')
+    type = models.CharField(max_length=20, default='digital', verbose_name='分类类型')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
 
     class Meta:
         verbose_name = '商品分类'
         verbose_name_plural = '商品分类'
         ordering = ['name']
-        # 确保同一类型下分类名称唯一
-        unique_together = ['name', 'type']
 
     def __str__(self):
-        return f"{self.get_type_display()} - {self.name}"
+        return self.name
 
 
 class Product(models.Model):

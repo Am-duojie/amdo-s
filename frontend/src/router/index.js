@@ -102,11 +102,6 @@ const routes = [
     component: () => import('@/pages/VerifiedOrderDetail.vue'),
     meta: { requiresAuth: true }
   },
-  {
-    path: '/verified-products/:id',
-    name: 'VerifiedProductDetail',
-    component: () => import('@/pages/VerifiedProductDetail.vue')
-  },
 
 ]
 
