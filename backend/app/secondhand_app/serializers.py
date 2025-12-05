@@ -147,14 +147,23 @@ class CategorySerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Category
-        fields = ['id', 'name', 'description', 'product_count', 'created_at']
+        fields = ['id', 'name', 'description', 'type', 'product_count', 'created_at']
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
     """商品图片序列化器"""
+    image = serializers.SerializerMethodField()
+    
     class Meta:
         model = ProductImage
         fields = ['id', 'image', 'is_primary']
+    
+    def get_image(self, obj):
+        """获取图片URL，如果没有图片返回默认图片"""
+        if obj.image:
+            return self.context['request'].build_absolute_uri(obj.image.url)
+        # 返回默认图片URL
+        return "https://via.placeholder.com/400x400/EEE/31343C?text=No+Image"
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -339,9 +348,18 @@ class RecycleOrderSerializer(serializers.ModelSerializer):
 
 class VerifiedProductImageSerializer(serializers.ModelSerializer):
     """官方验货商品图片序列化器"""
+    image = serializers.SerializerMethodField()
+    
     class Meta:
         model = VerifiedProductImage
         fields = ['id', 'image', 'is_primary']
+    
+    def get_image(self, obj):
+        """获取图片URL，如果没有图片返回默认图片"""
+        if obj.image:
+            return self.context['request'].build_absolute_uri(obj.image.url)
+        # 返回默认图片URL
+        return "https://via.placeholder.com/400x400/EEE/31343C?text=No+Image"
 
 
 class VerifiedProductSerializer(serializers.ModelSerializer):

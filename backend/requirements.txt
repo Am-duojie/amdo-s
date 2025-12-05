@@ -10,3 +10,8 @@ beautifulsoup4==4.12.3
 tenacity==9.0.0
 tqdm==4.67.1
 playwright==1.48.0
+
+# 生产环境部署相关
+daphne==4.1.0  # ASGI服务器，支持WebSocket（推荐用于生产环境）
+gunicorn==21.2.0  # WSGI服务器（如果不需要WebSocket可以使用）
+python-decouple==3.8  # 环境变量管理（可选，推荐）

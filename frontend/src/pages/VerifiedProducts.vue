@@ -140,7 +140,7 @@
             >
               <div class="product-image-wrapper">
                 <img 
-                  :src="product.images?.length ? getImageUrl(product.images[0].image) : defaultImage"
+                  :src="product.images?.length ? product.images[0].image : defaultImage"
                   :alt="product.title"
                   class="product-image"
                   loading="lazy"
@@ -478,7 +478,7 @@ const handlePageChange = (page) => {
 
 // 跳转详情
 const goToDetail = (id) => {
-  router.push(`/products/${id}`)
+  router.push(`/verified-products/${id}`)
 }
 
 // 跳转个人中心

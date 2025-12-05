@@ -1,0 +1,85 @@
+[
+  {
+    "title": "苹果 iPhone 14 Pro 256G 暗紫色 国行 全网通",
+    "price": 2959,
+    "original_price": 8899,
+    "new_price": 9199,
+    "category": "手机",
+    "condition": "8成新",
+    "description": "苹果 iPhone 14 Pro 256G 暗紫色，国行全网通，8成新，轻微使用痕迹，灵动岛高刷屏，影像拍照游戏性能优秀。",
+    "brand": "苹果",
+    "model": "iPhone 14 Pro",
+    "storage": "256GB",
+    "screen_size": "6.1英寸",
+    "battery_health": "70%-80%",
+    "charging_type": "Lightning",
+    "platform": "爱回收",
+    "url": "https://m.aihuishou.com/n/ofn/strict-selected/product/detail?saleGoodsNo=20251130153758487586",
+    "images": [
+      "https://img.aihuishou.com/product/iphone14pro-1.jpg",
+      "https://img.aihuishou.com/product/iphone14pro-2.jpg",
+      "https://img.aihuishou.com/product/iphone14pro-3.jpg"
+    ],
+    "quality_report": {
+      "report_number": "PP1996150348737167360",
+      "inspection_time": "2025.12.01",
+      "inspection_result": "经检验基本功能正常",
+      "imei": "356*********859",
+      "activation_date": "2022/09/17"
+    },
+    "specifications": {
+      "sim_card": "双卡",
+      "resolution": "2556*1179",
+      "screen_material": "OLED",
+      "camera_pixel": "4800万",
+      "battery_capacity": "3200mAh",
+      "cpu": "苹果 A16",
+      "refresh_rate": "120Hz"
+    }
+  },
+  {
+    "title": "华为 Mate 60 Pro 512GB 羽砂紫",
+    "price": 4899,
+    "original_price": 6999,
+    "category": "手机",
+    "condition": "95新",
+    "description": "华为 Mate 60 Pro 512GB 羽砂紫，95成新，功能完好，支持5G，拍照性能优秀。",
+    "brand": "华为",
+    "model": "Mate 60 Pro",
+    "storage": "512GB",
+    "screen_size": "6.82英寸",
+    "battery_health": "85%-90%",
+    "charging_type": "Type-C",
+    "platform": "爱回收",
+    "images": [
+      "https://img.aihuishou.com/product/mate60pro-1.jpg",
+      "https://img.aihuishou.com/product/mate60pro-2.jpg"
+    ],
+    "quality_report": {
+      "inspection_result": "经检验基本功能正常"
+    }
+  },
+  {
+    "title": "Apple MacBook Air M2 13英寸 8GB+256GB",
+    "price": 6999,
+    "original_price": 8999,
+    "category": "电脑",
+    "condition": "99新",
+    "description": "Apple MacBook Air M2 13英寸，8GB+256GB，99成新，几乎全新，性能强劲，适合办公和创作。",
+    "brand": "Apple",
+    "model": "MacBook Air M2",
+    "storage": "256GB",
+    "screen_size": "13.3英寸",
+    "battery_health": "95%-100%",
+    "charging_type": "MagSafe",
+    "platform": "爱回收",
+    "images": [
+      "https://img.aihuishou.com/product/macbook-1.jpg",
+      "https://img.aihuishou.com/product/macbook-2.jpg"
+    ],
+    "quality_report": {
+      "inspection_result": "经检验基本功能正常"
+    }
+  }
+]
+
