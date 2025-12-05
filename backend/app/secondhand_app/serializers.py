@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from .models import (
     Category, Product, ProductImage, Order, Message, Favorite, Address, UserProfile, RecycleOrder,
-    VerifiedProduct, VerifiedProductImage, VerifiedOrder, VerifiedFavorite
+    VerifiedProduct, VerifiedProductImage, VerifiedOrder, VerifiedFavorite, Shop
 )
 
 
@@ -150,6 +150,14 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'description', 'product_count', 'created_at']
 
 
+class ShopSerializer(serializers.ModelSerializer):
+    owner = UserSerializer(read_only=True)
+    class Meta:
+        model = Shop
+        fields = ['id','owner','name','description','logo','address','contact_phone','status','rating','is_verified','created_at','updated_at']
+        read_only_fields = ['owner','created_at','updated_at']
+
+
 class ProductImageSerializer(serializers.ModelSerializer):
     """商品图片序列化器"""
     class Meta:
@@ -161,14 +169,16 @@ class ProductSerializer(serializers.ModelSerializer):
     """商品序列化器"""
     seller = UserSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
+    shop = ShopSerializer(read_only=True)
     category_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    shop_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     images = ProductImageSerializer(many=True, read_only=True)
     is_favorited = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
         fields = [
-            'id', 'seller', 'category', 'category_id', 'title', 'description',
+            'id', 'seller', 'category', 'category_id', 'shop', 'shop_id', 'title', 'description',
             'price', 'original_price', 'condition', 'status', 'location',
             'contact_phone', 'contact_wechat', 'view_count', 'images',
             'is_favorited', 'created_at', 'updated_at'
@@ -183,10 +193,16 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         category_id = validated_data.pop('category_id', None)
+        shop_id = validated_data.pop('shop_id', None)
         if category_id:
             try:
                 validated_data['category'] = Category.objects.get(id=category_id)
             except Category.DoesNotExist:
+                pass
+        if shop_id:
+            try:
+                validated_data['shop'] = Shop.objects.get(id=shop_id)
+            except Shop.DoesNotExist:
                 pass
         # 显式设置为在售，避免默认值或前端缺省导致的状态异常
         validated_data.setdefault('status', 'active')
@@ -204,7 +220,7 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'id', 'buyer', 'product', 'product_id', 'total_price', 'status',
-            'shipping_address', 'shipping_name', 'shipping_phone', 'note',
+            'shipping_address', 'shipping_name', 'shipping_phone', 'carrier', 'tracking_number', 'shipped_at', 'delivered_at', 'note',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['buyer', 'total_price', 'status', 'created_at', 'updated_at']
@@ -348,14 +364,16 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
     """官方验货商品序列化器"""
     seller = UserSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
+    shop = ShopSerializer(read_only=True)
     category_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    shop_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     images = VerifiedProductImageSerializer(many=True, read_only=True)
     is_favorited = serializers.SerializerMethodField()
 
     class Meta:
         model = VerifiedProduct
         fields = [
-            'id', 'seller', 'category', 'category_id', 'title', 'description',
+            'id', 'seller', 'category', 'category_id', 'shop', 'shop_id', 'title', 'description',
             'price', 'original_price', 'condition', 'status', 'location',
             'contact_phone', 'contact_wechat', 'brand', 'model', 'storage',
             'screen_size', 'battery_health', 'charging_type', 'verified_at',
@@ -372,10 +390,16 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         category_id = validated_data.pop('category_id', None)
+        shop_id = validated_data.pop('shop_id', None)
         if category_id:
             try:
                 validated_data['category'] = Category.objects.get(id=category_id)
             except Category.DoesNotExist:
+                pass
+        if shop_id:
+            try:
+                validated_data['shop'] = Shop.objects.get(id=shop_id)
+            except Shop.DoesNotExist:
                 pass
         validated_data.setdefault('status', 'active')
         validated_data['seller'] = self.context['request'].user
@@ -392,7 +416,7 @@ class VerifiedOrderSerializer(serializers.ModelSerializer):
         model = VerifiedOrder
         fields = [
             'id', 'buyer', 'product', 'product_id', 'total_price', 'status',
-            'shipping_address', 'shipping_name', 'shipping_phone', 'note',
+            'shipping_address', 'shipping_name', 'shipping_phone', 'carrier', 'tracking_number', 'shipped_at', 'delivered_at', 'note',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['buyer', 'total_price', 'status', 'created_at', 'updated_at']

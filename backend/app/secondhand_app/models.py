@@ -19,6 +19,27 @@ class Category(models.Model):
         return self.name
 
 
+class Shop(models.Model):
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shops', verbose_name='店主')
+    name = models.CharField(max_length=100, verbose_name='店铺名称')
+    description = models.TextField(blank=True, verbose_name='店铺描述')
+    logo = models.ImageField(upload_to='shops/', null=True, blank=True, verbose_name='店铺Logo')
+    address = models.CharField(max_length=200, blank=True, verbose_name='店铺地址')
+    contact_phone = models.CharField(max_length=20, blank=True, verbose_name='联系电话')
+    status = models.CharField(max_length=20, choices=[('active','正常'),('suspended','停用'),('closed','关闭')], default='active', verbose_name='状态')
+    rating = models.DecimalField(max_digits=3, decimal_places=2, default=0, verbose_name='评分')
+    is_verified = models.BooleanField(default=False, verbose_name='已认证')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        verbose_name = '店铺'
+        verbose_name_plural = '店铺'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.name
+
 class Product(models.Model):
     """商品"""
     STATUS_CHOICES = [
@@ -29,6 +50,7 @@ class Product(models.Model):
     ]
 
     seller = models.ForeignKey(User, on_delete=models.CASCADE, related_name='products', verbose_name='卖家')
+    shop = models.ForeignKey('Shop', on_delete=models.SET_NULL, null=True, blank=True, related_name='products', verbose_name='店铺')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='products', verbose_name='分类')
     title = models.CharField(max_length=200, verbose_name='商品标题')
     description = models.TextField(verbose_name='商品描述')
@@ -91,6 +113,10 @@ class Order(models.Model):
     shipping_address = models.TextField(verbose_name='收货地址')
     shipping_name = models.CharField(max_length=50, verbose_name='收货人姓名')
     shipping_phone = models.CharField(max_length=20, verbose_name='收货人电话')
+    carrier = models.CharField(max_length=50, blank=True, verbose_name='物流承运商')
+    tracking_number = models.CharField(max_length=100, blank=True, verbose_name='物流单号')
+    shipped_at = models.DateTimeField(null=True, blank=True, verbose_name='发货时间')
+    delivered_at = models.DateTimeField(null=True, blank=True, verbose_name='签收时间')
     note = models.TextField(blank=True, verbose_name='备注')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
@@ -237,6 +263,7 @@ class VerifiedProduct(models.Model):
     ]
 
     seller = models.ForeignKey(User, on_delete=models.CASCADE, related_name='verified_products', verbose_name='卖家')
+    shop = models.ForeignKey('Shop', on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_products', verbose_name='店铺')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='verified_products', verbose_name='分类')
     title = models.CharField(max_length=200, verbose_name='商品标题')
     description = models.TextField(verbose_name='商品描述')
@@ -305,6 +332,10 @@ class VerifiedOrder(models.Model):
     shipping_address = models.TextField(verbose_name='收货地址')
     shipping_name = models.CharField(max_length=50, verbose_name='收货人姓名')
     shipping_phone = models.CharField(max_length=20, verbose_name='收货人电话')
+    carrier = models.CharField(max_length=50, blank=True, verbose_name='物流承运商')
+    tracking_number = models.CharField(max_length=100, blank=True, verbose_name='物流单号')
+    shipped_at = models.DateTimeField(null=True, blank=True, verbose_name='发货时间')
+    delivered_at = models.DateTimeField(null=True, blank=True, verbose_name='签收时间')
     note = models.TextField(blank=True, verbose_name='备注')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')

@@ -35,8 +35,15 @@ export const useAuthStore = defineStore('auth', () => {
       const token = response.data.token
       localStorage.setItem('token', token)
       
-      user.value = response.data.user
-      localStorage.setItem('user', JSON.stringify(response.data.user))
+      // 登录后拉取最新的用户资料，确保路由守卫与页面状态正确
+      try {
+        const me = await api.get('/users/me/')
+        user.value = me.data
+        localStorage.setItem('user', JSON.stringify(me.data))
+      } catch {
+        user.value = response.data.user
+        localStorage.setItem('user', JSON.stringify(response.data.user))
+      }
       
       return { success: true }
     } catch (error) {
@@ -150,7 +157,6 @@ export const useAuthStore = defineStore('auth', () => {
     logout
   }
 })
-
 
 
 

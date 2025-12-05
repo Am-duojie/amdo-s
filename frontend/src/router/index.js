@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useAdminAuthStore } from '@/stores/adminAuth'
 
 const routes = [
   {
@@ -104,6 +105,40 @@ const routes = [
     meta: { requiresAuth: true, theme: 'blue', hideSearch: false, verifiedMode: true }
   },
   {
+    path: '/admin',
+    component: () => import('@/admin/layout/AdminLayout.vue'),
+    meta: { hideSearch: true, admin: true },
+    children: [
+      { path: 'login', name: 'AdminLogin', component: () => import('@/admin/pages/AdminLogin.vue'), meta: { hideSearch: true, adminPublic: true } },
+      { path: 'dashboard', name: 'AdminDashboard', component: () => import('@/admin/pages/AdminDashboard.vue'), meta: { requiresAdminAuth: true, hideSearch: true } },
+      // 回收业务
+      { path: 'recycle-orders', name: 'RecycleOrderManagement', component: () => import('@/admin/pages/RecycleOrderManagement.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'inspection-orders', name: 'InspectionOrders', component: () => import('@/admin/pages/InspectionOrders.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'inspection-orders/:id', name: 'InspectionOrderDetail', component: () => import('@/admin/pages/InspectionOrderDetail.vue'), meta: { requiresAdminAuth: true } },
+      // 官方验业务
+      { path: 'verified-products', name: 'VerifiedProductManagement', component: () => import('@/admin/pages/VerifiedProductManagement.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'verified-orders', name: 'VerifiedOrderManagement', component: () => import('@/admin/pages/VerifiedOrderManagement.vue'), meta: { requiresAdminAuth: true } },
+      // 兼容旧路由
+      { path: 'recycled-products', name: 'RecycledProductsAdmin', component: () => import('@/admin/pages/RecycledProducts.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'verified-listings', name: 'VerifiedListingsAdmin', component: () => import('@/admin/pages/VerifiedListings.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'audit-queue', name: 'AuditQueueAdmin', component: () => import('@/admin/pages/AuditQueue.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'audit-logs', name: 'AuditLogsAdmin', component: () => import('@/admin/pages/AuditLogs.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'users', name: 'AdminUsers', component: () => import('@/admin/pages/Users.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'roles', name: 'AdminRoles', component: () => import('@/admin/pages/Roles.vue'), meta: { requiresAdminAuth: true } },
+      // 易淘业务
+      { path: 'secondhand-orders', name: 'SecondHandOrderManagement', component: () => import('@/admin/pages/SecondHandOrderManagement.vue'), meta: { requiresAdminAuth: true } },
+      // 兼容旧路由
+      { path: 'payments', name: 'AdminPayments', component: () => import('@/admin/pages/Payments.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'verified-orders-old', name: 'AdminVerifiedOrders', component: () => import('@/admin/pages/VerifiedOrdersAdmin.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'shops', name: 'AdminShops', component: () => import('@/admin/pages/Shops.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'categories', name: 'AdminCategories', component: () => import('@/admin/pages/Categories.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'products', name: 'AdminProducts', component: () => import('@/admin/pages/Products.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'frontend-users', name: 'AdminFrontendUsers', component: () => import('@/admin/pages/FrontendUsers.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'messages', name: 'AdminMessages', component: () => import('@/admin/pages/Messages.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'addresses', name: 'AdminAddresses', component: () => import('@/admin/pages/Addresses.vue'), meta: { requiresAdminAuth: true } },
+    ]
+  },
+  {
     path: '/verified-order/:id',
     name: 'VerifiedOrderDetail',
     component: () => import('@/pages/VerifiedOrderDetail.vue'),
@@ -125,15 +160,18 @@ router.beforeEach((to, from, next) => {
   const authStore = useAuthStore()
   if (to.meta.requiresAuth && !authStore.user) {
     next({ name: 'Login' })
+  } else if (to.matched.some(r => r.meta.requiresAdminAuth)) {
+    const admin = useAdminAuthStore()
+    if (!admin.isAuthed) {
+      next({ name: 'AdminLogin' })
+    } else {
+      next()
+    }
   } else {
     next()
   }
 })
 
 export default router
-
-
-
-
 
 

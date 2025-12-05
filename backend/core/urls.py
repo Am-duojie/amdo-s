@@ -37,6 +37,7 @@ urlpatterns = [
     path('', api_root, name='api_root'),
     path('admin/', admin.site.urls),
     path('api/', include(router.urls)),
+    path('admin-api/', include('app.admin_api.urls')),
     # 保留原有的token认证端点
     path('api/auth/login/', obtain_auth_token, name='api_token_auth'),
     # 易支付相关路由

@@ -4,6 +4,8 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-secondhand-platform-secret-key-2024'
+ADMIN_JWT_SECRET = os.getenv('ADMIN_JWT_SECRET', SECRET_KEY)
+ADMIN_JWT_EXPIRE_DAYS = int(os.getenv('ADMIN_JWT_EXPIRE_DAYS', '7'))
 
 DEBUG = True  # 开发模式
 ALLOWED_HOSTS = ['*']
@@ -21,6 +23,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'channels',
     'app.secondhand_app',
+    'app.admin_api',
 ]
 
 MIDDLEWARE = [

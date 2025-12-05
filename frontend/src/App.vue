@@ -1,7 +1,7 @@
 <template>
   <div class="app-wrapper">
-    <PageHeader :hideSearch="hideSearch" :theme="theme" :verifiedMode="verifiedMode" />
-    <SidebarQuickActions />
+    <PageHeader v-if="!isAdmin" :hideSearch="hideSearch" :theme="theme" :verifiedMode="verifiedMode" />
+    <SidebarQuickActions v-if="!isAdmin" />
     <el-main class="main-content">
       <router-view />
     </el-main>
@@ -18,6 +18,7 @@ const route = useRoute()
 const hideSearch = computed(() => route.meta?.hideSearch === true)
 const theme = computed(() => (route.meta?.theme === 'blue' ? 'blue' : 'yellow'))
 const verifiedMode = computed(() => route.meta?.verifiedMode === true)
+const isAdmin = computed(() => route.matched?.some(r => r.meta && r.meta.admin) === true)
 </script>
 
 <style scoped>

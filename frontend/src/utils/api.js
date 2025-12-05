@@ -6,8 +6,8 @@ import ErrorHandler from './errorHandler'
 // 生产环境: http://你的服务器IP:8000/api 或 https://你的域名/api
 /** @type {string} */
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
-
-console.log('API基础地址:', API_BASE_URL)
+const API_DEBUG = (import.meta.env.VITE_API_DEBUG === 'true') || import.meta.env.DEV || (typeof localStorage !== 'undefined' && localStorage.getItem('DEBUG_API') === 'true')
+if (API_DEBUG) console.log('API基础地址:', API_BASE_URL)
 
 /** @type {import('axios').AxiosInstance} */
 const api = axios.create({
@@ -21,7 +21,7 @@ const api = axios.create({
 // 请求拦截器 - 添加token
 api.interceptors.request.use(
   (config) => {
-    console.log('API请求:', config.method?.toUpperCase(), config.url, config.data)
+    if (API_DEBUG) console.log('API请求:', config.method?.toUpperCase(), config.url, config.data)
     const token = localStorage.getItem('token')
     if (token) {
       config.headers.Authorization = `Token ${token}`
@@ -29,7 +29,7 @@ api.interceptors.request.use(
     return config
   },
   (error) => {
-    console.error('请求拦截器错误:', error)
+    if (API_DEBUG) console.error('请求拦截器错误:', error)
     return Promise.reject(error)
   }
 )
@@ -37,15 +37,19 @@ api.interceptors.request.use(
 // 响应拦截器 - 处理错误
 api.interceptors.response.use(
   (response) => {
-    console.log('API响应:', response.status, response.config.url, response.data)
+    if (API_DEBUG) console.log('API响应:', response.status, response.config.url, response.data)
     return response
   },
   (error) => {
-    console.error('API错误:', error)
-    
-    // 处理401未授权错误
-    if (error.response?.status === 401) {
-      ErrorHandler.handleLogout()
+    if (API_DEBUG) console.error('API错误:', error)
+    const status = error.response?.status
+    const url = error.response?.config?.url || ''
+    // 登录/注册等接口返回401时不要强制登出，交由页面显示错误
+    if (status === 401) {
+      const isAuthEndpoint = url.includes('/users/login/') || url.includes('/users/register/') || url.includes('/users/check_username/') || url.includes('/users/check_email/')
+      if (!isAuthEndpoint) {
+        ErrorHandler.handleLogout()
+      }
     }
     
     return Promise.reject(error)
