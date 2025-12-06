@@ -272,7 +272,11 @@ ALIPAY_PUBLIC_KEY = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjvYXLvwQOhTEtpu
 
 # 前后端URL配置（用于动态构建回调地址）
 FRONTEND_URL = 'http://localhost:5173'  # 前端地址
-BACKEND_URL = 'http://127.0.0.1:8000'  # 后端地址
+# 使用 ngrok 内网穿透地址（从 ngrok 启动信息中获取）
+BACKEND_URL = 'https://hypochondriacally-nondiscretionary-kylie.ngrok-free.dev'  # ngrok 公网地址
+# 注意：每次重启 ngrok，地址可能会变化，需要更新此配置
+# 本地地址（不使用 ngrok 时）：
+# BACKEND_URL = 'http://127.0.0.1:8000'
 
 # 回调地址配置（会在代码中动态构建）
 # 注意：

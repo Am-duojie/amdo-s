@@ -528,6 +528,8 @@ Authorization: Bearer <token>
 - 使用内网穿透工具（如 ngrok、natapp）
 - 或先跳过异步通知，仅测试支付页面跳转
 
+**详细说明**：参考 `INTRANET_PENETRATION_GUIDE.md` 了解各种内网穿透方案的配置方法
+
 ### 3. 支付页面无法打开
 
 **可能原因**：
