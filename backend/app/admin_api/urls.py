@@ -17,6 +17,7 @@ urlpatterns = [
     path('inspection-orders/<int:order_id>/report', InspectionOrderDetailView.as_view()),
     path('inspection-orders/<int:order_id>/logistics', InspectionOrderLogisticsView.as_view()),
     path('inspection-orders/<int:order_id>/price', InspectionOrderPriceView.as_view()),
+    path('inspection-orders/<int:order_id>/received', InspectionOrderLogisticsView.as_view()),
     path('inspection-orders/<int:order_id>/payment', InspectionOrderPaymentView.as_view()),
     path('inspection-orders/<int:order_id>/publish-verified', InspectionOrderPublishVerifiedView.as_view()),
     path('inspection-orders/batch-update', InspectionOrdersBatchUpdateView.as_view()),

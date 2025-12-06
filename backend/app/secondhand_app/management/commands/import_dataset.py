@@ -186,18 +186,18 @@ class Command(BaseCommand):
                         # 检查是否是图片类型
                         content_type = resp.headers.get('content-type', '').lower()
                         if 'image' in content_type or img_url.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif')):
-                        base = safe_filename(title[:30] or "product")
-                        fname = f"{base}-{int(time.time()*1000)}-{idx_img}.jpg"
-                        image_file = ContentFile(resp.content, name=fname)
-                        ProductImage.objects.create(product=product, image=image_file, is_primary=(idx_img == 0))
+                            base = safe_filename(title[:30] or "product")
+                            fname = f"{base}-{int(time.time()*1000)}-{idx_img}.jpg"
+                            image_file = ContentFile(resp.content, name=fname)
+                            ProductImage.objects.create(product=product, image=image_file, is_primary=(idx_img == 0))
                             downloaded_images += 1
                 except Exception as e:
                     continue
 
             # 如果没有成功下载任何图片，删除该商品
-            if downloaded_images == 0:
-                product.delete()
-                return
+            # if downloaded_images == 0:
+            #     product.delete()
+            #     return
 
             created_count += 1
 

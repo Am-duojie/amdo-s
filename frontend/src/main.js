@@ -7,6 +7,7 @@ import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import App from './App.vue'
 import router from './router'
 import { useAuthStore } from './stores/auth'
+import { useAdminAuthStore } from './stores/adminAuth'
 import './index.css'
 import './styles/theme.css'
 import './styles/xianyu.css'
@@ -31,6 +32,10 @@ app.use(router)
 // 初始化认证状态
 const authStore = useAuthStore()
 authStore.init()
+
+// 初始化后台管理认证状态
+const adminAuthStore = useAdminAuthStore()
+adminAuthStore.init()
 
 app.mount('#app')
 

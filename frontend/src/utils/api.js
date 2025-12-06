@@ -24,7 +24,7 @@ api.interceptors.request.use(
     if (API_DEBUG) console.log('API请求:', config.method?.toUpperCase(), config.url, config.data)
     const token = localStorage.getItem('token')
     if (token) {
-      config.headers.Authorization = `Token ${token}`
+      config.headers.Authorization = `Bearer ${token}`
     }
     return config
   },
@@ -46,9 +46,17 @@ api.interceptors.response.use(
     const url = error.response?.config?.url || ''
     // 登录/注册等接口返回401时不要强制登出，交由页面显示错误
     if (status === 401) {
-      const isAuthEndpoint = url.includes('/users/login/') || url.includes('/users/register/') || url.includes('/users/check_username/') || url.includes('/users/check_email/')
+      const isAuthEndpoint = url.includes('/auth/login/') || url.includes('/users/register/') || url.includes('/users/check_username/') || url.includes('/users/check_email/')
       if (!isAuthEndpoint) {
-        ErrorHandler.handleLogout()
+        // 尝试刷新token
+        const refreshToken = localStorage.getItem('refreshToken')
+        if (refreshToken) {
+           // 这里可以添加自动刷新Token的逻辑
+           // 暂时先强制登出
+           ErrorHandler.handleLogout()
+        } else {
+           ErrorHandler.handleLogout()
+        }
       }
     }
     

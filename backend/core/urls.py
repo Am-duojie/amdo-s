@@ -5,8 +5,10 @@ from django.conf.urls.static import static
 from django.http import JsonResponse
 from rest_framework.routers import DefaultRouter
 from rest_framework.authtoken.views import obtain_auth_token
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from app.secondhand_app import views
 from app.secondhand_app import payment_views
+from app.secondhand_app.jwt import CustomTokenObtainPairView
 
 router = DefaultRouter()
 router.register(r'users', views.UserViewSet, basename='user')
@@ -38,15 +40,14 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include(router.urls)),
     path('admin-api/', include('app.admin_api.urls')),
-    # 保留原有的token认证端点
-    path('api/auth/login/', obtain_auth_token, name='api_token_auth'),
-    # 易支付相关路由
+    # 使用SimpleJWT进行认证
+    path('api/auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    # 支付相关路由（支付宝沙箱支付）
     path('api/payment/create/', payment_views.create_payment, name='create_payment'),
     path('api/payment/create-url/', payment_views.create_payment_url, name='create_payment_url'),
-    path('api/payment/notify/', payment_views.payment_notify, name='payment_notify'),
     path('api/payment/query/<int:order_id>/', payment_views.query_payment, name='query_payment'),
-    path('api/payment/refund/<int:order_id>/', payment_views.refund_payment, name='refund_payment'),
-    path('api/payment/demo-complete/<int:order_id>/', payment_views.demo_complete_payment, name='demo_complete_payment'),
+    path('api/payment/alipay/notify/', payment_views.alipay_payment_notify, name='alipay_payment_notify'),
 ]
 
 # 开发环境下的媒体文件服务

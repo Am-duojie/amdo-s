@@ -388,7 +388,10 @@
         <div class="content-section" v-if="activeMenu === 'recycle'">
           <div class="section-header">
             <h2 class="section-title">回收订单</h2>
-            <el-button type="primary" @click="goToRecycle">创建回收订单</el-button>
+            <div style="display: flex; gap: 12px;">
+              <el-button @click="goToMyRecycleOrders">查看全部订单</el-button>
+              <el-button type="primary" @click="goToRecycle">创建回收订单</el-button>
+            </div>
           </div>
           <div class="recycle-orders-list" v-loading="loading">
             <div v-if="recycleOrders.length === 0" class="empty-state">
@@ -907,11 +910,16 @@ const goToRecycle = () => {
   router.push('/recycle')
 }
 
+const goToMyRecycleOrders = () => {
+  router.push('/my-recycle-orders')
+}
+
 const goToMainProfile = () => {
   router.push('/profile')
 }
 
 const viewRecycleDetail = (id) => {
+  router.push(`/recycle-order/${id}`)
   router.push(`/recycle-order/${id}`)
 }
 

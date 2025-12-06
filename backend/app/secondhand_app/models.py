@@ -235,6 +235,34 @@ class RecycleOrder(models.Model):
     contact_phone = models.CharField(max_length=20, verbose_name='联系电话')
     address = models.TextField(verbose_name='收货地址')
     note = models.TextField(blank=True, verbose_name='备注')
+    
+    # 物流信息
+    shipping_carrier = models.CharField(max_length=50, blank=True, null=True, verbose_name='物流公司')
+    tracking_number = models.CharField(max_length=100, blank=True, null=True, verbose_name='运单号')
+    shipped_at = models.DateTimeField(null=True, blank=True, verbose_name='寄出时间')
+    received_at = models.DateTimeField(null=True, blank=True, verbose_name='收到时间')
+    
+    # 质检信息
+    inspected_at = models.DateTimeField(null=True, blank=True, verbose_name='质检时间')
+    
+    # 打款信息
+    payment_status = models.CharField(max_length=20, choices=[
+        ('pending', '待打款'),
+        ('paid', '已打款'),
+        ('failed', '打款失败')
+    ], default='pending', verbose_name='打款状态')
+    payment_method = models.CharField(max_length=50, blank=True, null=True, verbose_name='打款方式')
+    payment_account = models.CharField(max_length=200, blank=True, null=True, verbose_name='打款账户')
+    paid_at = models.DateTimeField(null=True, blank=True, verbose_name='打款时间')
+    payment_note = models.TextField(blank=True, null=True, verbose_name='打款备注')
+    
+    # 价格异议
+    price_dispute = models.BooleanField(default=False, verbose_name='价格异议')
+    price_dispute_reason = models.TextField(blank=True, null=True, verbose_name='价格异议原因')
+    
+    # 拒绝/取消原因
+    reject_reason = models.TextField(blank=True, null=True, verbose_name='拒绝原因')
+    
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
 

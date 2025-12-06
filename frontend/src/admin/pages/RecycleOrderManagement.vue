@@ -3,7 +3,7 @@
     <div class="page-header">
       <h2>回收订单管理</h2>
       <div class="header-actions">
-        <el-select v-model="statusFilter" placeholder="筛选状态" style="width: 150px" clearable>
+        <el-select v-model="statusFilter" placeholder="筛选状态" style="width: 150px" clearable @change="loadOrders">
           <el-option label="全部" value="" />
           <el-option label="待估价" value="pending" />
           <el-option label="已估价" value="quoted" />
@@ -11,11 +11,12 @@
           <el-option label="已寄出" value="shipped" />
           <el-option label="已检测" value="inspected" />
           <el-option label="已完成" value="completed" />
+          <el-option label="已打款" value="paid" />
           <el-option label="已取消" value="cancelled" />
         </el-select>
         <el-input
           v-model="search"
-          placeholder="搜索用户、品牌、型号"
+          placeholder="搜索订单号、用户、品牌、型号"
           style="width: 250px; margin-left: 12px"
           clearable
           @keyup.enter="loadOrders"
@@ -24,14 +25,39 @@
       </div>
     </div>
 
+    <!-- 统计卡片 -->
+    <div class="stats-cards">
+      <el-card class="stat-card">
+        <div class="stat-value">{{ stats.pending }}</div>
+        <div class="stat-label">待估价</div>
+      </el-card>
+      <el-card class="stat-card">
+        <div class="stat-value">{{ stats.shipped }}</div>
+        <div class="stat-label">待质检</div>
+      </el-card>
+      <el-card class="stat-card">
+        <div class="stat-value">{{ stats.inspected }}</div>
+        <div class="stat-label">待打款</div>
+      </el-card>
+      <el-card class="stat-card">
+        <div class="stat-value">{{ stats.completed }}</div>
+        <div class="stat-label">已完成</div>
+      </el-card>
+    </div>
+
     <el-table 
       :data="orders" 
       style="width: 100%" 
       v-loading="loading"
       @selection-change="handleSelectionChange"
+      stripe
     >
       <el-table-column type="selection" width="55" />
-      <el-table-column prop="id" label="订单号" width="100" />
+      <el-table-column prop="id" label="订单号" width="100" fixed="left">
+        <template #default="{ row }">
+          <el-link type="primary" @click="viewDetail(row)">#{{ row.id }}</el-link>
+        </template>
+      </el-table-column>
       <el-table-column label="用户" width="120">
         <template #default="{ row }">
           {{ row.user?.username || '-' }}
@@ -39,42 +65,75 @@
       </el-table-column>
       <el-table-column label="设备信息" min-width="200">
         <template #default="{ row }">
-          <div>{{ row.device_type }}</div>
-          <div style="color: #666; font-size: 12px">{{ row.brand }} {{ row.model }}</div>
+          <div style="font-weight: 500">{{ row.device_type }}</div>
+          <div style="color: #666; font-size: 12px; margin-top: 4px">
+            {{ row.brand }} {{ row.model }}
+          </div>
           <div v-if="row.storage" style="color: #999; font-size: 12px">{{ row.storage }}</div>
         </template>
       </el-table-column>
       <el-table-column prop="condition" label="成色" width="100">
         <template #default="{ row }">
-          <el-tag size="small">{{ getConditionText(row.condition) }}</el-tag>
+          <el-tag size="small" :type="getConditionType(row.condition)">
+            {{ getConditionText(row.condition) }}
+          </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="价格" width="150">
+      <el-table-column label="价格" width="180">
         <template #default="{ row }">
-          <div v-if="row.final_price">
-            <div style="font-weight: bold; color: #f56c6c">最终: ¥{{ row.final_price }}</div>
+          <div v-if="row.final_price" style="font-weight: bold; color: #f56c6c; font-size: 14px">
+            最终: ¥{{ row.final_price }}
+            <span v-if="row.bonus > 0" style="color: #67c23a; font-size: 12px">(+¥{{ row.bonus }})</span>
           </div>
-          <div v-if="row.estimated_price" style="color: #909399; font-size: 12px">
+          <div v-else-if="row.estimated_price" style="color: #909399; font-size: 13px">
             预估: ¥{{ row.estimated_price }}
           </div>
+          <span v-else style="color: #c0c4cc">-</span>
         </template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="120">
         <template #default="{ row }">
-          <el-tag :type="getStatusType(row.status)">{{ getStatusText(row.status) }}</el-tag>
+          <el-tag :type="getStatusType(row.status)" size="small">
+            {{ getStatusText(row.status) }}
+          </el-tag>
+          <el-tag v-if="row.payment_status === 'paid'" type="success" size="small" style="margin-left: 4px">
+            已打款
+          </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" width="180" />
+      <el-table-column label="流程进度" min-width="200">
+        <template #default="{ row }">
+          <div class="process-steps">
+            <div 
+              v-for="(step, index) in processSteps" 
+              :key="step.value"
+              class="process-step"
+              :class="{ 
+                'active': isStepActive(row, step.value),
+                'completed': isStepCompleted(row, step.value)
+              }"
+            >
+              <div class="step-dot"></div>
+              <div class="step-label">{{ step.label }}</div>
+            </div>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column prop="created_at" label="创建时间" width="180">
+        <template #default="{ row }">
+          {{ formatTime(row.created_at) }}
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="viewDetail(row)">详情</el-button>
           <el-button
-            v-if="canInspect(row)"
+            v-if="canOperate(row)"
             size="small"
             type="primary"
-            @click="startInspection(row)"
+            @click="viewDetail(row)"
           >
-            开始质检
+            {{ getActionText(row) }}
           </el-button>
         </template>
       </el-table-column>
@@ -105,13 +164,6 @@
         >
           批量标记为已估价
         </el-button>
-        <el-button
-          v-if="hasPerm('inspection:write')"
-          type="success"
-          @click="batchUpdateStatus(selectedItems, 'inspected')"
-        >
-          批量标记为已检测
-        </el-button>
       </template>
     </BatchActions>
 
@@ -119,8 +171,9 @@
     <el-dialog
       v-model="detailDialogVisible"
       title="回收订单详情"
-      width="900px"
+      width="1200px"
       @close="closeDetailDialog"
+      destroy-on-close
     >
       <RecycleOrderDetail
         v-if="currentOrder"
@@ -134,7 +187,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import adminApi from '@/utils/adminApi'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import RecycleOrderDetail from './components/RecycleOrderDetail.vue'
 import BatchActions from './components/BatchActions.vue'
 import { useAdminAuthStore } from '@/stores/adminAuth'
@@ -150,6 +203,12 @@ const statusFilter = ref('')
 const pagination = ref({ current: 1, pageSize: 20, total: 0 })
 const detailDialogVisible = ref(false)
 const currentOrder = ref(null)
+const stats = ref({
+  pending: 0,
+  shipped: 0,
+  inspected: 0,
+  completed: 0
+})
 
 const statusMap = {
   pending: { text: '待估价', type: 'info' },
@@ -158,23 +217,54 @@ const statusMap = {
   shipped: { text: '已寄出', type: 'primary' },
   inspected: { text: '已检测', type: 'success' },
   completed: { text: '已完成', type: 'success' },
+  paid: { text: '已打款', type: 'success' },
   cancelled: { text: '已取消', type: 'info' }
 }
 
 const conditionMap = {
-  new: '全新',
-  like_new: '几乎全新',
-  good: '良好',
-  fair: '一般',
-  poor: '较差'
+  new: { text: '全新', type: 'success' },
+  like_new: { text: '几乎全新', type: 'success' },
+  good: { text: '良好', type: 'primary' },
+  fair: { text: '一般', type: 'warning' },
+  poor: { text: '较差', type: 'danger' }
 }
+
+// 流程步骤
+const processSteps = [
+  { label: '提交订单', value: 'pending' },
+  { label: '已估价', value: 'quoted' },
+  { label: '已确认', value: 'confirmed' },
+  { label: '已寄出', value: 'shipped' },
+  { label: '已检测', value: 'inspected' },
+  { label: '已完成', value: 'completed' },
+  { label: '已打款', value: 'paid' }
+]
 
 const getStatusText = (status) => statusMap[status]?.text || status
 const getStatusType = (status) => statusMap[status]?.type || 'info'
-const getConditionText = (condition) => conditionMap[condition] || condition
+const getConditionText = (condition) => conditionMap[condition]?.text || condition
+const getConditionType = (condition) => conditionMap[condition]?.type || 'info'
 
-const canInspect = (row) => {
-  return row.status === 'shipped' || row.status === 'confirmed'
+const isStepCompleted = (row, stepValue) => {
+  const stepIndex = processSteps.findIndex(s => s.value === stepValue)
+  const currentIndex = processSteps.findIndex(s => s.value === row.status)
+  return currentIndex > stepIndex || (row.payment_status === 'paid' && stepValue === 'paid')
+}
+
+const isStepActive = (row, stepValue) => {
+  return row.status === stepValue || (row.payment_status === 'paid' && stepValue === 'paid')
+}
+
+const canOperate = (row) => {
+  return ['pending', 'shipped', 'confirmed', 'inspected', 'completed'].includes(row.status)
+}
+
+const getActionText = (row) => {
+  if (row.status === 'pending') return '估价'
+  if (row.status === 'shipped' || row.status === 'confirmed') return '质检'
+  if (row.status === 'inspected') return '完成订单'
+  if (row.status === 'completed' && row.payment_status !== 'paid') return '打款'
+  return '处理'
 }
 
 const loadOrders = async () => {
@@ -193,10 +283,35 @@ const loadOrders = async () => {
     const res = await adminApi.get('/inspection-orders', { params })
     orders.value = res.data?.results || []
     pagination.value.total = res.data?.count || 0
+    
+    // 加载统计信息
+    await loadStats()
   } catch (error) {
     ElMessage.error('加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+const loadStats = async () => {
+  try {
+    const res = await adminApi.get('/inspection-orders', { params: { page_size: 1 } })
+    // 这里可以单独调用统计接口，或者从列表数据中统计
+    // 简化处理：分别请求各状态的数量
+    const [pendingRes, shippedRes, inspectedRes, completedRes] = await Promise.all([
+      adminApi.get('/inspection-orders', { params: { status: 'pending', page_size: 1 } }),
+      adminApi.get('/inspection-orders', { params: { status: 'shipped', page_size: 1 } }),
+      adminApi.get('/inspection-orders', { params: { status: 'inspected', page_size: 1 } }),
+      adminApi.get('/inspection-orders', { params: { status: 'completed', page_size: 1 } })
+    ])
+    stats.value = {
+      pending: pendingRes.data?.count || 0,
+      shipped: shippedRes.data?.count || 0,
+      inspected: inspectedRes.data?.count || 0,
+      completed: completedRes.data?.count || 0
+    }
+  } catch (error) {
+    console.error('加载统计失败', error)
   }
 }
 
@@ -210,11 +325,6 @@ const handleSizeChange = () => {
 }
 
 const viewDetail = (row) => {
-  currentOrder.value = row
-  detailDialogVisible.value = true
-}
-
-const startInspection = (row) => {
   currentOrder.value = row
   detailDialogVisible.value = true
 }
@@ -254,6 +364,11 @@ const batchUpdateStatus = async (items, newStatus) => {
   }
 }
 
+const formatTime = (time) => {
+  if (!time) return '-'
+  return new Date(time).toLocaleString('zh-CN')
+}
+
 onMounted(() => {
   loadOrders()
 })
@@ -281,5 +396,82 @@ onMounted(() => {
   display: flex;
   align-items: center;
 }
-</style>
 
+.stats-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: bold;
+  color: #409eff;
+  margin-bottom: 8px;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: #909399;
+}
+
+.process-steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.process-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  opacity: 0.4;
+}
+
+.process-step.completed {
+  opacity: 1;
+}
+
+.process-step.active {
+  opacity: 1;
+}
+
+.step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c0c4cc;
+  transition: all 0.3s;
+}
+
+.process-step.completed .step-dot {
+  background: #67c23a;
+}
+
+.process-step.active .step-dot {
+  background: #409eff;
+  width: 10px;
+  height: 10px;
+  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.2);
+}
+
+.step-label {
+  font-size: 11px;
+  color: #909399;
+  white-space: nowrap;
+}
+
+.process-step.completed .step-label,
+.process-step.active .step-label {
+  color: #303133;
+  font-weight: 500;
+}
+</style>

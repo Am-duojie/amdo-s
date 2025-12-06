@@ -93,6 +93,18 @@ const routes = [
     meta: { theme: 'yellow', hideSearch: false }
   },
   {
+    path: '/my-recycle-orders',
+    name: 'MyRecycleOrders',
+    component: () => import('@/pages/MyRecycleOrders.vue'),
+    meta: { requiresAuth: true, theme: 'yellow', hideSearch: false }
+  },
+  {
+    path: '/recycle-order/:id',
+    name: 'RecycleOrderDetail',
+    component: () => import('@/pages/RecycleOrderDetail.vue'),
+    meta: { requiresAuth: true, theme: 'yellow', hideSearch: false }
+  },
+  {
     path: '/verified-products',
     name: 'VerifiedProducts',
     component: () => import('@/pages/VerifiedProducts.vue'),
@@ -105,11 +117,16 @@ const routes = [
     meta: { requiresAuth: true, theme: 'blue', hideSearch: false, verifiedMode: true }
   },
   {
+    path: '/admin/login',
+    name: 'AdminLogin',
+    component: () => import('@/admin/pages/AdminLogin.vue'),
+    meta: { hideSearch: true, adminPublic: true, admin: true }
+  },
+  {
     path: '/admin',
     component: () => import('@/admin/layout/AdminLayout.vue'),
     meta: { hideSearch: true, admin: true },
     children: [
-      { path: 'login', name: 'AdminLogin', component: () => import('@/admin/pages/AdminLogin.vue'), meta: { hideSearch: true, adminPublic: true } },
       { path: 'dashboard', name: 'AdminDashboard', component: () => import('@/admin/pages/AdminDashboard.vue'), meta: { requiresAdminAuth: true, hideSearch: true } },
       // 回收业务
       { path: 'recycle-orders', name: 'RecycleOrderManagement', component: () => import('@/admin/pages/RecycleOrderManagement.vue'), meta: { requiresAdminAuth: true } },
@@ -156,13 +173,65 @@ const router = createRouter({
   }
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
+  
+  // 等待认证状态初始化完成
+  if (authStore.loading) {
+    await new Promise(resolve => {
+      const unwatch = authStore.$subscribe(() => {
+        if (!authStore.loading) {
+          unwatch()
+          resolve()
+        }
+      })
+      // 防止无限等待
+      setTimeout(() => {
+        unwatch()
+        resolve()
+      }, 1000)
+    })
+  }
+  
   if (to.meta.requiresAuth && !authStore.user) {
     next({ name: 'Login' })
-  } else if (to.matched.some(r => r.meta.requiresAdminAuth)) {
+    return
+  }
+  
+  if (to.matched.some(r => r.meta.requiresAdminAuth)) {
     const admin = useAdminAuthStore()
-    if (!admin.isAuthed) {
+    
+    // 等待后台认证状态初始化完成
+    if (admin.loading) {
+      await new Promise(resolve => {
+        const unwatch = admin.$subscribe(() => {
+          if (!admin.loading) {
+            unwatch()
+            resolve()
+          }
+        })
+        // 防止无限等待
+        setTimeout(() => {
+          unwatch()
+          resolve()
+        }, 1000)
+      })
+    }
+    
+    // 检查登录状态
+    const token = localStorage.getItem('ADMIN_TOKEN')
+    const hasUser = !!admin.user
+    
+    if (!token || !hasUser) {
+      // 如果是从登录页跳转过来的，且已经有token，再等一会儿
+      if (from.name === 'AdminLogin' && token) {
+        await new Promise(resolve => setTimeout(resolve, 200))
+        // 再次检查
+        if (admin.isAuthed) {
+          next()
+          return
+        }
+      }
       next({ name: 'AdminLogin' })
     } else {
       next()

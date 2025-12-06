@@ -10,87 +10,89 @@ const adminApi = axios.create({
   timeout: 15000,
 })
 
+// 请求拦截器：添加token
 adminApi.interceptors.request.use((config) => {
+  // 确保headers对象存在
+  if (!config.headers) {
+    config.headers = {}
+  }
+  
   const token = localStorage.getItem('ADMIN_TOKEN')
-  if (token) config.headers.Authorization = `Bearer ${token}`
+  if (token && token.trim()) {
+    // 确保Authorization头被正确设置
+    config.headers.Authorization = `Bearer ${token.trim()}`
+    if (import.meta.env.DEV) {
+      console.log('[AdminApi] 请求拦截:', config.method?.toUpperCase(), config.url, 'Token:', token.substring(0, 20) + '...')
+    }
+  } else {
+    if (import.meta.env.DEV) {
+      console.warn('[AdminApi] 请求拦截: 没有Token', config.method?.toUpperCase(), config.url)
+    }
+  }
+  
   return config
+}, (error) => {
+  return Promise.reject(error)
 })
 
-let isRefreshing = false
-let refreshPromise = null
-
+// 响应拦截器：处理错误
 adminApi.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    return res
+  },
   async (error) => {
-    const resp = error?.response
+    const resp = error.response
     if (!resp) {
-      // 网络错误，尝试回退到默认基础地址重试一次
-      try {
-        const cfg = error.config || {}
-        if ((ADMIN_API_BASE_URL !== DEFAULT_ADMIN_API_BASE) && !cfg.__retriedWithFallback) {
-          const retry = axios.create({ baseURL: DEFAULT_ADMIN_API_BASE, headers: cfg.headers || { 'Content-Type': 'application/json' } })
-          const token = localStorage.getItem('ADMIN_TOKEN')
-          if (token) retry.defaults.headers.Authorization = `Bearer ${token}`
-          cfg.__retriedWithFallback = true
-          const method = (cfg.method || 'get').toLowerCase()
-          const url = cfg.url || '/'
-          const data = cfg.data
-          const params = cfg.params
-          const resp2 = await retry.request({ method, url, data, params })
-          try { localStorage.setItem('ADMIN_API_BASE', DEFAULT_ADMIN_API_BASE) } catch {}
-          return resp2
-        }
-      } catch (e) {
-        // ignore
+      // 网络错误
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        ElMessage.error('请求超时，请稍后重试')
+      } else {
+        ElMessage.error('网络错误：无法连接管理后台')
       }
-      ElMessage.error('网络错误：无法连接管理后台')
       return Promise.reject(error)
     }
+
+    // 401错误：登录过期
     if (resp.status === 401) {
       const url = error.config?.url || ''
-      // 登录/刷新接口返回401时不做刷新与重定向，交由页面处理
-      if (url.startsWith('/auth/')) {
+      // 登录接口返回401时不做处理，交由页面处理
+      if (url.startsWith('/auth/login')) {
         return Promise.reject(error)
       }
-      const refreshToken = localStorage.getItem('ADMIN_REFRESH_TOKEN')
-      if (!refreshToken) {
-        try { localStorage.removeItem('ADMIN_TOKEN'); localStorage.removeItem('ADMIN_REFRESH_TOKEN') } catch {}
-        location.href = '/admin/login'
-        return Promise.reject(error)
-      }
-      if (!isRefreshing) {
-        isRefreshing = true
-        refreshPromise = adminApi.post('/auth/refresh', { refresh_token: refreshToken })
-          .then(r => {
-            const nt = r.data?.token
-            if (nt) localStorage.setItem('ADMIN_TOKEN', nt)
-            return nt
-          })
-          .catch(() => {
-            try { localStorage.removeItem('ADMIN_TOKEN'); localStorage.removeItem('ADMIN_REFRESH_TOKEN') } catch {}
+      
+      // 检查当前是否在管理后台页面
+      const isAdminPage = location.pathname.startsWith('/admin') && location.pathname !== '/admin/login'
+      if (isAdminPage) {
+        // 清除token
+        try { 
+          localStorage.removeItem('ADMIN_TOKEN')
+          localStorage.removeItem('ADMIN_REFRESH_TOKEN')
+          localStorage.removeItem('ADMIN_USER')
+        } catch {}
+        
+        // 显示错误提示，但不立即跳转，让页面自己处理
+        const errorMsg = resp.data?.detail || '登录已过期，请重新登录'
+        ElMessage.error(errorMsg)
+        
+        // 延迟跳转，给用户看到错误提示的时间
+        setTimeout(() => {
+          if (location.pathname !== '/admin/login') {
             location.href = '/admin/login'
-            throw error
-          })
-          .finally(() => { isRefreshing = false })
+          }
+        }, 1500)
       }
-      try {
-        const nt = await refreshPromise
-        if (nt) {
-          const cfg = error.config
-          cfg.headers = cfg.headers || {}
-          cfg.headers.Authorization = `Bearer ${nt}`
-          return adminApi.request(cfg)
-        }
-      } catch (e) {
-        return Promise.reject(e)
-      }
+      return Promise.reject(error)
     }
-    const msg = resp.data?.detail || resp.data?.error || resp.statusText || '请求失败'
-    if (resp.status === 403) {
-      ElMessage.error('没有权限执行该操作')
-    } else {
-      ElMessage.error(`错误 ${resp.status}: ${msg}`)
+
+    // 其他错误
+    if (resp.status >= 500) {
+      ElMessage.error('服务器错误，请稍后重试')
+    } else if (resp.status === 403) {
+      ElMessage.error('没有权限执行此操作')
+    } else if (resp.status === 404) {
+      ElMessage.error('请求的资源不存在')
     }
+    
     return Promise.reject(error)
   }
 )

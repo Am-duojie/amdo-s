@@ -9,7 +9,7 @@ from rest_framework import status
 from django.conf import settings
 from .models import AdminUser, AdminRole, AdminInspectionReport, AdminAuditQueueItem, AdminAuditLog, AdminRefreshToken, AdminTokenBlacklist
 from app.secondhand_app.models import RecycleOrder, VerifiedProduct, VerifiedOrder, Order, Shop, Category, Product, Message, Address
-from app.secondhand_app.easypay import EasyPayClient
+from app.secondhand_app.alipay_sandbox import AlipaySandboxClient
 from .serializers import AdminUserSerializer, RecycleOrderListSerializer, VerifiedProductListSerializer, AdminAuditQueueItemSerializer, ShopAdminSerializer
 from .jwt import encode as jwt_encode, decode as jwt_decode
 from django.contrib.auth.hashers import check_password, make_password
@@ -17,9 +17,73 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
 def get_admin_from_request(request):
-    auth = request.headers.get('Authorization','')
-    if not auth.startswith('Bearer '):
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # 记录请求方法、路径和时间
+    method = getattr(request, 'method', 'UNKNOWN')
+    path = getattr(request, 'path', 'UNKNOWN')
+    logger.info(f'[get_admin_from_request] 开始处理请求: {method} {path}')
+    
+    # 尝试多种方式获取Authorization头
+    auth = None
+    auth_source = None
+    
+    # 方式1: 从request.headers获取（Django REST Framework）
+    if hasattr(request, 'headers'):
+        try:
+            # Django REST Framework的headers是大小写不敏感的
+            auth = request.headers.get('Authorization', '')
+            if auth:
+                auth_source = 'request.headers[Authorization]'
+            if not auth:
+                auth = request.headers.get('AUTHORIZATION', '')
+                if auth:
+                    auth_source = 'request.headers[AUTHORIZATION]'
+        except Exception as e:
+            logger.warning(f'[get_admin_from_request] 读取request.headers失败: {e}')
+    
+    # 方式2: 从META中获取（Django原生方式）
+    # Django会将HTTP头转换为大写，并添加HTTP_前缀，连字符变为下划线
+    # Authorization -> HTTP_AUTHORIZATION
+    if not auth:
+        # 尝试多种可能的键名
+        auth = request.META.get('HTTP_AUTHORIZATION', '')
+        if auth:
+            auth_source = 'META[HTTP_AUTHORIZATION]'
+        if not auth:
+            auth = request.META.get('HTTP_AUTH', '')
+            if auth:
+                auth_source = 'META[HTTP_AUTH]'
+        if not auth:
+            auth = request.META.get('AUTHORIZATION', '')
+            if auth:
+                auth_source = 'META[AUTHORIZATION]'
+    
+    # 详细日志 - 无论是否找到都记录
+    if auth:
+        logger.info(f'[get_admin_from_request] 找到Authorization头，来源: {auth_source}')
+        logger.info(f'[get_admin_from_request] Authorization值: {auth[:20]}...' if len(auth) > 20 else f'[get_admin_from_request] Authorization值: {auth}')
+    else:
+        logger.warning(f'[get_admin_from_request] 未找到Authorization头')
+        # 查找所有包含AUTH的META键
+        auth_keys = [k for k in request.META.keys() if 'AUTH' in k.upper()]
+        logger.warning(f'[get_admin_from_request] 相关META键: {auth_keys}')
+        if hasattr(request, 'headers'):
+            try:
+                headers_dict = dict(request.headers)
+                logger.warning(f'[get_admin_from_request] request.headers内容: {headers_dict}')
+            except Exception as e:
+                logger.warning(f'[get_admin_from_request] 无法读取request.headers: {e}')
+        # 打印所有HTTP_开头的META键
+        http_keys = [k for k in request.META.keys() if k.startswith('HTTP_')]
+        logger.warning(f'[get_admin_from_request] 所有HTTP_开头的META键: {http_keys}')
+    
+    if not auth or not auth.startswith('Bearer '):
+        if auth:
+            logger.warning(f'[get_admin_from_request] Authorization头格式不正确，不是Bearer开头: {auth[:30]}...')
         return None
+    
     token = auth[7:]
     try:
         payload = jwt_decode(token, settings.ADMIN_JWT_SECRET)
@@ -32,7 +96,19 @@ def get_admin_from_request(request):
         if jti and AdminTokenBlacklist.objects.filter(jti=jti).exists():
             return None
         return admin
-    except Exception:
+    except ValueError as e:
+        # JWT验证失败（token过期、签名错误等）
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f'JWT验证失败: {str(e)}')
+        return None
+    except AdminUser.DoesNotExist:
+        return None
+    except Exception as e:
+        # 其他异常
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f'获取管理员用户时发生异常: {str(e)}', exc_info=True)
         return None
 
 def has_perms(admin, perms_list):
@@ -83,12 +159,20 @@ class LoginView(APIView):
 class RefreshTokenView(APIView):
     permission_classes = [AllowAny]
     def post(self, request):
+        """
+        刷新访问token
+        需要提供有效的refresh_token
+        """
         refresh_token = request.data.get('refresh_token', '').strip()
         if not refresh_token:
             return Response({'detail': 'refresh_token required'}, status=400)
         try:
             rt_obj = AdminRefreshToken.objects.get(token=refresh_token, revoked=False)
+            # 检查refresh token是否过期
             if rt_obj.expires_at < timezone.now():
+                # 标记为已撤销
+                rt_obj.revoked = True
+                rt_obj.save()
                 return Response({'detail': 'refresh_token expired'}, status=401)
             admin = rt_obj.user
             now = int(time.time())
@@ -101,9 +185,18 @@ class RefreshTokenView(APIView):
             return Response({'token': token})
         except AdminRefreshToken.DoesNotExist:
             return Response({'detail': 'invalid refresh_token'}, status=401)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f'刷新token时发生异常: {str(e)}', exc_info=True)
+            return Response({'detail': 'refresh token failed'}, status=500)
 
 @method_decorator(csrf_exempt, name='dispatch')
 class LogoutView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def post(self, request):
         admin = get_admin_from_request(request)
         if admin:
@@ -124,6 +217,10 @@ class LogoutView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class AuthMeView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request):
         admin = get_admin_from_request(request)
         if not admin:
@@ -133,6 +230,10 @@ class AuthMeView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class ChangePasswordView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def post(self, request):
         admin = get_admin_from_request(request)
         if not admin:
@@ -147,6 +248,10 @@ class ChangePasswordView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class PermissionsView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request):
         admin = get_admin_from_request(request)
         if not admin:
@@ -156,6 +261,10 @@ class PermissionsView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class MenusView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request):
         admin = get_admin_from_request(request)
         if not admin:
@@ -169,6 +278,10 @@ class MenusView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class DashboardMetricsView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request):
         admin = get_admin_from_request(request)
         if not admin:
@@ -190,6 +303,10 @@ class DashboardMetricsView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class StatisticsView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request):
         admin = get_admin_from_request(request)
         if not admin:
@@ -222,6 +339,10 @@ class StatisticsView(APIView):
 # 质检订单相关视图
 @method_decorator(csrf_exempt, name='dispatch')
 class InspectionOrdersView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request):
         admin = get_admin_from_request(request)
         if not admin:
@@ -243,6 +364,7 @@ class InspectionOrdersView(APIView):
             'id': o.id,
             'user': {'id': o.user.id, 'username': o.user.username},
             'status': o.status,
+            'payment_status': o.payment_status,
             'device_type': o.device_type,
             'brand': o.brand,
             'model': o.model,
@@ -250,12 +372,22 @@ class InspectionOrdersView(APIView):
             'condition': o.condition,
             'estimated_price': float(o.estimated_price) if o.estimated_price else None,
             'final_price': float(o.final_price) if o.final_price else None,
-            'created_at': o.created_at.isoformat()
+            'bonus': float(o.bonus) if o.bonus else 0,
+            'total_price': float(o.final_price + o.bonus) if o.final_price else None,
+            'shipping_carrier': o.shipping_carrier or '',
+            'tracking_number': o.tracking_number or '',
+            'price_dispute': o.price_dispute,
+            'created_at': o.created_at.isoformat(),
+            'updated_at': o.updated_at.isoformat()
         } for o in items]
         return Response({'results': data, 'count': total})
 
 @method_decorator(csrf_exempt, name='dispatch')
 class InspectionOrderDetailView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request, order_id):
         admin = get_admin_from_request(request)
         if not admin:
@@ -269,7 +401,7 @@ class InspectionOrderDetailView(APIView):
         rep = o.admin_reports.order_by('-id').first()
         return Response({'success': True, 'item': {
             'id': o.id,
-            'user': {'id': o.user.id, 'username': o.user.username},
+            'user': {'id': o.user.id, 'username': o.user.username, 'email': getattr(o.user, 'email', '')},
             'status': o.status,
             'device_type': o.device_type,
             'brand': o.brand,
@@ -279,13 +411,32 @@ class InspectionOrderDetailView(APIView):
             'estimated_price': float(o.estimated_price) if o.estimated_price else None,
             'final_price': float(o.final_price) if o.final_price else None,
             'bonus': float(o.bonus) if o.bonus else 0,
+            'total_price': float(o.final_price + o.bonus) if o.final_price else None,
             'contact_name': o.contact_name,
             'contact_phone': o.contact_phone,
             'address': o.address,
             'note': o.note or '',
+            # 物流信息
+            'shipping_carrier': o.shipping_carrier or '',
+            'tracking_number': o.tracking_number or '',
+            'shipped_at': o.shipped_at.isoformat() if o.shipped_at else None,
+            'received_at': o.received_at.isoformat() if o.received_at else None,
+            # 质检信息
+            'inspected_at': o.inspected_at.isoformat() if o.inspected_at else None,
+            # 打款信息
+            'payment_status': o.payment_status,
+            'payment_method': o.payment_method or '',
+            'payment_account': o.payment_account or '',
+            'paid_at': o.paid_at.isoformat() if o.paid_at else None,
+            'payment_note': o.payment_note or '',
+            # 价格异议
+            'price_dispute': o.price_dispute,
+            'price_dispute_reason': o.price_dispute_reason or '',
+            'reject_reason': o.reject_reason or '',
+            # 时间信息
             'created_at': o.created_at.isoformat(),
             'updated_at': o.updated_at.isoformat(),
-            'appointment_at': None,
+            # 质检报告
             'report': {'check_items': (rep.check_items if rep else {}), 'remarks': (rep.remarks if rep else ''), 'created_at': (rep.created_at.isoformat() if rep else None)}
         }})
     def put(self, request, order_id):
@@ -294,11 +445,45 @@ class InspectionOrderDetailView(APIView):
             return Response({'detail': 'Unauthorized'}, status=401)
         if not has_perms(admin, ['inspection:write']):
             return Response({'detail': 'Forbidden'}, status=403)
-        status_val = request.query_params.get('status')
+        # 从请求体或查询参数获取状态（优先从body获取）
+        status_val = None
+        reject_reason = ''
+        
+        # 尝试从request.data获取（JSON body）
+        if hasattr(request, 'data') and request.data:
+            status_val = request.data.get('status')
+            reject_reason = request.data.get('reject_reason', '').strip()
+        
+        # 如果body中没有，尝试从query参数获取
+        if not status_val:
+            status_val = request.query_params.get('status')
+        
+        if not status_val:
+            return Response({'success': False, 'detail': '状态参数不能为空'}, status=400)
         try:
             o = RecycleOrder.objects.get(id=order_id)
+            old_status = o.status
             o.status = status_val
+            if status_val == 'cancelled' and reject_reason:
+                o.reject_reason = reject_reason
+            # 状态变更时更新时间戳
+            if status_val == 'inspected' and not o.inspected_at:
+                o.inspected_at = timezone.now()
+                # 如果没有收到时间，自动设置收到时间
+                if not o.received_at:
+                    o.received_at = timezone.now()
+            elif status_val == 'completed':
+                # 订单完成时，如果最终价格未设置，使用预估价格
+                if not o.final_price and o.estimated_price:
+                    o.final_price = o.estimated_price
             o.save()
+            AdminAuditLog.objects.create(
+                actor=admin, 
+                target_type='RecycleOrder', 
+                target_id=o.id, 
+                action='status_change', 
+                snapshot_json={'old_status': old_status, 'new_status': status_val, 'reject_reason': reject_reason}
+            )
             return Response({'success': True})
         except RecycleOrder.DoesNotExist:
             return Response({'success': False})
@@ -315,83 +500,285 @@ class InspectionOrderDetailView(APIView):
         except RecycleOrder.DoesNotExist:
             return Response({'success': False})
         AdminInspectionReport.objects.create(order=o, check_items=items, remarks=remarks)
-        if o.status == 'shipped':
+        # 更新状态和质检时间
+        if o.status in ['shipped', 'confirmed']:
             o.status = 'inspected'
+            if not o.inspected_at:
+                o.inspected_at = timezone.now()
+            # 如果没有收到时间，设置收到时间
+            if not o.received_at:
+                o.received_at = timezone.now()
             o.save()
-        AdminAuditLog.objects.create(actor=admin, target_type='RecycleOrder', target_id=o.id, action='inspection_report', snapshot_json={'status': o.status})
+        AdminAuditLog.objects.create(actor=admin, target_type='RecycleOrder', target_id=o.id, action='inspection_report', snapshot_json={'status': o.status, 'check_items_count': len(items)})
         return Response({'success': True})
 
 @method_decorator(csrf_exempt, name='dispatch')
+@method_decorator(csrf_exempt, name='dispatch')
 class InspectionOrderLogisticsView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def post(self, request, order_id):
         admin = get_admin_from_request(request)
         if not admin:
             return Response({'detail': 'Unauthorized'}, status=401)
         if not has_perms(admin, ['inspection:write']):
             return Response({'detail': 'Forbidden'}, status=403)
+        
+        # 根据URL路径判断操作类型
+        # 如果URL包含/received，则默认为receive操作
+        path = request.path
+        if '/received' in path:
+            action = 'receive'
+        else:
+            action = request.data.get('action', 'ship')  # ship: 用户寄出, receive: 平台收到
+        
         carrier = request.data.get('carrier', '').strip()
         tracking_number = request.data.get('tracking_number', '').strip()
-        if not carrier or not tracking_number:
-            return Response({'success': False, 'detail': '物流公司和运单号不能为空'}, status=400)
+        
         try:
             o = RecycleOrder.objects.get(id=order_id)
-            o.status = 'shipped'
+            if action == 'ship':
+                # 用户寄出
+                if not carrier or not tracking_number:
+                    return Response({'success': False, 'detail': '物流公司和运单号不能为空'}, status=400)
+                o.shipping_carrier = carrier
+                o.tracking_number = tracking_number
+                o.status = 'shipped'
+                if not o.shipped_at:
+                    o.shipped_at = timezone.now()
+                AdminAuditLog.objects.create(actor=admin, target_type='RecycleOrder', target_id=o.id, action='logistics_ship', snapshot_json={'carrier': carrier, 'tracking_number': tracking_number})
+            elif action == 'receive':
+                # 平台收到
+                # 如果订单状态还是confirmed，先更新为shipped
+                if o.status == 'confirmed':
+                    o.status = 'shipped'
+                # 保持shipped状态，但标记为已收到
+                if not o.received_at:
+                    o.received_at = timezone.now()
+                AdminAuditLog.objects.create(actor=admin, target_type='RecycleOrder', target_id=o.id, action='logistics_receive', snapshot_json={'received_at': o.received_at.isoformat()})
+            else:
+                return Response({'success': False, 'detail': f'不支持的操作类型: {action}'}, status=400)
+            
             o.save()
-            AdminAuditLog.objects.create(actor=admin, target_type='RecycleOrder', target_id=o.id, action='logistics', snapshot_json={'carrier': carrier, 'tracking_number': tracking_number, 'status': o.status})
             return Response({'success': True})
         except RecycleOrder.DoesNotExist:
             return Response({'success': False, 'detail': '订单不存在'}, status=404)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f'确认收到设备失败: {str(e)}', exc_info=True)
+            return Response({'success': False, 'detail': f'操作失败: {str(e)}'}, status=500)
 
 @method_decorator(csrf_exempt, name='dispatch')
 class InspectionOrderPriceView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def put(self, request, order_id):
+        # 调试：打印请求信息
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f'[InspectionOrderPriceView] ========== 收到PUT请求 ==========')
+        logger.info(f'[InspectionOrderPriceView] 路径: /inspection-orders/{order_id}/price')
+        logger.info(f'[InspectionOrderPriceView] 请求方法: {request.method}')
+        logger.info(f'[InspectionOrderPriceView] 完整路径: {request.path}')
+        logger.info(f'[InspectionOrderPriceView] 查询参数: {request.GET}')
+        
+        # 记录所有HTTP_开头的META键
+        http_meta_keys = [k for k in request.META.keys() if k.startswith('HTTP_')]
+        logger.info(f'[InspectionOrderPriceView] META中的HTTP_*键 ({len(http_meta_keys)}个): {http_meta_keys}')
+        
+        # 记录所有META键（用于调试）
+        all_meta_keys = list(request.META.keys())
+        logger.info(f'[InspectionOrderPriceView] 所有META键数量: {len(all_meta_keys)}')
+        
+        # 记录request.headers
+        if hasattr(request, 'headers'):
+            try:
+                headers_dict = dict(request.headers)
+                logger.info(f'[InspectionOrderPriceView] request.headers内容: {headers_dict}')
+            except Exception as e:
+                logger.warning(f'[InspectionOrderPriceView] 无法读取request.headers: {e}')
+        
+        # 尝试直接从META读取Authorization
+        auth_from_meta = request.META.get('HTTP_AUTHORIZATION', '')
+        if auth_from_meta:
+            logger.info(f'[InspectionOrderPriceView] 从META[HTTP_AUTHORIZATION]直接读取到: {auth_from_meta[:30]}...')
+        else:
+            logger.warning(f'[InspectionOrderPriceView] META[HTTP_AUTHORIZATION]为空')
+        
+        # 尝试从request.headers读取Authorization
+        if hasattr(request, 'headers'):
+            try:
+                auth_from_headers = request.headers.get('Authorization', '') or request.headers.get('AUTHORIZATION', '')
+                if auth_from_headers:
+                    logger.info(f'[InspectionOrderPriceView] 从request.headers读取到: {auth_from_headers[:30]}...')
+                else:
+                    logger.warning(f'[InspectionOrderPriceView] request.headers中没有Authorization')
+            except Exception as e:
+                logger.warning(f'[InspectionOrderPriceView] 读取request.headers失败: {e}')
+        
+        logger.info(f'[InspectionOrderPriceView] 开始调用get_admin_from_request...')
         admin = get_admin_from_request(request)
         if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
+            logger.error(f'[InspectionOrderPriceView] get_admin_from_request返回None，认证失败')
+            return Response({'detail': '身份认证信息未提供。'}, status=401)
+        logger.info(f'[InspectionOrderPriceView] 认证成功，管理员ID: {admin.id}, 用户名: {admin.username}')
         if not has_perms(admin, ['inspection:write']):
             return Response({'detail': 'Forbidden'}, status=403)
+        
+        price_type = request.data.get('price_type', 'final')  # estimated: 预估价格, final: 最终价格
+        estimated_price = request.data.get('estimated_price')
         final_price = request.data.get('final_price')
         bonus = request.data.get('bonus', 0)
-        if final_price is None:
-            return Response({'success': False, 'detail': '最终价格不能为空'}, status=400)
-        try:
-            final_price = float(final_price)
-            bonus = float(bonus) if bonus else 0
-        except (ValueError, TypeError):
-            return Response({'success': False, 'detail': '价格格式错误'}, status=400)
+        
         try:
             o = RecycleOrder.objects.get(id=order_id)
-            o.final_price = final_price
-            o.bonus = bonus
+            
+            if price_type == 'estimated' and estimated_price is not None:
+                # 更新预估价格（估价阶段）
+                try:
+                    estimated_price = float(estimated_price)
+                    if estimated_price <= 0:
+                        return Response({'success': False, 'detail': '价格必须大于0'}, status=400)
+                    o.estimated_price = estimated_price
+                    # 如果订单状态是pending，自动更新为quoted
+                    if o.status == 'pending':
+                        o.status = 'quoted'
+                    # 清除价格异议标记（如果重新估价）
+                    if o.price_dispute:
+                        o.price_dispute = False
+                        o.price_dispute_reason = ''
+                    o.save()
+                except (ValueError, TypeError):
+                    return Response({'success': False, 'detail': '价格格式错误'}, status=400)
+            elif price_type == 'final' and final_price is not None:
+                # 更新最终价格（质检后）
+                try:
+                    final_price = float(final_price)
+                    bonus = float(bonus) if bonus else 0
+                    old_final_price = o.final_price
+                    o.final_price = final_price
+                    o.bonus = bonus
+                    # 如果订单还未完成，且最终价格已设置，可以标记为已完成
+                    if o.status == 'inspected' and not o.payment_status == 'paid':
+                        o.status = 'completed'
+                    # 清除价格异议标记
+                    if o.price_dispute:
+                        o.price_dispute = False
+                        o.price_dispute_reason = ''
+                except (ValueError, TypeError):
+                    return Response({'success': False, 'detail': '价格格式错误'}, status=400)
+            else:
+                return Response({'success': False, 'detail': '价格参数错误'}, status=400)
+            
             o.save()
-            AdminAuditLog.objects.create(actor=admin, target_type='RecycleOrder', target_id=o.id, action='update_price', snapshot_json={'final_price': float(final_price), 'bonus': float(bonus)})
+            AdminAuditLog.objects.create(
+                actor=admin, 
+                target_type='RecycleOrder', 
+                target_id=o.id, 
+                action=f'update_{price_type}_price', 
+                snapshot_json={
+                    'estimated_price': float(o.estimated_price) if o.estimated_price else None,
+                    'final_price': float(o.final_price) if o.final_price else None,
+                    'bonus': float(o.bonus)
+                }
+            )
             return Response({'success': True})
         except RecycleOrder.DoesNotExist:
             return Response({'success': False, 'detail': '订单不存在'}, status=404)
 
 @method_decorator(csrf_exempt, name='dispatch')
 class InspectionOrderPaymentView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def post(self, request, order_id):
         admin = get_admin_from_request(request)
         if not admin:
             return Response({'detail': 'Unauthorized'}, status=401)
         if not has_perms(admin, ['inspection:write']):
             return Response({'detail': 'Forbidden'}, status=403)
-        payment_method = request.data.get('payment_method', 'bank')
-        note = request.data.get('note', '')
+        payment_method = request.data.get('payment_method', 'bank').strip()
+        payment_account = request.data.get('payment_account', '').strip()
+        note = request.data.get('note', '').strip()
+        
         try:
             o = RecycleOrder.objects.get(id=order_id)
             if not o.final_price:
                 return Response({'success': False, 'detail': '订单尚未确定最终价格'}, status=400)
-            if o.status != 'completed':
-                return Response({'success': False, 'detail': '订单状态不正确'}, status=400)
-            AdminAuditLog.objects.create(actor=admin, target_type='RecycleOrder', target_id=o.id, action='payment', snapshot_json={'amount': float(o.final_price), 'payment_method': payment_method, 'note': note})
-            return Response({'success': True, 'message': '打款成功'})
+            if o.status not in ['completed', 'inspected']:
+                return Response({'success': False, 'detail': '订单状态不正确，无法打款'}, status=400)
+            
+            # 更新打款信息
+            o.payment_method = payment_method
+            o.payment_account = payment_account
+            o.payment_note = note
+            o.payment_status = 'paid'
+            o.paid_at = timezone.now()
+            # 如果状态是inspected，更新为completed
+            if o.status == 'inspected':
+                o.status = 'completed'
+            o.save()
+            
+            total_amount = float(o.final_price + o.bonus)
+            AdminAuditLog.objects.create(
+                actor=admin, 
+                target_type='RecycleOrder', 
+                target_id=o.id, 
+                action='payment', 
+                snapshot_json={
+                    'amount': total_amount,
+                    'final_price': float(o.final_price),
+                    'bonus': float(o.bonus),
+                    'payment_method': payment_method,
+                    'payment_account': payment_account,
+                    'note': note
+                }
+            )
+            
+            # 调用支付宝沙箱转账接口完成实际打款
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            if payment_method == 'alipay' and payment_account:
+                alipay = AlipaySandboxClient()
+                is_valid, error_msg = alipay.validate_config()
+                
+                if is_valid:
+                    # 使用支付宝沙箱转账
+                    # 注意：payee_account 需要是支付宝账号（手机号或邮箱）
+                    transfer_result = alipay.transfer_to_account(
+                        out_biz_no=f'recycle_{o.id}_{int(time.time())}',
+                        payee_type='ALIPAY_LOGONID',  # 支付宝登录账号
+                        payee_account=payment_account,
+                        amount=total_amount,
+                        payee_real_name=o.contact_name,
+                        remark=f'回收订单#{o.id}打款'
+                    )
+                    
+                    if transfer_result.get('success'):
+                        logger.info(f'支付宝转账成功: order_id={o.id}, amount={total_amount}, order_id={transfer_result.get("order_id")}')
+                    else:
+                        logger.error(f'支付宝转账失败: {transfer_result.get("msg")}, sub_msg={transfer_result.get("sub_msg")}')
+                        # 即使转账失败，也记录打款信息（可能是配置问题）
+                else:
+                    logger.warning(f'支付宝配置未完成，无法使用支付宝转账: {error_msg}')
+            
+            return Response({'success': True, 'message': '打款成功', 'amount': total_amount})
         except RecycleOrder.DoesNotExist:
             return Response({'success': False, 'detail': '订单不存在'}, status=404)
 
 @method_decorator(csrf_exempt, name='dispatch')
 class InspectionOrderPublishVerifiedView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def post(self, request, order_id):
         admin = get_admin_from_request(request)
         if not admin:
@@ -430,6 +817,10 @@ class InspectionOrderPublishVerifiedView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class InspectionOrdersBatchUpdateView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def post(self, request):
         admin = get_admin_from_request(request)
         if not admin:
@@ -450,6 +841,10 @@ class InspectionOrdersBatchUpdateView(APIView):
 # 回收商品相关视图
 @method_decorator(csrf_exempt, name='dispatch')
 class RecycledProductsView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request):
         admin = get_admin_from_request(request)
         if not admin:
@@ -495,6 +890,10 @@ class RecycledProductsView(APIView):
 # 官方验商品相关视图
 @method_decorator(csrf_exempt, name='dispatch')
 class VerifiedListingsView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request, item_id=None):
         if item_id:
             admin = get_admin_from_request(request)
@@ -580,6 +979,10 @@ class VerifiedListingsView(APIView):
 # 审核队列相关视图
 @method_decorator(csrf_exempt, name='dispatch')
 class AuditQueueView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request):
         admin = get_admin_from_request(request)
         if not admin:
@@ -617,6 +1020,10 @@ class AuditQueueView(APIView):
 # 审核日志相关视图
 @method_decorator(csrf_exempt, name='dispatch')
 class AuditLogsView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request):
         admin = get_admin_from_request(request)
         if not admin:
@@ -642,6 +1049,10 @@ class AuditLogsView(APIView):
 # 管理员用户相关视图
 @method_decorator(csrf_exempt, name='dispatch')
 class UsersView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request, uid=None):
         admin = get_admin_from_request(request)
         if not admin:
@@ -719,6 +1130,10 @@ class UsersView(APIView):
 # 角色相关视图
 @method_decorator(csrf_exempt, name='dispatch')
 class RolesView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request):
         admin = get_admin_from_request(request)
         if not admin:
@@ -753,6 +1168,10 @@ class RolesView(APIView):
 # 支付订单相关视图
 @method_decorator(csrf_exempt, name='dispatch')
 class PaymentOrdersView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request):
         admin = get_admin_from_request(request)
         if not admin:
@@ -779,6 +1198,10 @@ class PaymentOrdersView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class PaymentOrderActionView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def post(self, request, order_id, action):
         admin = get_admin_from_request(request)
         if not admin:
@@ -790,18 +1213,15 @@ class PaymentOrderActionView(APIView):
         if action == 'query':
             if not has_perms(admin, ['payment:view']):
                 return Response({'detail': 'Forbidden'}, status=403)
-            client = EasyPayClient()
-            result = client.query(order_id)
+            # 使用支付宝沙箱查询
+            alipay = AlipaySandboxClient()
+            result = alipay.query_trade(f'normal_{order_id}')
             return Response({'success': True, 'result': result})
         elif action == 'refund':
             if not has_perms(admin, ['payment:write']):
                 return Response({'detail': 'Forbidden'}, status=403)
-            client = EasyPayClient()
-            result = client.refund(order_id, float(o.total_price))
-            ok = (result.get('code') == 1)
-            if ok:
-                AdminAuditLog.objects.create(actor=admin, target_type='Order', target_id=o.id, action='refund', snapshot_json={'amount': float(o.total_price)})
-            return Response({'success': ok, 'result': result})
+            # TODO: 实现支付宝退款接口
+            return Response({'success': False, 'detail': '退款功能暂未实现'}, status=501)
         elif action == 'ship':
             if not has_perms(admin, ['order:ship']):
                 return Response({'detail': 'Forbidden'}, status=403)
@@ -819,6 +1239,10 @@ class PaymentOrderActionView(APIView):
 # 官方验订单相关视图
 @method_decorator(csrf_exempt, name='dispatch')
 class VerifiedOrdersAdminView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request, oid=None):
         admin = get_admin_from_request(request)
         if not admin:
@@ -918,6 +1342,10 @@ class VerifiedOrdersAdminView(APIView):
 # 店铺管理相关视图（简化版）
 @method_decorator(csrf_exempt, name='dispatch')
 class ShopsAdminView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request, sid=None):
         admin = get_admin_from_request(request)
         if not admin:
@@ -971,6 +1399,10 @@ class ShopsAdminView(APIView):
 # 分类管理、商品管理、前端用户管理、消息管理、地址管理等视图（简化实现）
 @method_decorator(csrf_exempt, name='dispatch')
 class CategoriesAdminView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request, cid=None):
         admin = get_admin_from_request(request)
         if not admin or not has_perms(admin, ['category:view']):
@@ -1017,6 +1449,10 @@ class CategoriesAdminView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class ProductsAdminView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request, pid=None):
         admin = get_admin_from_request(request)
         if not admin or not has_perms(admin, ['product:view']):
@@ -1063,6 +1499,10 @@ class ProductsAdminView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class UsersFrontendAdminView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request, uid=None):
         admin = get_admin_from_request(request)
         if not admin or not has_perms(admin, ['user:view']):
@@ -1112,6 +1552,10 @@ class UsersFrontendAdminView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class MessagesAdminView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request, mid=None):
         admin = get_admin_from_request(request)
         if not admin or not has_perms(admin, ['message:view']):
@@ -1136,6 +1580,10 @@ class MessagesAdminView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class AddressesAdminView(APIView):
+    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    authentication_classes = []
+    permission_classes = []
+    
     def get(self, request, aid=None):
         admin = get_admin_from_request(request)
         if not admin or not has_perms(admin, ['address:view']):

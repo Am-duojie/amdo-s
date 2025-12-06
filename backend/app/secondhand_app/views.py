@@ -424,6 +424,31 @@ class RecycleOrderViewSet(viewsets.ModelViewSet):
         """只显示当前用户的回收订单"""
         return RecycleOrder.objects.filter(user=self.request.user)
 
+    @action(detail=True, methods=['get'])
+    def inspection_report(self, request, pk=None):
+        """获取订单的质检报告"""
+        order = self.get_object()
+        # 检查订单是否属于当前用户
+        if order.user != request.user:
+            return Response({'detail': '无权访问'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # 获取最新的质检报告
+        from app.admin_api.models import AdminInspectionReport
+        try:
+            report = AdminInspectionReport.objects.filter(order=order).order_by('-created_at').first()
+            if report:
+                return Response({
+                    'id': report.id,
+                    'check_items': report.check_items,
+                    'remarks': report.remarks,
+                    'created_at': report.created_at
+                })
+            else:
+                return Response({'detail': '暂无质检报告'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f'获取质检报告失败: {e}')
+            return Response({'detail': '获取质检报告失败'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     @action(detail=False, methods=['post'], permission_classes=[])
     def estimate(self, request):
         """估价接口 - 使用智能估价模型"""

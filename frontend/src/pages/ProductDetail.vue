@@ -247,22 +247,11 @@
         <div 
           class="payment-option"
           :class="{ active: paymentType === 'alipay' }"
-          @click="paymentType = 'alipay'"
         >
           <div class="option-icon alipay">
             <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231677ff' d='M21.422 15.358c-3.06-1.064-5.094-1.917-6.308-2.553.488-1.122.849-2.363 1.033-3.674h-4.15V7.995h4.98V6.948h-4.98V4.468h-2.047c-.2 0-.363.163-.363.363v2.117H5.07v1.047h4.517v1.136H5.87v.947h7.855c-.156.93-.413 1.795-.76 2.574-2.75-.885-5.694-1.2-5.694 1.38 0 1.67 1.463 2.706 3.803 2.706 2.232 0 3.803-.787 4.706-2.363.92.42 2.016.91 3.28 1.474.18.08.374.15.583.214v3.24c0 .66-.537 1.197-1.197 1.197H5.554c-.66 0-1.197-.537-1.197-1.197V5.554c0-.66.537-1.197 1.197-1.197h12.892c.66 0 1.197.537 1.197 1.197v9.804h1.78zm-10.27 2.29c-1.6 0-2.293-.41-2.293-1.094 0-.916 1.15-.916 2.1-.916.87 0 1.735.08 2.542.253-.61 1.184-1.461 1.757-2.35 1.757z'/%3E%3C/svg%3E" alt="支付宝" />
           </div>
           <span class="option-name">支付宝</span>
-        </div>
-        <div 
-          class="payment-option"
-          :class="{ active: paymentType === 'wxpay' }"
-          @click="paymentType = 'wxpay'"
-        >
-          <div class="option-icon wechat">
-            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2307c160' d='M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348zM5.785 5.991c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178A1.17 1.17 0 0 1 4.623 7.17c0-.651.52-1.18 1.162-1.18zm5.813 0c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178 1.17 1.17 0 0 1-1.162-1.178c0-.651.52-1.18 1.162-1.18zm5.34 2.867c-1.797-.052-3.746.512-5.28 1.786-1.72 1.428-2.687 3.72-1.78 6.22.942 2.453 3.666 4.229 6.884 4.229.826 0 1.622-.12 2.361-.336a.722.722 0 0 1 .598.082l1.584.926a.272.272 0 0 0 .14.047c.134 0 .24-.111.24-.247 0-.06-.023-.12-.038-.177l-.327-1.233a.582.582 0 0 1-.023-.156.49.49 0 0 1 .201-.398C23.024 18.48 24 16.82 24 14.98c0-3.21-2.931-5.837-6.656-6.088-.181-.012-.363-.022-.545-.033h-.061zm-2.89 3.217c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.97-.982zm4.844 0c.536 0 .97.44.97.982a.976.976 0 0 1-.97.983.976.976 0 0 1-.969-.983c0-.542.433-.982.97-.982z'/%3E%3C/svg%3E" alt="微信" />
-          </div>
-          <span class="option-name">微信支付</span>
         </div>
       </div>
       
@@ -271,45 +260,30 @@
         <span class="amount">¥{{ product?.price }}</span>
       </div>
       
-      <!-- 支付二维码 -->
-      <div v-if="qrcodeUrl" class="qrcode-container">
-        <el-image :src="qrcodeUrl" fit="contain" class="qrcode-img" />
-        <p class="qrcode-tip">请使用{{ paymentType === 'alipay' ? '支付宝' : '微信' }}扫码支付</p>
-        <el-alert 
-          title="演示模式：可点击下方【模拟完成支付】进行测试" 
-          type="info" 
-          :closable="false"
-          show-icon
-          style="margin-top: 12px;"
-        />
-      </div>
+      <el-alert 
+        title="点击确认支付后将跳转到支付宝沙箱支付页面" 
+        type="info" 
+        :closable="false"
+        show-icon
+        style="margin-top: 12px;"
+      />
       
       <template #footer>
         <el-button @click="closePaymentDialog">取消</el-button>
         <el-button 
-          v-if="!qrcodeUrl" 
           type="warning" 
           @click="createPayment"
           :loading="paymentLoading"
         >
           确认支付
         </el-button>
-        <template v-else>
-          <el-button 
-            type="primary" 
-            @click="demoCompletePayment"
-            :loading="checkingPayment"
-          >
-            🎭 模拟完成支付
-          </el-button>
-          <el-button 
-            type="success" 
-            @click="checkPaymentStatus"
-            :loading="checkingPayment"
-          >
-            我已支付完成
-          </el-button>
-        </template>
+        <el-button 
+          type="success" 
+          @click="checkPaymentStatus"
+          :loading="checkingPayment"
+        >
+          我已支付完成
+        </el-button>
       </template>
     </el-dialog>
 
@@ -598,13 +572,24 @@ const createPayment = async () => {
   try {
     const res = await api.post('/payment/create/', {
       order_id: currentOrderId.value,
-      pay_type: paymentType.value
+      order_type: 'normal'  // normal: 易淘订单, verified: 官方验订单
     })
     
     if (res.data.success) {
-      qrcodeUrl.value = res.data.qrcode
-      ElMessage.success('支付二维码已生成')
-      startPaymentCheck()
+      // 如果返回支付URL（支付宝沙箱），直接跳转
+      if (res.data.payment_url) {
+        window.location.href = res.data.payment_url
+        return
+      }
+      
+      // 如果返回二维码（易支付），显示二维码
+      if (res.data.qrcode) {
+        qrcodeUrl.value = res.data.qrcode
+        ElMessage.success('支付二维码已生成')
+        startPaymentCheck()
+      } else {
+        ElMessage.error('支付创建失败：未返回支付信息')
+      }
     } else {
       ElMessage.error(res.data.error || '创建支付失败')
     }
@@ -628,9 +613,9 @@ const checkPaymentStatus = async (isAutoCheck = false) => {
   }
   
   try {
-    const res = await api.get(`/payment/query/${currentOrderId.value}/`)
+    const res = await api.get(`/payment/query/${currentOrderId.value}/?order_type=normal`)
     
-    if (res.data.success && res.data.status === 1) {
+    if (res.data.success && res.data.paid) {
       ElMessage.success('支付成功！')
       closePaymentDialog()
       router.push(`/order/${currentOrderId.value}`)
@@ -647,25 +632,6 @@ const checkPaymentStatus = async (isAutoCheck = false) => {
   }
 }
 
-const demoCompletePayment = async () => {
-  checkingPayment.value = true
-  try {
-    const res = await api.post(`/payment/demo-complete/${currentOrderId.value}/`)
-    
-    if (res.data.success) {
-      ElMessage.success('演示模式：支付已完成！')
-      closePaymentDialog()
-      router.push(`/order/${currentOrderId.value}`)
-    } else {
-      ElMessage.error(res.data.error || '操作失败')
-    }
-  } catch (error) {
-    console.error('模拟支付错误:', error)
-    ElMessage.error(error.response?.data?.error || '演示模式不可用')
-  } finally {
-    checkingPayment.value = false
-  }
-}
 
 const resetOrderForm = () => { 
   orderForm.value = { shipping_name: '', shipping_phone: '', shipping_address: '', note: '' } 

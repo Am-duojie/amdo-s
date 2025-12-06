@@ -344,13 +344,55 @@ class RecycleOrderSerializer(serializers.ModelSerializer):
             'id', 'user', 'device_type', 'brand', 'model', 'storage',
             'condition', 'estimated_price', 'final_price', 'bonus',
             'status', 'contact_name', 'contact_phone', 'address',
-            'note', 'created_at', 'updated_at'
+            'note', 'shipping_carrier', 'tracking_number', 'shipped_at',
+            'received_at', 'inspected_at', 'paid_at', 'payment_status',
+            'payment_method', 'payment_account', 'payment_note',
+            'price_dispute', 'price_dispute_reason', 'reject_reason',
+            'created_at', 'updated_at'
         ]
-        read_only_fields = ['user', 'estimated_price', 'final_price', 'status', 'created_at', 'updated_at']
+        read_only_fields = ['user', 'estimated_price', 'final_price', 'received_at', 
+                           'inspected_at', 'paid_at', 'created_at', 'updated_at']
 
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        """更新订单，支持用户操作的状态流转"""
+        # 获取当前状态和新状态
+        current_status = instance.status
+        new_status = validated_data.get('status', current_status)
+        
+        # 定义允许的状态流转规则（用户操作）
+        allowed_transitions = {
+            'quoted': ['confirmed', 'shipped'],  # 已估价 -> 已确认 或 已寄出（如果同时填写了物流信息）
+            'confirmed': ['shipped'],  # 已确认 -> 已寄出
+            'inspected': ['completed'],  # 已检测 -> 已完成
+        }
+        
+        # 如果状态发生变化，检查是否允许
+        if new_status != current_status:
+            allowed_next = allowed_transitions.get(current_status, [])
+            if new_status not in allowed_next:
+                # 如果不在允许的流转中，检查是否是管理员操作（通过其他字段判断）
+                # 或者保持原状态不变
+                if new_status not in ['pending', 'quoted', 'confirmed', 'shipped', 'inspected', 'completed', 'cancelled']:
+                    raise serializers.ValidationError({
+                        'status': f'不允许从 {current_status} 状态转换到 {new_status} 状态。允许的转换：{allowed_next}'
+                    })
+                # 如果是管理员操作的状态（如从shipped到inspected），允许通过
+                # 但这里我们只处理用户操作，管理员操作应该通过admin API
+        
+        # 如果状态变为shipped，自动设置shipped_at（如果还没有设置）
+        if new_status == 'shipped' and not instance.shipped_at:
+            from django.utils import timezone
+            if 'shipped_at' not in validated_data:
+                validated_data['shipped_at'] = timezone.now()
+        
+        # 确保联系信息被正确保存
+        # 这些字段已经在fields中定义，应该可以正常更新
+        
+        return super().update(instance, validated_data)
 
 
 class VerifiedProductImageSerializer(serializers.ModelSerializer):

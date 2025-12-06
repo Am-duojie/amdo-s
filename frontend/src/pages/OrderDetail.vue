@@ -146,18 +146,9 @@
           <div 
             class="payment-option"
             :class="{ active: paymentType === 'alipay' }"
-            @click="paymentType = 'alipay'"
           >
             <div class="option-icon">💰</div>
             <div class="option-name">支付宝</div>
-          </div>
-          <div 
-            class="payment-option"
-            :class="{ active: paymentType === 'wxpay' }"
-            @click="paymentType = 'wxpay'"
-          >
-            <div class="option-icon">💳</div>
-            <div class="option-name">微信支付</div>
           </div>
         </div>
         
@@ -165,45 +156,30 @@
           支付金额：<span class="amount">¥{{ order?.total_price }}</span>
         </div>
         
-      <!-- 支付二维码 -->
-      <div v-if="qrcodeUrl" class="qrcode-container">
-        <el-image :src="qrcodeUrl" fit="contain" class="qrcode-img" />
-        <p class="qrcode-tip">请使用{{ paymentType === 'alipay' ? '支付宝' : '微信' }}扫码支付</p>
-        <el-alert 
-          v-if="qrcodeUrl" 
-          title="演示模式：如需测试，可点击下方【模拟完成支付】按钮" 
-          type="info" 
-          :closable="false"
-          style="margin-top: 16px;"
-        />
-      </div>
+      <el-alert 
+        title="点击确认支付后将跳转到支付宝沙箱支付页面" 
+        type="info" 
+        :closable="false"
+        show-icon
+        style="margin-top: 12px;"
+      />
       
       <template #footer>
         <el-button @click="closePaymentDialog">取消</el-button>
         <el-button 
-          v-if="!qrcodeUrl" 
           type="primary" 
           @click="createPayment"
           :loading="paymentLoading"
         >
           确认支付
         </el-button>
-        <template v-else>
-          <el-button 
-            type="warning" 
-            @click="demoCompletePayment"
-            :loading="checkingPayment"
-          >
-            🎭 模拟完成支付
-          </el-button>
-          <el-button 
-            type="success" 
-            @click="checkPaymentStatus"
-            :loading="checkingPayment"
-          >
-            我已支付
-          </el-button>
-        </template>
+        <el-button 
+          type="success" 
+          @click="checkPaymentStatus"
+          :loading="checkingPayment"
+        >
+          我已支付完成
+        </el-button>
       </template>
     </el-dialog>
     </div>
@@ -229,7 +205,7 @@ const loading = ref(false)
 
 // 支付相关状态
 const paymentDialogVisible = ref(false)
-const paymentType = ref('alipay')  // alipay 或 wxpay
+const paymentType = ref('alipay')  // 仅支持支付宝沙箱支付
 const paymentLoading = ref(false)
 const qrcodeUrl = ref('')
 const checkingPayment = ref(false)
@@ -333,16 +309,25 @@ const createPayment = async () => {
   try {
     const res = await api.post('/payment/create/', {
       order_id: orderId.value,
-      pay_type: paymentType.value
+      order_type: 'normal'  // normal: 易淘订单, verified: 官方验订单
     })
     
     if (res.data.success) {
-      // 显示二维码
-      qrcodeUrl.value = res.data.qrcode
-      ElMessage.success('支付二维码已生成，请扫码支付')
+      // 如果返回支付URL（支付宝沙箱），直接跳转
+      if (res.data.payment_url) {
+        window.location.href = res.data.payment_url
+        return
+      }
       
-      // 开始定时检查支付状态
-      startPaymentCheck()
+      // 如果返回二维码（易支付），显示二维码
+      if (res.data.qrcode) {
+        qrcodeUrl.value = res.data.qrcode
+        ElMessage.success('支付二维码已生成，请扫码支付')
+        // 开始定时检查支付状态
+        startPaymentCheck()
+      } else {
+        ElMessage.error('支付创建失败：未返回支付信息')
+      }
     } else {
       ElMessage.error(res.data.error || '创建支付失败')
     }
@@ -369,9 +354,9 @@ const checkPaymentStatus = async (isAutoCheck = false) => {
   }
   
   try {
-    const res = await api.get(`/payment/query/${orderId.value}/`)
+    const res = await api.get(`/payment/query/${orderId.value}/?order_type=normal`)
     
-    if (res.data.success && res.data.status === 1) {
+    if (res.data.success && res.data.paid) {
       // 支付成功
       ElMessage.success('支付成功！')
       closePaymentDialog()
@@ -389,26 +374,6 @@ const checkPaymentStatus = async (isAutoCheck = false) => {
   }
 }
 
-// 演示模式：模拟完成支付
-const demoCompletePayment = async () => {
-  checkingPayment.value = true
-  try {
-    const res = await api.post(`/payment/demo-complete/${orderId.value}/`)
-    
-    if (res.data.success) {
-      ElMessage.success('演示模式：支付已完成！')
-      closePaymentDialog()
-      await loadOrder()  // 重新加载订单信息
-    } else {
-      ElMessage.error(res.data.error || '操作失败')
-    }
-  } catch (error) {
-    console.error('模拟支付错误:', error)
-    ElMessage.error(error.response?.data?.error || '演示模式不可用')
-  } finally {
-    checkingPayment.value = false
-  }
-}
 
 const getStepIndex = (status) => {
   const stepMap = {

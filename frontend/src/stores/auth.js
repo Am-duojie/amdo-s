@@ -18,7 +18,9 @@ export const useAuthStore = defineStore('auth', () => {
         user.value = res.data
         localStorage.setItem('user', JSON.stringify(res.data))
       } catch {
+        // Token无效，尝试刷新或登出
         localStorage.removeItem('token')
+        localStorage.removeItem('refreshToken')
         localStorage.removeItem('user')
         user.value = null
       }
@@ -30,10 +32,12 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       console.log('尝试登录:', { username, password })
       // 使用新的登录端点
-      const response = await api.post('/users/login/', { username, password })
+      const response = await api.post('/auth/login/', { username, password })
       console.log('登录响应:', response.data)
-      const token = response.data.token
+      const token = response.data.access
+      const refreshToken = response.data.refresh
       localStorage.setItem('token', token)
+      localStorage.setItem('refreshToken', refreshToken)
       
       // 登录后拉取最新的用户资料，确保路由守卫与页面状态正确
       try {
