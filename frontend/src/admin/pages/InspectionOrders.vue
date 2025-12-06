@@ -28,6 +28,7 @@
         <el-option label="全部" value="" />
         <el-option label="待打款" value="pending" />
         <el-option label="已打款" value="paid" />
+        <el-option label="打款失败" value="failed" />
       </el-select>
       <el-button type="primary" @click="load">查询</el-button>
       <el-button @click="exportData">导出</el-button>
@@ -53,10 +54,17 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="120">
+      <el-table-column label="状态" width="140">
         <template #default="{ row }">
           <el-tag :type="getStatusType(row.status)" size="small">{{ getStatusText(row.status) }}</el-tag>
-          <el-tag v-if="row.payment_status === 'paid'" type="success" size="small" style="margin-left: 4px">已打款</el-tag>
+          <el-tag 
+            v-if="row.payment_status" 
+            :type="getPaymentStatusType(row.payment_status)" 
+            size="small" 
+            style="margin-left: 4px"
+          >
+            {{ getPaymentStatusText(row.payment_status) }}
+          </el-tag>
           <el-tag v-if="row.price_dispute" type="warning" size="small" style="margin-left: 4px">价格异议</el-tag>
         </template>
       </el-table-column>
@@ -130,6 +138,15 @@ const getStatusText = (status) => statusMap[status]?.text || status
 const getStatusType = (status) => statusMap[status]?.type || 'info'
 const getConditionText = (condition) => conditionMap[condition] || condition
 
+const paymentStatusMap = {
+  pending: { text: '待打款', type: 'info' },
+  paid: { text: '已打款', type: 'success' },
+  failed: { text: '打款失败', type: 'danger' }
+}
+
+const getPaymentStatusText = (status) => paymentStatusMap[status]?.text || ''
+const getPaymentStatusType = (status) => paymentStatusMap[status]?.type || 'info'
+
 const formatTime = (time) => {
   if (!time) return '-'
   return new Date(time).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -148,6 +165,7 @@ const load = async () => {
     }
     if (search.value) params.search = search.value
     if (statusFilter.value) params.status = statusFilter.value
+    if (paymentFilter.value) params.payment_status = paymentFilter.value
     
     const res = await adminApi.get('/inspection-orders', { params })
     items.value = res.data?.results || []

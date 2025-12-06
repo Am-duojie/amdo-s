@@ -123,8 +123,10 @@ def has_perms(admin, perms_list):
     return False
 
 @method_decorator(csrf_exempt, name='dispatch')
+@method_decorator(csrf_exempt, name='dispatch')
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []
     def post(self, request):
         username = request.data.get('username', '').strip()
         password = request.data.get('password', '').strip()
@@ -352,10 +354,13 @@ class InspectionOrdersView(APIView):
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
         status_filter = request.query_params.get('status', '')
+        payment_status_filter = request.query_params.get('payment_status', '')
         search = request.query_params.get('search', '').strip()
         qs = RecycleOrder.objects.select_related('user').all().order_by('-created_at')
         if status_filter:
             qs = qs.filter(status=status_filter)
+        if payment_status_filter:
+            qs = qs.filter(payment_status=payment_status_filter)
         if search:
             qs = qs.filter(Q(user__username__icontains=search) | Q(brand__icontains=search) | Q(model__icontains=search) | Q(id__icontains=search))
         total = qs.count()
@@ -703,29 +708,36 @@ class InspectionOrderPaymentView(APIView):
             return Response({'detail': 'Unauthorized'}, status=401)
         if not has_perms(admin, ['inspection:write']):
             return Response({'detail': 'Forbidden'}, status=403)
-        payment_method = request.data.get('payment_method', 'bank').strip()
-        payment_account = request.data.get('payment_account', '').strip()
         note = request.data.get('note', '').strip()
+        payment_method = request.data.get('payment_method', '').strip()
+        payment_account = request.data.get('payment_account', '').strip()
         
         try:
             o = RecycleOrder.objects.get(id=order_id)
             if not o.final_price:
                 return Response({'success': False, 'detail': '订单尚未确定最终价格'}, status=400)
+            # 允许已完成或已检测状态的订单打款（只要有最终价格）
             if o.status not in ['completed', 'inspected']:
-                return Response({'success': False, 'detail': '订单状态不正确，无法打款'}, status=400)
+                return Response({
+                    'success': False, 
+                    'detail': f'订单状态必须是已完成或已检测才能打款，当前状态: {o.status}',
+                    'current_status': o.status,
+                    'required_status': ['completed', 'inspected']
+                }, status=400)
+            # 如果已经打款成功，不允许重复打款
+            if o.payment_status == 'paid':
+                return Response({
+                    'success': False, 
+                    'detail': '订单已打款，无法重复打款',
+                    'payment_status': o.payment_status
+                }, status=400)
             
-            # 更新打款信息
-            o.payment_method = payment_method
-            o.payment_account = payment_account
-            o.payment_note = note
-            o.payment_status = 'paid'
-            o.paid_at = timezone.now()
-            # 如果状态是inspected，更新为completed
-            if o.status == 'inspected':
-                o.status = 'completed'
-            o.save()
-            
-            total_amount = float(o.final_price + o.bonus)
+            # 计算打款总额（最终价格 + 加价）
+            from decimal import Decimal
+            final_price_decimal = Decimal(str(o.final_price)) if o.final_price else Decimal('0')
+            bonus_decimal = Decimal(str(o.bonus)) if o.bonus else Decimal('0')
+            total_amount_decimal = final_price_decimal + bonus_decimal
+            total_amount = float(total_amount_decimal)
             AdminAuditLog.objects.create(
                 actor=admin, 
                 target_type='RecycleOrder', 
@@ -735,29 +747,94 @@ class InspectionOrderPaymentView(APIView):
                     'amount': total_amount,
                     'final_price': float(o.final_price),
                     'bonus': float(o.bonus),
-                    'payment_method': payment_method,
-                    'payment_account': payment_account,
-                    'note': note
+                    'note': note,
+                    'payment_method': payment_method or None,
+                    'payment_account': payment_account or None
                 }
             )
             
-            # 注意：支付宝转账功能需要单独实现，当前版本暂不支持
+            if payment_method and payment_method not in ['wallet', 'transfer']:
+                return Response({'success': False, 'detail': '打款方式不支持'}, status=400)
+            
+            if payment_method == 'transfer':
+                o.payment_status = 'paid'
+                o.paid_at = timezone.now()
+                o.payment_method = 'transfer'
+                o.payment_account = payment_account or None
+                parts = []
+                if note:
+                    parts.append(note)
+                parts.append(f'已直接转账，金额: ¥{total_amount}')
+                if payment_account:
+                    parts.append(f'收款账户: {payment_account}')
+                o.payment_note = '\n'.join(parts)
+                o.save()
+                return Response({'success': True, 'message': '打款成功，已直接转账', 'amount': total_amount})
+            
+            # 将钱存入用户钱包
+            from app.secondhand_app.models import Wallet, WalletTransaction
             import logging
             logger = logging.getLogger(__name__)
             
-            if payment_method == 'alipay' and payment_account:
-                # 注意：转账功能需要单独实现，当前版本暂不支持
-                # 如需实现，请参考支付宝转账接口文档
-                logger.warning(f'支付宝转账功能暂未实现，订单ID: {o.id}, 金额: {total_amount}, 账号: {payment_account}')
-                # TODO: 实现支付宝转账接口
-                # alipay = AlipayClient()
-                # is_valid, error_msg = alipay.validate_config()
-                # if is_valid:
-                #     transfer_result = alipay.transfer_to_account(...)
-                # else:
-                #     logger.warning(f'支付宝配置未完成，无法使用支付宝转账: {error_msg}')
-            
-            return Response({'success': True, 'message': '打款成功', 'amount': total_amount})
+            try:
+                # 获取或创建用户钱包
+                wallet, created = Wallet.objects.get_or_create(user=o.user)
+                logger.info(f'[打款] 开始: 订单ID={o.id}, 用户ID={o.user.id}, 用户名={o.user.username}, 金额={total_amount}, 钱包已存在={not created}, 当前余额={wallet.balance}')
+                
+                # 刷新钱包对象以确保获取最新数据
+                wallet.refresh_from_db()
+                
+                # 将钱存入钱包
+                old_balance = wallet.balance
+                wallet.add_balance(
+                    amount=total_amount,
+                    transaction_type='income',
+                    related_order=o,
+                    note=f'回收订单#{o.id}打款，设备：{o.brand} {o.model}'
+                )
+                
+                # 再次刷新以确保余额已更新
+                wallet.refresh_from_db()
+                
+                logger.info(f'[打款] 成功: 订单ID={o.id}, 用户ID={o.user.id}, 金额={total_amount}, 原余额={old_balance}, 新余额={wallet.balance}')
+                
+                # 更新打款状态
+                o.payment_status = 'paid'
+                o.paid_at = timezone.now()
+                payment_note_parts = []
+                if note:
+                    payment_note_parts.append(note)
+                payment_note_parts.append(f'已存入钱包，钱包余额: ¥{wallet.balance}')
+                o.payment_note = '\n'.join(payment_note_parts)
+                o.payment_method = 'wallet'
+                o.payment_account = None
+                o.save()
+                
+                logger.info(f'订单状态已更新: 订单ID={o.id}, 打款状态={o.payment_status}, 打款时间={o.paid_at}')
+                
+                return Response({
+                    'success': True, 
+                    'message': f'打款成功，已存入用户钱包。钱包余额: ¥{wallet.balance}', 
+                    'amount': total_amount,
+                    'wallet_balance': float(wallet.balance)
+                })
+            except Exception as e:
+                import traceback
+                error_trace = traceback.format_exc()
+                logger.error(f'[打款] 异常详情: {str(e)}\n{error_trace}')
+                # 打款异常时，更新打款状态为失败
+                o.payment_status = 'failed'
+                error_info = f'\n打款异常: {str(e)}'
+                if o.payment_note:
+                    o.payment_note += error_info
+                else:
+                    o.payment_note = error_info.strip()
+                o.save()
+                
+                return Response({
+                    'success': False,
+                    'detail': f'打款异常: {str(e)}。请查看服务器日志获取详细信息。'
+                }, status=500)
         except RecycleOrder.DoesNotExist:
             return Response({'success': False, 'detail': '订单不存在'}, status=404)
 
@@ -1593,4 +1670,3 @@ class AddressesAdminView(APIView):
             return Response({'success': True})
         except Address.DoesNotExist:
             return Response({'detail': '地址不存在'}, status=404)
-

@@ -8,7 +8,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         super_role, created_super = AdminRole.objects.get_or_create(name='super', defaults={'description': 'all', 'permissions': [
             'dashboard:view',
-            'inspection:view','inspection:write',
+            'inspection:view','inspection:write','inspection:payment',
             'recycled:view','recycled:write',
             'verified:view','verified:write',
             'audit:view','audit:write',
@@ -29,7 +29,7 @@ class Command(BaseCommand):
             super_role.permissions = super_role.permissions or []
             required = set([
                 'dashboard:view',
-                'inspection:view','inspection:write',
+                'inspection:view','inspection:write','inspection:payment',
                 'recycled:view','recycled:write',
                 'verified:view','verified:write',
                 'audit:view','audit:write',

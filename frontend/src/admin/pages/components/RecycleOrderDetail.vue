@@ -275,12 +275,17 @@
         
         <!-- 打款操作 -->
         <el-button
-          v-if="detail.status === 'completed' && detail.payment_status !== 'paid' && hasPerm('inspection:payment')"
+          v-if="canShowPaymentButton"
           type="warning"
           @click="showPaymentDialog = true"
         >
           打款给用户
         </el-button>
+        <!-- 打款调试信息 -->
+        <el-tag v-if="!canShowPaymentButton && detail.status === 'completed' && detail.payment_status !== 'paid'" 
+                type="info" size="small" style="margin-left: 8px">
+          权限不足或无最终价格
+        </el-tag>
         
         <!-- 发布为官方验商品 -->
         <el-button
@@ -407,11 +412,11 @@
       <el-form :model="paymentForm" label-width="100px">
         <el-form-item label="打款方式" required>
           <el-select v-model="paymentForm.payment_method" style="width: 100%">
-            <el-option label="银行转账" value="bank" />
-            <el-option label="支付宝" value="alipay" />
+            <el-option label="存入易淘钱包" value="wallet" />
+            <el-option label="支付方直接转账" value="transfer" />
           </el-select>
         </el-form-item>
-        <el-form-item label="打款账户" required>
+        <el-form-item v-if="paymentForm.payment_method === 'transfer'" label="打款账户" required>
           <el-input
             v-model="paymentForm.payment_account"
             placeholder="请输入用户的收款账户"
@@ -486,9 +491,33 @@ const reportForm = reactive({
 })
 
 const paymentForm = reactive({
-  payment_method: 'bank',
+  payment_method: 'wallet',
   payment_account: '',
   note: ''
+})
+
+// 打款按钮显示条件计算属性
+const canShowPaymentButton = computed(() => {
+  if (!detail.value) return false
+  
+  const hasCorrectStatus = ['completed', 'inspected'].includes(detail.value.status)
+  const notPaid = detail.value.payment_status !== 'paid'
+  const hasFinalPrice = !!detail.value.final_price
+  const hasPermission = hasPerm('inspection:payment')
+  
+  // 调试信息
+  console.log('打款按钮条件检查:', {
+    hasCorrectStatus,
+    notPaid,
+    hasFinalPrice,
+    hasPermission,
+    currentStatus: detail.value.status,
+    paymentStatus: detail.value.payment_status,
+    finalPrice: detail.value.final_price,
+    permissions: admin.user?.value?.permissions
+  })
+  
+  return hasCorrectStatus && notPaid && hasFinalPrice && hasPermission
 })
 
 // 流程步骤
@@ -744,8 +773,12 @@ const completeOrder = async () => {
 }
 
 const processPayment = async () => {
-  if (!paymentForm.payment_method || !paymentForm.payment_account) {
-    ElMessage.warning('请填写完整的打款信息')
+  if (!paymentForm.payment_method) {
+    ElMessage.warning('请选择打款方式')
+    return
+  }
+  if (paymentForm.payment_method === 'transfer' && !paymentForm.payment_account) {
+    ElMessage.warning('请输入收款账户')
     return
   }
   try {
@@ -766,7 +799,20 @@ const processPayment = async () => {
     emit('updated')
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.detail || '打款失败')
+      const errorData = error.response?.data
+      let errorMessage = '打款失败'
+      if (errorData?.detail) {
+        errorMessage = errorData.detail
+        // 显示更详细的错误信息
+        if (errorData.current_status) {
+          errorMessage += ` (当前状态: ${errorData.current_status})`
+        }
+        if (errorData.payment_status) {
+          errorMessage += ` (打款状态: ${errorData.payment_status})`
+        }
+      }
+      ElMessage.error(errorMessage)
+      console.error('打款失败详情:', errorData)
     }
   } finally {
     processingPayment.value = false

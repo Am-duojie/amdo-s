@@ -87,6 +87,12 @@ const routes = [
     meta: { requiresAuth: true, hideSearch: false, theme: 'yellow' }
   },
   {
+    path: '/wallet',
+    name: 'Wallet',
+    component: () => import('@/pages/Wallet.vue'),
+    meta: { requiresAuth: true, hideSearch: false, theme: 'yellow' }
+  },
+  {
     path: '/recycle',
     name: 'Recycle',
     component: () => import('@/pages/Recycle.vue'),

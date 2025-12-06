@@ -384,4 +384,128 @@ class AlipayClient:
         verify_params = {k: v for k, v in params.items() if k not in ['sign', 'sign_type']}
         
         return self._verify_sign(verify_params, sign)
+    
+    def transfer_to_account(self, out_biz_no, payee_account, amount, payee_real_name=None, remark='', product_code='TRANS_ACCOUNT_NO_PWD'):
+        """
+        单笔转账到支付宝账户（商家转账）
+        接口：alipay.fund.trans.uni.transfer（新版本，推荐）
+        文档：https://opendocs.alipay.com/open/03dcrm
+        
+        参数说明：
+        - out_biz_no: 商户转账唯一订单号，商户系统内唯一
+        - payee_account: 收款方账户（支付宝登录账号：手机号或邮箱）
+        - amount: 转账金额，单位为元，精确到小数点后两位
+        - payee_real_name: 收款方真实姓名（可选，但建议填写以提高成功率）
+        - remark: 转账备注（可选，最长200字符）
+        - product_code: 产品码，默认使用 TRANS_ACCOUNT_NO_PWD（转账到支付宝账户，无需密码）
+        
+        返回：
+        {
+            'success': True/False,
+            'order_id': '支付宝转账订单号',
+            'out_biz_no': '商户订单号',
+            'pay_fund_order_id': '支付宝资金流水号',
+            'status': 'SUCCESS'/'FAIL',
+            'msg': '错误信息'
+        }
+        """
+        # 构建业务参数
+        biz_content = {
+            'out_biz_no': str(out_biz_no),  # 商户转账唯一订单号
+            'trans_amount': f'{float(amount):.2f}',  # 转账金额，保留两位小数
+            'product_code': product_code,  # 产品码
+            'biz_scene': 'DIRECT_TRANSFER',  # 业务场景：直接转账
+            'payee_info': {
+                'identity': str(payee_account),  # 收款方账户
+                'identity_type': 'ALIPAY_LOGON_ID',  # 账户类型：支付宝登录账号
+            }
+        }
+        
+        # 添加收款方真实姓名（可选，但建议填写）
+        if payee_real_name:
+            biz_content['payee_info']['name'] = str(payee_real_name)
+        
+        # 添加转账备注（可选）
+        if remark:
+            biz_content['remark'] = str(remark)[:200]  # 最长200字符
+        
+        # 构建请求参数
+        params = {
+            'app_id': self.app_id,
+            'method': 'alipay.fund.trans.uni.transfer',  # 商家转账接口（新版本）
+            'charset': self.charset,
+            'sign_type': self.sign_type,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'version': self.version,
+            'biz_content': json.dumps(biz_content, ensure_ascii=False, separators=(',', ':')),
+        }
+        
+        # 生成签名
+        params['sign'] = self._sign(params)
+        
+        logger.info(f'========== 支付宝商家转账请求 ==========')
+        logger.info(f'接口URL: {self.gateway_url}')
+        logger.info(f'商户订单号: {out_biz_no}')
+        logger.info(f'收款账户: {payee_account}')
+        logger.info(f'转账金额: {amount}')
+        if payee_real_name:
+            logger.info(f'收款方姓名: {payee_real_name}')
+        if remark:
+            logger.info(f'转账备注: {remark}')
+        logger.info(f'完整参数: {params}')
+        
+        try:
+            response = requests.post(self.gateway_url, data=params, timeout=10)
+            result = response.json()
+            
+            logger.info(f'转账响应: {result}')
+            
+            # 解析响应
+            response_data = result.get('alipay_fund_trans_uni_transfer_response', {})
+            
+            if response_data.get('code') == '10000':
+                # 转账成功
+                order_id = response_data.get('order_id', '')
+                pay_fund_order_id = response_data.get('pay_fund_order_id', '')
+                status = response_data.get('status', '')
+                
+                logger.info(f'转账成功: order_id={order_id}, pay_fund_order_id={pay_fund_order_id}, status={status}')
+                
+                return {
+                    'success': True,
+                    'code': '10000',
+                    'order_id': order_id,
+                    'pay_fund_order_id': pay_fund_order_id,
+                    'out_biz_no': response_data.get('out_biz_no', out_biz_no),
+                    'status': status,
+                    'trans_date': response_data.get('trans_date', ''),
+                }
+            else:
+                # 转账失败
+                error_code = response_data.get('code', '')
+                error_msg = response_data.get('msg', '转账失败')
+                sub_code = response_data.get('sub_code', '')
+                sub_msg = response_data.get('sub_msg', '')
+                
+                logger.error(f'转账失败: code={error_code}, msg={error_msg}, sub_code={sub_code}, sub_msg={sub_msg}')
+                
+                return {
+                    'success': False,
+                    'code': error_code,
+                    'msg': error_msg,
+                    'sub_code': sub_code,
+                    'sub_msg': sub_msg,
+                }
+        except requests.exceptions.RequestException as e:
+            logger.error(f'转账请求异常: {str(e)}', exc_info=True)
+            return {
+                'success': False,
+                'msg': f'转账请求失败: {str(e)}'
+            }
+        except Exception as e:
+            logger.error(f'转账异常: {str(e)}', exc_info=True)
+            return {
+                'success': False,
+                'msg': f'转账失败: {str(e)}'
+            }
 

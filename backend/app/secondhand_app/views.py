@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 from .models import (
     Category, Product, ProductImage, Order, Message, Favorite, Address, UserProfile, RecycleOrder,
-    VerifiedProduct, VerifiedProductImage, VerifiedOrder, VerifiedFavorite
+    VerifiedProduct, VerifiedProductImage, VerifiedOrder, VerifiedFavorite, Wallet, WalletTransaction
 )
 from .serializers import (
     UserSerializer, UserRegisterSerializer, UserUpdateSerializer,
@@ -105,6 +105,154 @@ class UserViewSet(viewsets.ModelViewSet):
             'token': token.key,
             'user': UserSerializer(user, context={'request': request}).data
         })
+    
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def wallet(self, request):
+        """获取当前用户钱包信息"""
+        wallet, created = Wallet.objects.get_or_create(user=request.user)
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 20))
+        
+        # 获取交易记录（分页）
+        transactions_qs = wallet.transactions.all()
+        total = transactions_qs.count()
+        transactions = transactions_qs[(page-1)*page_size: page*page_size]
+        
+        return Response({
+            'balance': float(wallet.balance),
+            'frozen_balance': float(wallet.frozen_balance),
+            'transactions': [{
+                'id': t.id,
+                'transaction_type': t.transaction_type,
+                'transaction_type_display': t.get_transaction_type_display(),
+                'amount': float(t.amount),
+                'balance_after': float(t.balance_after),
+                'note': t.note,
+                'created_at': t.created_at.isoformat(),
+                'withdraw_status': t.withdraw_status,
+                'withdraw_status_display': t.get_withdraw_status_display() if t.withdraw_status else None,
+                'alipay_order_id': t.alipay_order_id if hasattr(t, 'alipay_order_id') else None,
+            } for t in transactions],
+            'total': total,
+            'page': page,
+            'page_size': page_size
+        })
+    
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def withdraw(self, request):
+        """提现到支付宝"""
+        from decimal import Decimal
+        from app.secondhand_app.alipay_client import AlipayClient
+        import time
+        
+        amount = request.data.get('amount')
+        alipay_account = request.data.get('alipay_account', '').strip()
+        alipay_name = request.data.get('alipay_name', '').strip()
+        
+        if not amount:
+            return Response({'detail': '提现金额不能为空'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            amount = Decimal(str(amount))
+            if amount <= 0:
+                return Response({'detail': '提现金额必须大于0'}, status=status.HTTP_400_BAD_REQUEST)
+        except (ValueError, TypeError):
+            return Response({'detail': '提现金额格式错误'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not alipay_account:
+            return Response({'detail': '支付宝账号不能为空'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 获取用户钱包
+        wallet, created = Wallet.objects.get_or_create(user=request.user)
+        
+        # 检查余额是否足够
+        if wallet.balance < amount:
+            return Response({'detail': '余额不足'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 检查支付宝配置
+        alipay = AlipayClient()
+        is_valid, error_msg = alipay.validate_config()
+        if not is_valid:
+            return Response({'detail': f'支付宝配置未完成: {error_msg}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        # 创建提现交易记录（先冻结金额）
+        transaction = WalletTransaction.objects.create(
+            wallet=wallet,
+            transaction_type='withdraw',
+            amount=-amount,  # 负数表示支出
+            balance_after=wallet.balance - amount,
+            alipay_account=alipay_account,
+            alipay_name=alipay_name,
+            withdraw_status='pending',
+            note=f'提现到支付宝: {alipay_account}'
+        )
+        
+        # 扣除余额
+        wallet.balance -= amount
+        wallet.save()
+        
+        # 调用支付宝转账接口
+        try:
+            transfer_result = alipay.transfer_to_account(
+                out_biz_no=f'withdraw_{request.user.id}_{int(time.time())}',
+                payee_account=alipay_account,
+                amount=float(amount),
+                payee_real_name=alipay_name if alipay_name else None,
+                remark=f'易淘账户提现'
+            )
+            
+            if transfer_result.get('success'):
+                # 提现成功
+                transaction.withdraw_status = 'success'
+                transaction.alipay_order_id = transfer_result.get('order_id', '')
+                transaction.note = f'提现成功，支付宝订单号: {transfer_result.get("order_id", "")}'
+                transaction.save()
+                
+                logger.info(f'提现成功: 用户ID={request.user.id}, 金额={amount}, 支付宝订单号={transfer_result.get("order_id", "")}')
+                
+                return Response({
+                    'success': True,
+                    'message': '提现成功',
+                    'order_id': transfer_result.get('order_id', ''),
+                    'balance': float(wallet.balance)
+                })
+            else:
+                # 提现失败，退回余额
+                wallet.balance += amount
+                wallet.save()
+                
+                error_code = transfer_result.get('code', '')
+                error_msg = transfer_result.get('msg', '提现失败')
+                sub_code = transfer_result.get('sub_code', '')
+                sub_msg = transfer_result.get('sub_msg', '')
+                
+                transaction.withdraw_status = 'failed'
+                transaction.note = f'提现失败: {sub_msg or error_msg}'
+                transaction.save()
+                
+                logger.error(f'提现失败: 用户ID={request.user.id}, code={error_code}, msg={error_msg}')
+                
+                return Response({
+                    'success': False,
+                    'detail': f'提现失败: {sub_msg or error_msg}',
+                    'error_code': error_code,
+                    'sub_code': sub_code
+                }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            # 异常时退回余额
+            wallet.balance += amount
+            wallet.save()
+            
+            transaction.withdraw_status = 'failed'
+            transaction.note = f'提现异常: {str(e)}'
+            transaction.save()
+            
+            logger.error(f'提现异常: 用户ID={request.user.id}, 错误={str(e)}', exc_info=True)
+            
+            return Response({
+                'success': False,
+                'detail': f'提现异常: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
