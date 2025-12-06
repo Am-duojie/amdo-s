@@ -43,7 +43,7 @@ urlpatterns = [
     # 使用SimpleJWT进行认证
     path('api/auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    # 支付相关路由（支付宝沙箱支付）
+    # 支付相关路由（支付宝支付）
     path('api/payment/create/', payment_views.create_payment, name='create_payment'),
     path('api/payment/create-url/', payment_views.create_payment_url, name='create_payment_url'),
     path('api/payment/query/<int:order_id>/', payment_views.query_payment, name='query_payment'),

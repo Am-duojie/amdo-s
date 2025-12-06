@@ -1,5 +1,5 @@
 """
-支付宝沙箱支付接口集成
+支付宝支付接口集成
 文档：https://opendocs.alipay.com/common/02kkv7
 """
 import json
@@ -12,21 +12,20 @@ from Crypto.Hash import SHA256
 from django.conf import settings
 import logging
 import requests
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
 
-class AlipaySandboxClient:
-    """支付宝沙箱支付客户端"""
+class AlipayClient:
+    """支付宝支付客户端"""
     
     def __init__(self):
         # 从settings中读取配置
-        self.app_id = getattr(settings, 'ALIPAY_SANDBOX_APP_ID', '')
-        self.app_private_key = getattr(settings, 'ALIPAY_SANDBOX_APP_PRIVATE_KEY', '')
-        self.alipay_public_key = getattr(settings, 'ALIPAY_SANDBOX_PUBLIC_KEY', '')
-        self.gateway_url = getattr(settings, 'ALIPAY_SANDBOX_GATEWAY_URL', 'https://openapi-sandbox.dl.alipaydev.com/gateway.do')
-        self.notify_url = getattr(settings, 'ALIPAY_SANDBOX_NOTIFY_URL', '')
-        self.return_url = getattr(settings, 'ALIPAY_SANDBOX_RETURN_URL', '')
+        self.app_id = getattr(settings, 'ALIPAY_APP_ID', '')
+        self.app_private_key = getattr(settings, 'ALIPAY_APP_PRIVATE_KEY', '')
+        self.alipay_public_key = getattr(settings, 'ALIPAY_PUBLIC_KEY', '')
+        self.gateway_url = getattr(settings, 'ALIPAY_GATEWAY_URL', 'https://openapi.alipay.com/gateway.do')
         self.charset = 'utf-8'
         self.sign_type = 'RSA2'
         self.version = '1.0'
@@ -39,12 +38,12 @@ class AlipaySandboxClient:
         errors = []
         
         if not self.app_id:
-            errors.append('支付宝APPID未配置，请在 settings.py 中配置 ALIPAY_SANDBOX_APP_ID')
+            errors.append('支付宝APPID未配置，请在 settings.py 中配置 ALIPAY_APP_ID')
         elif len(self.app_id) < 10:
             errors.append(f'支付宝APPID格式可能不正确: {self.app_id}')
         
         if not self.app_private_key:
-            errors.append('支付宝应用私钥未配置，请在 settings.py 中配置 ALIPAY_SANDBOX_APP_PRIVATE_KEY')
+            errors.append('支付宝应用私钥未配置，请在 settings.py 中配置 ALIPAY_APP_PRIVATE_KEY')
         else:
             # 验证私钥格式
             try:
@@ -59,7 +58,7 @@ class AlipaySandboxClient:
                 errors.append(f'应用私钥验证失败: {str(e)}')
         
         if not self.alipay_public_key:
-            errors.append('支付宝公钥未配置，请在 settings.py 中配置 ALIPAY_SANDBOX_PUBLIC_KEY')
+            errors.append('支付宝公钥未配置，请在 settings.py 中配置 ALIPAY_PUBLIC_KEY')
         else:
             # 验证公钥格式
             try:
@@ -134,13 +133,14 @@ class AlipaySandboxClient:
             
             filtered_data = {}
             for k, v in data.items():
-                # 排除 sign 和 sign_type（不参与签名）
-                if k in ['sign', 'sign_type']:
+                # 只排除 sign 参数（不参与签名）
+                # sign_type 需要参与签名（支付宝官方文档要求）
+                if k == 'sign':
                     continue
                 # 排除空值（None、空字符串）
                 if v is None or v == '':
                     continue
-                # 保留所有非空值（包括空列表、空字典，但这里通常不会有）
+                # 保留所有非空值
                 filtered_data[k] = str(v)  # 确保所有值都是字符串
             
             # 按参数名ASCII码排序（字典序）
@@ -152,8 +152,11 @@ class AlipaySandboxClient:
             
             logger.info(f'========== 签名计算 ==========')
             logger.info(f'参与签名的参数数量: {len(sorted_data)}')
-            logger.info(f'签名原文（前200字符）: {sign_str[:200]}...')
+            logger.info(f'签名原文（完整）: {sign_str}')
             logger.info(f'签名原文长度: {len(sign_str)}')
+            # 打印每个参数用于调试
+            for k, v in sorted_data:
+                logger.info(f'  参数: {k} = {v[:100] if len(str(v)) > 100 else v}')
             
             # 使用SHA256计算哈希值
             hash_obj = SHA256.new(sign_str.encode('utf-8'))
@@ -260,7 +263,7 @@ class AlipaySandboxClient:
             'sign_type': self.sign_type,  # 签名类型，RSA2
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),  # 时间戳
             'version': self.version,  # 调用的接口版本，固定为1.0
-            'biz_content': json.dumps(biz_content, ensure_ascii=False, separators=(',', ':')),  # 业务参数，JSON字符串格式
+            'biz_content': json.dumps(biz_content, ensure_ascii=False, separators=(',', ':')),  # 业务参数，JSON字符串格式（不使用ASCII转义，保持中文字符原样）
         }
         
         # return_url 和 notify_url 作为顶级参数（不在 biz_content 中）
@@ -268,12 +271,15 @@ class AlipaySandboxClient:
         if return_url:
             params['return_url'] = str(return_url)
         if notify_url:
+            # 确保notify_url没有被意外编码或包含非法字符
             params['notify_url'] = str(notify_url)
         
         # 生成签名
+        # 支付宝签名要求：所有参数参与签名，除了sign和sign_type
+        # 关键点：签名时的字符串必须与发送给支付宝的字符串完全一致（未URL编码前）
         params['sign'] = self._sign(params)
         
-        logger.info(f'========== 支付宝沙箱支付请求 ==========')
+        logger.info(f'========== 支付宝支付请求 ==========')
         logger.info(f'接口URL: {self.gateway_url}')
         logger.info(f'APPID: {self.app_id}')
         logger.info(f'订单号: {out_trade_no}')
@@ -286,7 +292,6 @@ class AlipaySandboxClient:
         # 构建完整URL（GET方式，需要URL编码）
         # 注意：签名时使用的是原始值（未编码），URL编码只在构建URL时进行
         # 支付宝官方文档要求：参数值需要进行URL编码，空格编码为%20
-        from urllib.parse import quote
         # 按参数名排序（与签名时一致，确保URL参数顺序与签名时一致）
         sorted_params = sorted(params.items())
         # 手动构建查询字符串，使用quote进行编码
@@ -329,7 +334,7 @@ class AlipaySandboxClient:
             'sign_type': self.sign_type,
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'version': self.version,
-            'biz_content': json.dumps(biz_content, ensure_ascii=False),
+            'biz_content': json.dumps(biz_content, ensure_ascii=True),
         }
         
         # 生成签名
@@ -367,103 +372,6 @@ class AlipaySandboxClient:
             return {
                 'success': False,
                 'msg': f'查询失败: {str(e)}'
-            }
-    
-    def transfer_to_account(self, out_biz_no, payee_type, payee_account, amount, payee_real_name=None, remark=''):
-        """
-        单笔转账到支付宝账户
-        接口：alipay.fund.trans.toaccount.transfer
-        用于管理端给用户打款
-        
-        参数说明：
-        - out_biz_no: 商户转账唯一订单号
-        - payee_type: 'ALIPAY_LOGONID'（支付宝登录账号）或 'ALIPAY_USERID'（支付宝用户ID）
-        - payee_account: 收款方账户（手机号、邮箱或支付宝用户ID）
-        - amount: 转账金额
-        - payee_real_name: 收款方真实姓名（可选，当 payee_type='ALIPAY_LOGONID' 时建议填写）
-        - remark: 转账备注（可选，最长200字符）
-        """
-        # 构建业务参数
-        biz_content = {
-            'out_biz_no': str(out_biz_no),  # 商户转账唯一订单号
-            'payee_type': payee_type,  # 'ALIPAY_LOGONID' 或 'ALIPAY_USERID'
-            'payee_account': str(payee_account),  # 收款方账户
-            'amount': f'{float(amount):.2f}',  # 转账金额，保留两位小数
-        }
-        
-        # 添加可选参数
-        if payee_real_name:
-            biz_content['payee_real_name'] = str(payee_real_name)  # 收款方真实姓名（可选）
-        if remark:
-            biz_content['remark'] = str(remark)[:200]  # 转账备注，最长200字符
-        
-        # 构建请求参数
-        params = {
-            'app_id': self.app_id,
-            'method': 'alipay.fund.trans.toaccount.transfer',
-            'charset': self.charset,
-            'sign_type': self.sign_type,
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'version': self.version,
-            'biz_content': json.dumps(biz_content, ensure_ascii=False, separators=(',', ':')),  # 紧凑JSON格式，与支付接口一致
-        }
-        
-        # 生成签名
-        params['sign'] = self._sign(params)
-        
-        logger.info(f'========== 支付宝沙箱转账请求 ==========')
-        logger.info(f'接口URL: {self.gateway_url}')
-        logger.info(f'商户订单号: {out_biz_no}')
-        logger.info(f'收款账户类型: {payee_type}')
-        logger.info(f'收款账户: {payee_account}')
-        logger.info(f'转账金额: {amount}')
-        if payee_real_name:
-            logger.info(f'收款方姓名: {payee_real_name}')
-        if remark:
-            logger.info(f'转账备注: {remark}')
-        logger.info(f'完整参数: {params}')
-        
-        try:
-            response = requests.post(self.gateway_url, data=params, timeout=10)
-            result = response.json()
-            
-            logger.info(f'转账结果: {result}')
-            
-            # 解析响应
-            response_data = result.get('alipay_fund_trans_toaccount_transfer_response', {})
-            
-            if response_data.get('code') == '10000':
-                # 转账成功
-                logger.info(f'转账成功: order_id={response_data.get("order_id")}, pay_date={response_data.get("pay_date")}')
-                return {
-                    'success': True,
-                    'code': '10000',
-                    'order_id': response_data.get('order_id', ''),
-                    'out_biz_no': response_data.get('out_biz_no', ''),
-                    'pay_date': response_data.get('pay_date', ''),
-                }
-            else:
-                error_code = response_data.get('code', '')
-                error_msg = response_data.get('msg', '转账失败')
-                sub_msg = response_data.get('sub_msg', '')
-                logger.error(f'转账失败: code={error_code}, msg={error_msg}, sub_msg={sub_msg}')
-                return {
-                    'success': False,
-                    'code': error_code,
-                    'msg': error_msg,
-                    'sub_msg': sub_msg,
-                }
-        except requests.exceptions.RequestException as e:
-            logger.error(f'转账请求异常: {str(e)}', exc_info=True)
-            return {
-                'success': False,
-                'msg': f'转账请求失败: {str(e)}'
-            }
-        except Exception as e:
-            logger.error(f'转账异常: {str(e)}', exc_info=True)
-            return {
-                'success': False,
-                'msg': f'转账失败: {str(e)}'
             }
     
     def verify_notify(self, params):

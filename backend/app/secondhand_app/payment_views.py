@@ -1,6 +1,6 @@
 """
 支付相关视图
-使用支付宝沙箱支付
+使用支付宝支付
 """
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -10,7 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.http import HttpResponse
 from django.conf import settings
 from .models import Order, VerifiedOrder
-from .alipay_sandbox import AlipaySandboxClient
+from .alipay_client import AlipayClient
 import logging
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 @permission_classes([IsAuthenticated])
 def create_payment(request):
     """
-    创建支付订单（支付宝沙箱支付）
+    创建支付订单（支付宝支付）
     返回支付URL，前端直接跳转
     
     参数:
@@ -50,8 +50,8 @@ def create_payment(request):
     if order.status != 'pending':
         return Response({'error': f'订单状态不正确，当前状态：{order.get_status_display()}'}, status=status.HTTP_400_BAD_REQUEST)
     
-    # 使用支付宝沙箱支付
-    alipay = AlipaySandboxClient()
+    # 使用支付宝支付
+    alipay = AlipayClient()
     
     # 验证配置
     is_valid, error_msg = alipay.validate_config()
@@ -67,12 +67,14 @@ def create_payment(request):
     
     # 构建回调URL
     base_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+    # 注意：notify_url 不建议包含查询参数，可能导致签名验证问题
+    # 我们通过 out_trade_no 来区分订单类型，格式为: {order_type}_{order_id}
+    notify_url = f'{getattr(settings, "BACKEND_URL", "http://127.0.0.1:8000")}/api/payment/alipay/notify/'
+    
     if order_type == 'verified':
         return_url = f'{base_url}/verified-order/{order.id}'
-        notify_url = f'{getattr(settings, "BACKEND_URL", "http://127.0.0.1:8000")}/api/payment/alipay/notify/?order_type=verified'
     else:
         return_url = f'{base_url}/order/{order.id}'
-        notify_url = f'{getattr(settings, "BACKEND_URL", "http://127.0.0.1:8000")}/api/payment/alipay/notify/?order_type=normal'
     
     # 创建支付订单
     result = alipay.create_trade(
@@ -88,7 +90,7 @@ def create_payment(request):
         return Response({
             'success': True,
             'payment_url': result.get('payment_url'),
-            'payment_provider': 'alipay_sandbox',
+            'payment_provider': 'alipay',
         })
     else:
         error_msg = result.get('msg', '创建支付失败')
@@ -123,7 +125,7 @@ def alipay_payment_notify(request):
     logger.info(f'收到支付宝支付通知: method={request.method}, params={params}')
     
     # 验证签名
-    alipay = AlipaySandboxClient()
+    alipay = AlipayClient()
     if not alipay.verify_notify(params):
         logger.error('支付宝签名验证失败')
         return HttpResponse('fail')
@@ -177,7 +179,7 @@ def alipay_payment_notify(request):
 @permission_classes([IsAuthenticated])
 def query_payment(request, order_id):
     """
-    查询支付状态（支付宝沙箱支付）
+    查询支付状态（支付宝支付）
     """
     order_type = request.query_params.get('order_type', 'normal')  # normal 或 verified
     
@@ -198,7 +200,7 @@ def query_payment(request, order_id):
             return Response({'error': '无权限查看此订单'}, status=status.HTTP_403_FORBIDDEN)
     
     # 查询支付状态
-    alipay = AlipaySandboxClient()
+    alipay = AlipayClient()
     result = alipay.query_trade(f'{order_type}_{order.id}')
     
     if result.get('success'):

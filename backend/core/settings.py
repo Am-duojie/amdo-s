@@ -237,53 +237,48 @@ SCRAPER_API_METHOD = 'POST'  # GET 或 POST
 SCRAPER_API_KEY = ''  # API密钥（如果需要）
 SCRAPER_API_SECRET = ''  # API密钥（如果需要）
 
-# ========== 支付宝沙箱支付配置 ==========
+# ========== 支付宝支付配置 ==========
 # 文档：https://opendocs.alipay.com/common/02kkv7
-# 沙箱应用管理：https://openhome.alipay.com/develop/sandbox/app
-# 沙箱账号管理：https://openhome.alipay.com/develop/sandbox/account
+# 应用管理：https://open.alipay.com/
 
-# 支付宝沙箱网关地址
-ALIPAY_SANDBOX_GATEWAY_URL = 'https://openapi-sandbox.dl.alipaydev.com/gateway.do'
+# 支付宝网关地址
+# 生产环境：https://openapi.alipay.com/gateway.do
+# 沙箱环境（测试用）：https://openapi-sandbox.dl.alipaydev.com/gateway.do
+# 注意：本地测试时使用沙箱环境，上线前需要改为生产环境地址
+ALIPAY_GATEWAY_URL = 'https://openapi-sandbox.dl.alipaydev.com/gateway.do'  # 本地测试使用沙箱环境
 
-# 应用配置（从支付宝开放平台沙箱控制台获取）
+# 应用配置（从支付宝开放平台控制台获取）
 # 获取方式：
-# 1. 登录 https://openhome.alipay.com/develop/sandbox/app
-# 2. 选择或创建沙箱应用
-# 3. 在应用详情页获取 APPID
-ALIPAY_SANDBOX_APP_ID = '9021000158624650'  # APPID（必填，从控制台获取）
+# 1. 登录 https://open.alipay.com/
+# 2. 进入控制台 -> 网页&移动应用
+# 3. 创建应用或选择已有应用
+# 4. 在应用详情页获取 APPID
+ALIPAY_APP_ID = '9021000158624650'  # APPID（必填，从控制台获取）
 
 # 应用私钥（必填，RSA2格式，2048位）
 # 获取方式：
 # 1. 使用支付宝密钥生成工具或 OpenSSL 生成密钥对
 # 2. 从生成的私钥文件中获取（可以是完整格式或仅Base64字符串）
 # 3. 注意：这是您自己生成的私钥，请妥善保管，不要泄露
-ALIPAY_SANDBOX_APP_PRIVATE_KEY = 'MIIEpQIBAAKCAQEAsIBLYDDaOOzNx5WO/CtdKJA9O7An3ghw3PlqHU/+YhN4MmN1QZhtxheX/FfxWZ2jQ2KzxcJkrnQ9pix/Alil7gGeeawRGX+0B/WWsvmNk/LT01bICSMnym8P80J4Q29exh+yXS/b5pEAo7W63tp9rjzZ63O1aKwqydcL1gagoUNDgIOC0i75BOwtiFm9QPNtySDmuN9OMw+aWJnpYGjejQ0Tbj7uv9ctitzS45lH1ayxxa/oyrqsVpzGHFU9ZnplcNwrS11fId0ECFEPZN4utBnw3j5ZBjuRxhV6DTL/E2X2WGTXMkdZnpKY3pI/u6y5A2mQTy8rzjiawIwU6G6k/wIDAQABAoIBAG54bjUPfpZgiM+hqTPmBFHOLbU9JUbQK6vzI9qi5coG+5U2MP7UY+i3fbZAaNw5USVtEq31ZMTYFnn6oagbSge01ba73pwCFPFiYmc00MtIEhLV3y/w5AfNCcOs188FVuFUl3PB77XZDfhpV0QCpuU2SwMWkfWoxMM+KLdVwJYNkj89ov0RtxGnJ7d0lTaAYO3D/RmeJY0bWo8mXFd+BVJML+MTO1Bt4dqwUEghaehglKnsJUXNcV0vidztIfVerWvBUl0fbT48LKfyK0y9S5KVsDKPxAxpkO1hf0D2W2jditcGFKuGXGVzEXiQqIi7aDquIdAad7pwZV9Uvdkf7ekCgYEA8mq1/6/cyVFK7/k69mndFWryVbUzTh2CbL/xRqo8HP7jShxWAJ+D+GtA378jVM9QVYW2FT86BLY/7LbIsAAQsviSi3K3JxTAx6ohXrsiZuXexHg0IrxmKsdJvYEaB4PbuRBi937mB+i4y3PNtQ2/Fr1sUFmB8dNgidOW2gpkas0CgYEAumQSb8BWypUg7eHskEl4BUL/H4YmsPi39lqfo6R3gX1HMvqHXK6AEO2kgaJn/oJ10TJyUgAnscOeZ4uWiE3jUsFKUQA2XYMJrpV5+0Zd3rxeJKbljgeYC3o6V4vOfzn1Eyg8HenexsYv1dHbHv6cxo1Flhi8pimAQzR0SIedpvsCgYEA8l9ZCoTVtf7uctJ4bmjYIBLmqmTaIA8HGR4r6SBJrB/4Nl/waP0UIKtzmIHtnF0PEAL5U3L82jsx3MXAD6BxEc/QDVar4oowWTEz3hgyRDkuqrcYQWamq7zHcI6E7OCcLgNBP/0DlwLKyLhHAu/0j5Limc90Scmyqvr/x48+aT0CgYEAlYPO0jvsoybLOmc/V2LH1xiuBECdatqo3wJFCoTUpFe1NGyJBsynyGyIyMBZQWyvS7d2wtaDAPLVb2QmxYINNwX8MkvEUHDb5GLdbbY9eH2L20TR4YOv8I0EndN1OtNoBw0AZFKFNNgn6RIk/pDpe9A5ILUJJxUlYUODf+bhjN8CgYEAwAV2cWAgSeqfsnM8vyawQsGd42mn9pQ4hbVf0DFnNqUyL+i/Qc8n8dv9/M3n2nYH/dpoR7XtochC8stxtQTztLj6wyN+YJJ5vd/7pVWJHFSB8qCgaVGkOCUyYT7q0zR4wGfGRQiW9Seg/01AjhTbibtfGvYOtUkg4PJGBCWzstw='  # 应用私钥（必填，RSA2格式）
+ALIPAY_APP_PRIVATE_KEY = 'MIIEowIBAAKCAQEApdiTemjXz2N105BvALkPBuHrp2dJwNJnO9SqtGGfXq+Lvu8rymPALmrACQcBi7zS2eBm1h28rJRRePeS9saaBtsuayZkDNIrlMRjhien4sXce/xIjRuwGuPEcIfUxIzkwuva1Rata4PD710ty5QhNbnGDmB02Fo7xaazdSJi8K/KySoKQ4ktIKnu4Ff2hSSJuoFmWtNBJ7dcXksK9+SCpYL2KGf6eUMHleDd4zbgsRSgj+khwWjqwmyhcySbLYs9MWrZpAwA11sy8GMTRZ+ulpdr0Mb99bxXxzOYtVqlOrM/rZ6wIV2qK2131dnICiVd/PLJT5YBDTAWdb/+U3y8VQIDAQABAoIBACIInNMs+sSja4WcCTuDvpKyABMdfiQkyWycyt8zfWoH6kyndjwVVlXwMDJqDqYnfLmbdF8SQSrFUSba33zm6qrnhdIVUcjTxH/GAYqBTtGZuxJyhkz21p/eB+zz4vTm2PcrQYAjJDmBE89mNsSlRF9rHTrMDo5rjgKUoBU0lks/4avqj8F0Miq7hJRoJJdCbHVhC0o2XTl5xSJBMgViS6nT/4mjKS6+sLlqE9C9fKEJHlZDcKJFLlJJO5gwbJ0HTM3Fp2ZnFchBkFIhV72I5GpR/weYoqaE02M6wDjOEKhnccSdy7CbUNHCwGJ5Rl+4bo+T6+Fob/i+amBY7HubtC0CgYEA/NZy34DYUqSRkmOeQmpuz88wOJt1maVbRcR5YfF+pXwWklBIoR98rgQ+CniMSgxdYoyuEF2BTqrkf1GELMPBNgBKQaFN7d9kYe95ManBfbgN/WcXgjhXAT8kGQKT7hlL/U+JSOmTHSE0rz3twDPNAyNsH823Zpkz3BqGJdfQYJcCgYEAp+uXjm1DZCCU3MifappgYRZTi5qFWk6MAal6eayauQzgpeb01Bu+GU4fhNgccrIVRHVKvE9U4K9JSE6pr547XWsjC8ecZdvmb3mGY3Kz1tlte0AGRxYgmti6SkaiN3lEMZi9BLlN6+iE65gjSrAWt6Agb6dwNn9cWg3OMAiL+/MCgYAEMJGKvpnXFL8My/XNZ/IaI3bLGVhjiWfvygew5c2RdHLzTb1GXj00rQFSLxk0COxrO6WOw93mrdJHgdRM4ZmMCYkxeTjPXkpNjShW+FcqfChPMKwlDkXy0VcJyw8kfOrTccP2n1g+vVQgK0iLTNBy4t1h0YjefF9toErkyaS8VQKBgQCVzDWHeTGFQQuLae3My6ru8VvWTiJoTWnYkbgQk0nziuldFouSLK2JJYg4mhHGv9b5Gylwk9TEG5rkRkhZwm5zCABbodaDh4gqKd8ZGFoWcCCasqLnB3ZOrMiDOj+7/RI4rGjyrdw1d1gcU7woBK4/YTmOYXBZLYTVUTt+3iECwQKBgG5wzFSx8uFu64uWNVh43GHPXa0CQYihrm8n3Xzi5A+EPPOUgJ2G63cCAagmMz7zCzTXwbVZAbNFWuA1RAak75s6wLwrbpOCTErGglRRRY4fxxY79BYANL7aGKI1Ejgy4yop/TFKOUHiSw2AZLyVeoSBuqdrj//FJ+Va+fq2wyps'  # 应用私钥（必填，RSA2格式）
 
-# 支付宝公钥（必填，从沙箱控制台获取）
+# 支付宝公钥（必填，从控制台获取）
 # 获取方式：
-# 1. 在沙箱应用详情页，点击"接口加签方式" -> "设置"
+# 1. 在应用详情页，点击"接口加签方式" -> "设置"
 # 2. 上传应用公钥后，支付宝会返回"支付宝公钥"
 # 3. 复制这个公钥配置到这里
 # 注意：这是支付宝提供的公钥，用于验证支付宝返回的数据签名
-ALIPAY_SANDBOX_PUBLIC_KEY = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjvYXLvwQOhTEtpuDEGJB5+TFhqgAObVy9LD4qfi60xS78kl8EkWg3AMq4n5mwwIvkExF3sByHKJQ5M12RsnUFCxaQUwdiGpPeFk9nkB6BZoDyegj68Na5HnC50kvwO5C9f+dKEBsTGaUsrXjBWlGqj6g+XnCeUffY9Xi9XHIwn/lXC0uekoXYR1qU5/QKLGuwXiPuBQVvyRVZBEUO7rZWPbhvbG48WWmgytdMeTIYdvPnjI7u5oEITTwCwCL2h8swQu3W7sxBEz9vA/G3IpYbZbuutVTjrnP/vWuY9nc0wwutPGEn6xWiZ2raj/pJ5kgOPSSkqIIBDE2Q0yssbMzTwIDAQAB'  # 支付宝公钥（必填，从沙箱控制台获取）
+ALIPAY_PUBLIC_KEY = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjvYXLvwQOhTEtpuDEGJB5+TFhqgAObVy9LD4qfi60xS78kl8EkWg3AMq4n5mwwIvkExF3sByHKJQ5M12RsnUFCxaQUwdiGpPeFk9nkB6BZoDyegj68Na5HnC50kvwO5C9f+dKEBsTGaUsrXjBWlGqj6g+XnCeUffY9Xi9XHIwn/lXC0uekoXYR1qU5/QKLGuwXiPuBQVvyRVZBEUO7rZWPbhvbG48WWmgytdMeTIYdvPnjI7u5oEITTwCwCL2h8swQu3W7sxBEz9vA/G3IpYbZbuutVTjrnP/vWuY9nc0wwutPGEn6xWiZ2raj/pJ5kgOPSSkqIIBDE2Q0yssbMzTwIDAQAB'  # 支付宝公钥（必填，从控制台获取，已更新）
 
-# 回调地址配置
+# 前后端URL配置（用于动态构建回调地址）
+FRONTEND_URL = 'http://localhost:5173'  # 前端地址
+BACKEND_URL = 'http://127.0.0.1:8000'  # 后端地址
+
+# 回调地址配置（会在代码中动态构建）
 # 注意：
 # - 本地开发：可以使用 http://127.0.0.1:8000 或 http://localhost:8000
 # - 生产环境：必须使用 HTTPS 和公网可访问的地址
 # - 需要在支付宝开放平台配置回调地址白名单（生产环境）
-ALIPAY_SANDBOX_NOTIFY_URL = 'http://127.0.0.1:8000/api/payment/alipay/notify/'  # 异步通知地址（本地测试用，生产环境需改为公网地址）
-ALIPAY_SANDBOX_RETURN_URL = 'http://localhost:5173/order/'  # 支付完成跳转地址（本地测试用）
-
-# 前后端URL配置（用于动态构建回调地址）
-# 这些配置会在创建支付订单时动态构建回调地址
-FRONTEND_URL = 'http://localhost:5173'  # 前端地址
-BACKEND_URL = 'http://127.0.0.1:8000'  # 后端地址
-
-# 演示模式（可选）
-# 注意：支付宝沙箱环境本身就是测试环境，此选项主要用于本地调试
-# 当设置为 True 时，某些接口可能跳过真实调用（如果实现了演示逻辑）
-ALIPAY_SANDBOX_DEMO_MODE = False  # True=演示模式, False=真实支付
 
 # ========== 日志配置 ==========
 LOGGING = {

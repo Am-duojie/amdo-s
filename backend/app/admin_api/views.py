@@ -9,7 +9,7 @@ from rest_framework import status
 from django.conf import settings
 from .models import AdminUser, AdminRole, AdminInspectionReport, AdminAuditQueueItem, AdminAuditLog, AdminRefreshToken, AdminTokenBlacklist
 from app.secondhand_app.models import RecycleOrder, VerifiedProduct, VerifiedOrder, Order, Shop, Category, Product, Message, Address
-from app.secondhand_app.alipay_sandbox import AlipaySandboxClient
+from app.secondhand_app.alipay_client import AlipayClient
 from .serializers import AdminUserSerializer, RecycleOrderListSerializer, VerifiedProductListSerializer, AdminAuditQueueItemSerializer, ShopAdminSerializer
 from .jwt import encode as jwt_encode, decode as jwt_decode
 from django.contrib.auth.hashers import check_password, make_password
@@ -741,33 +741,21 @@ class InspectionOrderPaymentView(APIView):
                 }
             )
             
-            # 调用支付宝沙箱转账接口完成实际打款
+            # 注意：支付宝转账功能需要单独实现，当前版本暂不支持
             import logging
             logger = logging.getLogger(__name__)
             
             if payment_method == 'alipay' and payment_account:
-                alipay = AlipaySandboxClient()
-                is_valid, error_msg = alipay.validate_config()
-                
-                if is_valid:
-                    # 使用支付宝沙箱转账
-                    # 注意：payee_account 需要是支付宝账号（手机号或邮箱）
-                    transfer_result = alipay.transfer_to_account(
-                        out_biz_no=f'recycle_{o.id}_{int(time.time())}',
-                        payee_type='ALIPAY_LOGONID',  # 支付宝登录账号
-                        payee_account=payment_account,
-                        amount=total_amount,
-                        payee_real_name=o.contact_name,
-                        remark=f'回收订单#{o.id}打款'
-                    )
-                    
-                    if transfer_result.get('success'):
-                        logger.info(f'支付宝转账成功: order_id={o.id}, amount={total_amount}, order_id={transfer_result.get("order_id")}')
-                    else:
-                        logger.error(f'支付宝转账失败: {transfer_result.get("msg")}, sub_msg={transfer_result.get("sub_msg")}')
-                        # 即使转账失败，也记录打款信息（可能是配置问题）
-                else:
-                    logger.warning(f'支付宝配置未完成，无法使用支付宝转账: {error_msg}')
+                # 注意：转账功能需要单独实现，当前版本暂不支持
+                # 如需实现，请参考支付宝转账接口文档
+                logger.warning(f'支付宝转账功能暂未实现，订单ID: {o.id}, 金额: {total_amount}, 账号: {payment_account}')
+                # TODO: 实现支付宝转账接口
+                # alipay = AlipayClient()
+                # is_valid, error_msg = alipay.validate_config()
+                # if is_valid:
+                #     transfer_result = alipay.transfer_to_account(...)
+                # else:
+                #     logger.warning(f'支付宝配置未完成，无法使用支付宝转账: {error_msg}')
             
             return Response({'success': True, 'message': '打款成功', 'amount': total_amount})
         except RecycleOrder.DoesNotExist:
@@ -1213,8 +1201,8 @@ class PaymentOrderActionView(APIView):
         if action == 'query':
             if not has_perms(admin, ['payment:view']):
                 return Response({'detail': 'Forbidden'}, status=403)
-            # 使用支付宝沙箱查询
-            alipay = AlipaySandboxClient()
+            # 使用支付宝查询
+            alipay = AlipayClient()
             result = alipay.query_trade(f'normal_{order_id}')
             return Response({'success': True, 'result': result})
         elif action == 'refund':

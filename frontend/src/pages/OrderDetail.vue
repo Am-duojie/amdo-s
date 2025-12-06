@@ -157,7 +157,7 @@
         </div>
         
       <el-alert 
-        title="点击确认支付后将跳转到支付宝沙箱支付页面" 
+        title="点击确认支付后将跳转到支付宝支付页面" 
         type="info" 
         :closable="false"
         show-icon
@@ -205,7 +205,7 @@ const loading = ref(false)
 
 // 支付相关状态
 const paymentDialogVisible = ref(false)
-const paymentType = ref('alipay')  // 仅支持支付宝沙箱支付
+const paymentType = ref('alipay')  // 仅支持支付宝支付
 const paymentLoading = ref(false)
 const qrcodeUrl = ref('')
 const checkingPayment = ref(false)
@@ -313,7 +313,7 @@ const createPayment = async () => {
     })
     
     if (res.data.success) {
-      // 如果返回支付URL（支付宝沙箱），直接跳转
+      // 如果返回支付URL（支付宝），直接跳转
       if (res.data.payment_url) {
         window.location.href = res.data.payment_url
         return
