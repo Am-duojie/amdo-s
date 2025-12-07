@@ -12,10 +12,13 @@ class UserSerializer(serializers.ModelSerializer):
     avatar = serializers.SerializerMethodField()
     bio = serializers.SerializerMethodField()
     location = serializers.SerializerMethodField()
+    alipay_login_id = serializers.SerializerMethodField()
+    alipay_user_id = serializers.SerializerMethodField()
+    alipay_real_name = serializers.SerializerMethodField()
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'avatar', 'bio', 'location']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'avatar', 'bio', 'location', 'alipay_login_id', 'alipay_user_id', 'alipay_real_name']
         read_only_fields = ['id', 'date_joined']
     
     def get_avatar(self, obj):
@@ -34,6 +37,39 @@ class UserSerializer(serializers.ModelSerializer):
         """获取所在地"""
         if hasattr(obj, 'profile'):
             return obj.profile.location
+        return ''
+
+    def get_alipay_login_id(self, obj):
+        try:
+            profile = obj.profile
+            if profile and profile.alipay_login_id:
+                return profile.alipay_login_id
+        except UserProfile.DoesNotExist:
+            pass
+        except AttributeError:
+            pass
+        return ''
+
+    def get_alipay_real_name(self, obj):
+        try:
+            profile = obj.profile
+            if profile and profile.alipay_real_name:
+                return profile.alipay_real_name
+        except UserProfile.DoesNotExist:
+            pass
+        except AttributeError:
+            pass
+        return ''
+
+    def get_alipay_user_id(self, obj):
+        try:
+            profile = obj.profile
+            if profile and profile.alipay_user_id:
+                return profile.alipay_user_id
+        except UserProfile.DoesNotExist:
+            pass
+        except AttributeError:
+            pass
         return ''
 
 
@@ -77,7 +113,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     """用户扩展信息序列化器"""
     class Meta:
         model = UserProfile
-        fields = ['avatar', 'bio', 'location', 'updated_at']
+        fields = ['avatar', 'bio', 'location', 'alipay_login_id', 'alipay_user_id', 'alipay_real_name', 'updated_at']
         read_only_fields = ['updated_at']
 
 
@@ -86,10 +122,13 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     avatar = serializers.ImageField(required=False, write_only=True)
     bio = serializers.CharField(required=False, write_only=True, allow_blank=True)
     location = serializers.CharField(required=False, write_only=True, allow_blank=True)
+    alipay_login_id = serializers.CharField(required=False, write_only=True, allow_blank=True)
+    alipay_user_id = serializers.CharField(required=False, write_only=True, allow_blank=True)
+    alipay_real_name = serializers.CharField(required=False, write_only=True, allow_blank=True)
     
     class Meta:
         model = User
-        fields = ['username', 'email', 'first_name', 'last_name', 'avatar', 'bio', 'location']
+        fields = ['username', 'email', 'first_name', 'last_name', 'avatar', 'bio', 'location', 'alipay_login_id', 'alipay_user_id', 'alipay_real_name']
 
     def validate_username(self, value):
         """验证用户名"""
@@ -115,6 +154,9 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         # 处理扩展信息
         bio = validated_data.pop('bio', None)
         location = validated_data.pop('location', None)
+        alipay_login_id = validated_data.pop('alipay_login_id', None)
+        alipay_user_id = validated_data.pop('alipay_user_id', None)
+        alipay_real_name = validated_data.pop('alipay_real_name', None)
         
         # 处理头像文件
         avatar_file = validated_data.pop('avatar', None)
@@ -130,6 +172,12 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             profile.bio = bio
         if location is not None:
             profile.location = location
+        if alipay_login_id is not None:
+            profile.alipay_login_id = alipay_login_id
+        if alipay_user_id is not None:
+            profile.alipay_user_id = alipay_user_id
+        if alipay_real_name is not None:
+            profile.alipay_real_name = alipay_real_name
         
         # 更新头像
         if avatar_file:
@@ -138,6 +186,99 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         # 保存扩展信息
         profile.save()
         
+        try:
+            if ((alipay_login_id is not None) and str(alipay_login_id).strip()) or ((alipay_user_id is not None) and str(alipay_user_id).strip()):
+                from django.utils import timezone
+                from .models import Order
+                from app.secondhand_app.alipay_client import AlipayClient
+                alipay = AlipayClient()
+                qs = Order.objects.filter(product__seller=instance, status='completed').exclude(settlement_status='settled')
+                for o in qs:
+                    trade_no = getattr(o, 'alipay_trade_no', '')
+                    if not trade_no:
+                        q = alipay.query_trade(f'normal_{o.id}')
+                        if q.get('success'):
+                            trade_no = q.get('trade_no', '')
+                    if not trade_no:
+                        continue
+                    from decimal import Decimal
+                    seller_amount = Decimal(str(o.product.price))
+                    commission_amount = Decimal(str(o.total_price)) - seller_amount
+                    if commission_amount < 0:
+                        commission_amount = Decimal('0.00')
+                    out_request_no = f'auto_bind_settle_{o.id}_{int(timezone.now().timestamp())}'
+                    if profile.alipay_user_id:
+                        res = alipay.settle_order(
+                            trade_no=trade_no,
+                            out_request_no=out_request_no,
+                            splits=[{
+                                'trans_in': profile.alipay_user_id,
+                                'trans_in_type': 'userId',
+                                'amount': float(seller_amount),
+                                'desc': '易淘分账-卖家(绑定后自动结算)'
+                            }]
+                        )
+                    else:
+                        res = alipay.settle_order(
+                            trade_no=trade_no,
+                            out_request_no=out_request_no,
+                            splits=[{
+                                'trans_in': profile.alipay_login_id,
+                                'trans_in_type': 'loginName',
+                                'amount': float(seller_amount),
+                                'desc': '易淘分账-卖家(绑定后自动结算)'
+                            }]
+                        )
+                    if res.get('success'):
+                        o.settlement_status = 'settled'
+                        o.settled_at = timezone.now()
+                        o.settle_request_no = out_request_no
+                        o.seller_settle_amount = seller_amount
+                        o.platform_commission_amount = commission_amount
+                        o.settlement_method = 'ROYALTY'
+                    else:
+                        o.settlement_status = 'failed'
+                        o.settle_request_no = out_request_no
+                        try:
+                            from django.conf import settings
+                            if getattr(settings, 'SETTLEMENT_FALLBACK_TO_TRANSFER', False):
+                                out_biz_no = f'auto_bind_settle_transfer_{o.id}_{int(timezone.now().timestamp())}'
+                                transfer_res = alipay.transfer_to_account(
+                                    out_biz_no=out_biz_no,
+                                    payee_account=(profile.alipay_login_id or profile.alipay_user_id),
+                                    amount=float(seller_amount),
+                                    payee_real_name=profile.alipay_real_name,
+                                    remark='易淘分账-绑定后转账代结算'
+                                )
+                                if transfer_res.get('success'):
+                                    o.settlement_status = 'settled'
+                                    o.settled_at = timezone.now()
+                                    o.seller_settle_amount = seller_amount
+                                    o.platform_commission_amount = commission_amount
+                                    o.settlement_method = 'TRANSFER'
+                                    o.transfer_order_id = transfer_res.get('order_id','')
+                        except Exception:
+                            pass
+                    o.save()
+                    try:
+                        from app.secondhand_app.models import Wallet, WalletTransaction
+                        wallet, _ = Wallet.objects.get_or_create(user=profile.user)
+                        WalletTransaction.objects.create(
+                            wallet=wallet,
+                            transaction_type='income',
+                            amount=seller_amount,
+                            balance_after=wallet.balance,
+                            related_market_order=o,
+                            alipay_account=(profile.alipay_user_id or profile.alipay_login_id),
+                            alipay_name=profile.alipay_real_name,
+                            alipay_order_id=getattr(o,'transfer_order_id',''),
+                            note=f'订单#{o.id} 结算完成，资金已存入支付宝: {(profile.alipay_user_id or profile.alipay_login_id)}'
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         return instance
 
 
@@ -215,15 +356,18 @@ class OrderSerializer(serializers.ModelSerializer):
     buyer = UserSerializer(read_only=True)
     product = ProductSerializer(read_only=True)
     product_id = serializers.IntegerField(write_only=True)
+    settlement_account = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
         fields = [
             'id', 'buyer', 'product', 'product_id', 'total_price', 'status',
             'shipping_address', 'shipping_name', 'shipping_phone', 'carrier', 'tracking_number', 'shipped_at', 'delivered_at', 'note',
+            'alipay_trade_no', 'settlement_status', 'settled_at', 'settle_request_no', 'seller_settle_amount', 'platform_commission_amount',
+            'settlement_method', 'transfer_order_id', 'settlement_account',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['buyer', 'total_price', 'status', 'created_at', 'updated_at']
+        read_only_fields = ['buyer', 'total_price', 'status', 'alipay_trade_no', 'settlement_status', 'settled_at', 'settle_request_no', 'seller_settle_amount', 'platform_commission_amount', 'settlement_method', 'transfer_order_id', 'settlement_account', 'created_at', 'updated_at']
 
     def create(self, validated_data):
         product_id = validated_data.pop('product_id')
@@ -234,8 +378,27 @@ class OrderSerializer(serializers.ModelSerializer):
         
         validated_data['product'] = product
         validated_data['buyer'] = self.context['request'].user
-        validated_data['total_price'] = product.price
+        # 引入平台佣金（如启用）
+        from django.conf import settings
+        commission_rate = getattr(settings, 'PLATFORM_COMMISSION_RATE', 0)
+        if getattr(settings, 'ENABLE_ALIPAY_ROYALTY', False) and commission_rate > 0:
+            from decimal import Decimal
+            base = Decimal(str(product.price))
+            commission = (base * Decimal(str(commission_rate))).quantize(Decimal('0.01'))
+            validated_data['total_price'] = base + commission
+            validated_data['platform_commission_amount'] = commission
+            validated_data['seller_settle_amount'] = base
+            validated_data['settlement_status'] = 'pending'
+        else:
+            validated_data['total_price'] = product.price
         return super().create(validated_data)
+
+    def get_settlement_account(self, obj):
+        try:
+            profile = obj.product.seller.profile
+            return profile.alipay_user_id or profile.alipay_login_id or ''
+        except Exception:
+            return ''
 
 
 class MessageSerializer(serializers.ModelSerializer):

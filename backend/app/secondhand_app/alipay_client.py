@@ -133,15 +133,12 @@ class AlipayClient:
             
             filtered_data = {}
             for k, v in data.items():
-                # 只排除 sign 参数（不参与签名）
-                # sign_type 需要参与签名（支付宝官方文档要求）
+                # 仅排除 sign；sign_type 参与签名
                 if k == 'sign':
                     continue
-                # 排除空值（None、空字符串）
                 if v is None or v == '':
                     continue
-                # 保留所有非空值
-                filtered_data[k] = str(v)  # 确保所有值都是字符串
+                filtered_data[k] = str(v)
             
             # 按参数名ASCII码排序（字典序）
             sorted_data = sorted(filtered_data.items())
@@ -341,6 +338,7 @@ class AlipayClient:
         params['sign'] = self._sign(params)
         
         try:
+            # 使用官方推荐的 POST 方式调用开放平台网关
             response = requests.post(self.gateway_url, data=params, timeout=10)
             result = response.json()
             
@@ -437,7 +435,7 @@ class AlipayClient:
             'sign_type': self.sign_type,
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'version': self.version,
-            'biz_content': json.dumps(biz_content, ensure_ascii=False, separators=(',', ':')),
+            'biz_content': json.dumps(biz_content, ensure_ascii=True, separators=(',', ':')),
         }
         
         # 生成签名
@@ -509,3 +507,112 @@ class AlipayClient:
                 'msg': f'转账失败: {str(e)}'
             }
 
+    def settle_order(self, trade_no, out_request_no, splits, settle_mode='ROYALTY'):
+        """
+        交易分账结算
+        接口：alipay.trade.order.settle
+        文档：https://opendocs.alipay.com/open/02f54
+        
+        参数：
+        - trade_no: 支付宝交易号（支付成功后获取）
+        - out_request_no: 商户分账请求唯一编号
+        - splits: 分账明细列表，例如：
+          [{
+             'trans_in': 'buyer@example.com',
+             'amount': 100.00,
+             'desc': '二手交易分账-卖家',
+             'trans_in_type': 'ALIPAY_LOGON_ID'
+          }]
+        - settle_mode: 结算模式，默认 ROYALTY（分账）
+        
+        返回：
+        {
+          'success': True/False,
+          'code': '10000' 或错误码,
+          'msg': '处理结果',
+          'trade_no': '支付宝交易号',
+          'out_request_no': '分账请求号'
+        }
+        """
+        # 构建业务参数
+        royalty_parameters = []
+        for s in (splits or []):
+            try:
+                amount = f"{float(s.get('amount', 0)):.2f}"
+            except (ValueError, TypeError):
+                amount = "0.00"
+            item = {
+                'amount': amount,
+                'trans_in': str(s.get('trans_in', '')),
+            }
+            desc = s.get('desc')
+            if desc:
+                item['desc'] = str(desc)[:200]
+            # 可选：指定账户类型（如 ALIPAY_LOGON_ID / ALIPAY_USER_ID）
+            trans_in_type = s.get('trans_in_type')
+            if trans_in_type:
+                item['trans_in_type'] = str(trans_in_type)
+            royalty_parameters.append(item)
+
+        biz_content = {
+            'trade_no': str(trade_no),
+            'out_request_no': str(out_request_no),
+            'royalty_parameters': royalty_parameters,
+        }
+        # 结算模式（默认为分账）
+        if settle_mode:
+            biz_content['settle_mode'] = str(settle_mode)
+
+        params = {
+            'app_id': self.app_id,
+            'method': 'alipay.trade.order.settle',
+            'charset': self.charset,
+            'sign_type': self.sign_type,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'version': self.version,
+            'biz_content': json.dumps(biz_content, ensure_ascii=False, separators=(',', ':')),
+        }
+
+        params['sign'] = self._sign(params)
+
+        logger.info('========== 支付宝分账结算请求 =========')
+        logger.info(f'接口URL: {self.gateway_url}')
+        logger.info(f'交易号: {trade_no}')
+        logger.info(f'分账请求号: {out_request_no}')
+        logger.info(f'分账明细数量: {len(royalty_parameters)}')
+        logger.info(f'完整参数: {params}')
+
+        try:
+            response = requests.post(self.gateway_url, data=params, timeout=10)
+            result = response.json()
+            logger.info(f'分账结算响应: {result}')
+
+            resp = result.get('alipay_trade_order_settle_response', {})
+            if resp.get('code') == '10000':
+                return {
+                    'success': True,
+                    'code': '10000',
+                    'msg': resp.get('msg', 'Success'),
+                    'trade_no': trade_no,
+                    'out_request_no': out_request_no,
+                }
+            else:
+                return {
+                    'success': False,
+                    'code': resp.get('code', ''),
+                    'msg': resp.get('msg', '分账失败'),
+                    'sub_code': resp.get('sub_code', ''),
+                    'sub_msg': resp.get('sub_msg', ''),
+                }
+        except requests.exceptions.RequestException as e:
+            logger.error(f'分账请求异常: {str(e)}', exc_info=True)
+            return {
+                'success': False,
+                'msg': f'分账请求失败: {str(e)}'
+            }
+        except Exception as e:
+            logger.error(f'分账结算异常: {str(e)}', exc_info=True)
+            return {
+                'success': False,
+                'msg': f'分账结算失败: {str(e)}'
+            }

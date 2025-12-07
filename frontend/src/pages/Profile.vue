@@ -54,6 +54,9 @@
               <div class="submenu-item" :class="{ active: activeMenu === 'wallet-withdraw' }" @click="switchMenu('wallet-withdraw')">
                 提现
               </div>
+              <div class="submenu-item" :class="{ active: activeMenu === 'wallet-bind' }" @click="switchMenu('wallet-bind')">
+                绑定支付宝
+              </div>
             </div>
           </div>
 
@@ -184,6 +187,15 @@
                   </div>
                   <div class="order-status-text" :class="getStatusClass(order.status)">
                     {{ getOrderStatusLabel(order.status) }}
+                  </div>
+                  <div v-if="activeMenu==='sold' && order.settlement_status" class="settlement-summary">
+                    <el-tag :type="order.settlement_status==='settled'?'success':(order.settlement_status==='failed'?'danger':'warning')" size="small">
+                      {{ order.settlement_status==='settled'?'已结算到账':(order.settlement_status==='failed'?'结算失败':'待结算') }}
+                    </el-tag>
+                    <el-tag v-if="order.settlement_method" :type="order.settlement_method==='TRANSFER'?'warning':'success'" size="small" style="margin-left:6px">
+                      {{ order.settlement_method==='TRANSFER'?'转账代结算':'分账结算' }}
+                    </el-tag>
+                    <span v-if="order.settlement_account" class="settlement-account">到账：{{ order.settlement_account }}</span>
                   </div>
                 </div>
 
@@ -379,12 +391,17 @@
               <div class="balance-frozen" v-if="walletInfo.frozen_balance > 0">
                 冻结余额: ¥{{ walletInfo.frozen_balance }}
               </div>
+              <div style="margin-top: 12px; font-size: 12px">
+                <el-tag v-if="bindForm.alipay_login_id" type="success" size="small">已绑定：{{ bindForm.alipay_login_id }}</el-tag>
+                <el-tag v-else type="warning" size="small">未绑定支付宝账户</el-tag>
+              </div>
             </div>
             <div class="balance-actions">
               <el-button type="primary" @click="switchMenu('wallet-withdraw')" :disabled="!walletInfo.balance || walletInfo.balance <= 0">
                 提现
               </el-button>
               <el-button @click="switchMenu('wallet-transactions')">查看交易记录</el-button>
+              <el-button @click="switchMenu('wallet-bind')">绑定支付宝</el-button>
             </div>
           </div>
         </div>
@@ -401,29 +418,49 @@
           <div v-else-if="walletTransactions.length === 0" class="empty-wrapper">
             <el-empty description="暂无交易记录" />
           </div>
-          <div v-else class="transactions-list">
-            <div v-for="t in walletTransactions" :key="t.id" class="transaction-item">
-              <div class="transaction-info">
-                <div class="transaction-type">
-                  <el-tag :type="getTransactionType(t.transaction_type)" size="small">
-                    {{ t.transaction_type_display }}
+          <div v-else>
+            <el-table :data="walletTransactions" style="width: 100%">
+              <el-table-column prop="created_at" label="时间" width="180">
+                <template #default="{ row }">
+                  {{ formatTime(row.created_at) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="transaction_type_display" label="类型" width="120">
+                <template #default="{ row }">
+                  <el-tag :type="getTransactionType(row.transaction_type)">
+                    {{ row.transaction_type_display }}
                   </el-tag>
-                </div>
-                <div class="transaction-detail">
-                  <div class="transaction-note">{{ t.note || '-' }}</div>
-                  <div class="transaction-time">{{ formatTime(t.created_at) }}</div>
-                </div>
-              </div>
-              <div class="transaction-amount">
-                <span :class="t.amount >= 0 ? 'amount-income' : 'amount-expense'">
-                  {{ t.amount >= 0 ? '+' : '' }}¥{{ Math.abs(t.amount) }}
-                </span>
-                <div class="balance-after">余额: ¥{{ t.balance_after }}</div>
-              </div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="amount" label="金额" width="120">
+                <template #default="{ row }">
+                  <span :class="row.amount >= 0 ? 'amount-income' : 'amount-expense'">
+                    {{ row.amount >= 0 ? '+' : '' }}¥{{ Math.abs(row.amount) }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="balance_after" label="余额" width="120">
+                <template #default="{ row }">
+                  ¥{{ row.balance_after }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="note" label="备注" min-width="200">
+                <template #default="{ row }">
+                  {{ row.note || '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="withdraw_status_display" label="提现状态" width="120" v-if="hasWithdrawStatus">
+                <template #default="{ row }">
+                  <el-tag v-if="row.withdraw_status" :type="getWithdrawStatusType(row.withdraw_status)" size="small">
+                    {{ row.withdraw_status_display }}
+                  </el-tag>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div v-if="walletTransactionsTotal > walletTransactions.length" style="text-align: center; margin-top: 16px">
+              <el-button @click="loadMoreTransactions">加载更多</el-button>
             </div>
-          </div>
-          <div v-if="walletTransactionsTotal > walletTransactions.length" style="text-align: center; margin-top: 16px">
-            <el-button @click="loadMoreTransactions">加载更多</el-button>
           </div>
         </div>
 
@@ -453,11 +490,15 @@
                   v-model="withdrawForm.amount"
                   :precision="2"
                   :min="0.01"
-                  :max="walletInfo.balance"
+                  :max="walletInfo.balance && walletInfo.balance > 0.01 ? walletInfo.balance : 0.01"
                   :step="100"
+                  :disabled="!walletInfo.balance || walletInfo.balance <= 0"
                   style="width: 100%"
                   placeholder="请输入提现金额"
                 />
+                <div style="font-size: 12px; color: #909399; margin-top: 4px">
+                  可提现金额: ¥{{ walletInfo.balance || '0.00' }}
+                </div>
               </el-form-item>
               <el-form-item label="支付宝账号" required>
                 <el-input
@@ -465,7 +506,7 @@
                   placeholder="请输入支付宝账号（手机号或邮箱）"
                 />
                 <div style="font-size: 12px; color: #909399; margin-top: 4px">
-                  支持沙箱环境测试账号
+                  支持沙箱环境测试账号。如果已绑定支付宝账户，将自动填充
                 </div>
               </el-form-item>
               <el-form-item label="支付宝姓名">
@@ -478,10 +519,55 @@
                 </div>
               </el-form-item>
               <el-form-item>
-                <el-button type="primary" :loading="withdrawing" @click="handleWithdraw">确认提现</el-button>
+                <el-button type="primary" :loading="withdrawing" @click="handleWithdraw" :disabled="!walletInfo.balance || walletInfo.balance <= 0">确认提现</el-button>
+                <el-button @click="resetWithdrawForm">重置</el-button>
                 <el-button @click="switchMenu('wallet')">返回</el-button>
               </el-form-item>
             </el-form>
+          </el-card>
+        </div>
+
+        <!-- 绑定支付宝 -->
+        <div class="content-section wallet-bind-section" v-if="activeMenu === 'wallet-bind'">
+          <div class="section-header">
+            <h2 class="section-title">绑定支付宝账户</h2>
+            <el-button text @click="loadUserInfo">刷新</el-button>
+          </div>
+          <el-card class="bind-card">
+            <el-alert
+              type="info"
+              :closable="false"
+              style="margin-bottom: 20px"
+            >
+              <template #title>
+                <div>绑定后，买家确认收货时的分账将直接打到该支付宝账户</div>
+              </template>
+            </el-alert>
+            <el-form :model="bindForm" label-width="120px" style="max-width: 600px">
+              <el-form-item label="支付宝登录账号" required>
+                <el-input v-model="bindForm.alipay_login_id" placeholder="请输入支付宝登录账号（手机号或邮箱）" />
+                <div style="font-size: 12px; color: #909399; margin-top: 4px">
+                  该账号用于分账收款，请确保为您的支付宝登录账号
+                </div>
+              </el-form-item>
+              <el-form-item label="支付宝姓名">
+                <el-input v-model="bindForm.alipay_real_name" placeholder="请输入支付宝真实姓名（可选，建议填写）" />
+                <div style="font-size: 12px; color: #909399; margin-top: 4px">
+                  填写真实姓名有助于提高分账成功率
+                </div>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" :loading="binding" @click="handleBindAlipay">保存绑定</el-button>
+                <el-button @click="loadUserInfo">刷新</el-button>
+              </el-form-item>
+            </el-form>
+            <div v-if="bindForm.alipay_login_id" style="margin-top: 20px; padding: 16px; background: #f0f9ff; border-radius: 4px; border: 1px solid #b3d8ff">
+              <div style="font-size: 14px; font-weight: 500; margin-bottom: 8px; color: #409eff">当前绑定信息</div>
+              <div style="font-size: 13px; color: #606266">
+                <div>支付宝账号：{{ bindForm.alipay_login_id }}</div>
+                <div v-if="bindForm.alipay_real_name">支付宝姓名：{{ bindForm.alipay_real_name }}</div>
+              </div>
+            </div>
           </el-card>
         </div>
       </div>
@@ -609,10 +695,15 @@ const walletTransactionsTotal = ref(0)
 const walletTransactionsPage = ref(1)
 const walletTransactionsPageSize = ref(20)
 const withdrawing = ref(false)
+const binding = ref(false)
 const withdrawForm = reactive({
   amount: null,
   alipay_account: '',
   alipay_name: ''
+})
+const bindForm = reactive({
+  alipay_login_id: '',
+  alipay_real_name: ''
 })
 
 const stats = reactive({
@@ -739,6 +830,12 @@ const loadMoreTransactions = () => {
   loadWalletTransactions()
 }
 
+const resetWithdrawForm = () => {
+  withdrawForm.amount = null
+  withdrawForm.alipay_account = bindForm.alipay_login_id || ''
+  withdrawForm.alipay_name = bindForm.alipay_real_name || ''
+}
+
 const handleWithdraw = async () => {
   if (!withdrawForm.amount || withdrawForm.amount <= 0) {
     ElMessage.warning('请输入提现金额')
@@ -769,9 +866,7 @@ const handleWithdraw = async () => {
     
     if (res.data.success) {
       ElMessage.success(res.data.message || '提现成功')
-      withdrawForm.amount = null
-      withdrawForm.alipay_account = ''
-      withdrawForm.alipay_name = ''
+      resetWithdrawForm()
       await loadWalletInfo()
       await loadWalletTransactions()
       switchMenu('wallet-transactions')
@@ -788,6 +883,61 @@ const handleWithdraw = async () => {
   }
 }
 
+const loadUserInfo = async () => {
+  try {
+    const res = await api.get('/users/me/')
+    bindForm.alipay_login_id = res.data?.alipay_login_id || ''
+    bindForm.alipay_real_name = res.data?.alipay_real_name || ''
+    // 如果已绑定支付宝，自动填充到提现表单
+    if (bindForm.alipay_login_id && !withdrawForm.alipay_account) {
+      withdrawForm.alipay_account = bindForm.alipay_login_id
+    }
+    if (bindForm.alipay_real_name && !withdrawForm.alipay_name) {
+      withdrawForm.alipay_name = bindForm.alipay_real_name
+    }
+  } catch (error) {
+    console.error('加载用户信息失败:', error)
+  }
+}
+
+const handleBindAlipay = async () => {
+  if (!bindForm.alipay_login_id) {
+    ElMessage.warning('请输入支付宝登录账号')
+    return
+  }
+  try {
+    binding.value = true
+    const res = await api.patch('/users/me/', {
+      alipay_login_id: bindForm.alipay_login_id,
+      alipay_real_name: bindForm.alipay_real_name
+    })
+    ElMessage.success('绑定成功')
+    // 更新绑定表单
+    if (res.data) {
+      bindForm.alipay_login_id = res.data.alipay_login_id || bindForm.alipay_login_id
+      bindForm.alipay_real_name = res.data.alipay_real_name || bindForm.alipay_real_name
+    }
+    // 同时更新 authStore 中的用户信息
+    if (authStore.user) {
+      authStore.user.alipay_login_id = res.data?.alipay_login_id || ''
+      authStore.user.alipay_real_name = res.data?.alipay_real_name || ''
+      localStorage.setItem('user', JSON.stringify(authStore.user))
+    }
+    // 如果提现表单中的账号为空，自动填充
+    if (!withdrawForm.alipay_account && bindForm.alipay_login_id) {
+      withdrawForm.alipay_account = bindForm.alipay_login_id
+    }
+    if (!withdrawForm.alipay_name && bindForm.alipay_real_name) {
+      withdrawForm.alipay_name = bindForm.alipay_real_name
+    }
+  } catch (error) {
+    const detail = error.response?.data?.detail || '绑定失败'
+    ElMessage.error(detail)
+  } finally {
+    binding.value = false
+  }
+}
+
 const getTransactionType = (type) => {
   const typeMap = {
     income: 'success',
@@ -796,6 +946,20 @@ const getTransactionType = (type) => {
     refund: 'info'
   }
   return typeMap[type] || 'info'
+}
+
+const hasWithdrawStatus = computed(() => {
+  return walletTransactions.value.some(t => t.withdraw_status)
+})
+
+const getWithdrawStatusType = (status) => {
+  const statusMap = {
+    pending: 'warning',
+    processing: 'primary',
+    success: 'success',
+    failed: 'danger'
+  }
+  return statusMap[status] || 'info'
 }
 
 const formatTime = (time) => {
@@ -833,6 +997,7 @@ const loadContent = async (menu) => {
         break
       case 'wallet':
         await loadWalletInfo()
+        await loadUserInfo()
         break
       case 'wallet-transactions':
         walletTransactionsPage.value = 1
@@ -840,6 +1005,17 @@ const loadContent = async (menu) => {
         break
       case 'wallet-withdraw':
         await loadWalletInfo()
+        await loadUserInfo()
+        // 如果已绑定支付宝，自动填充到提现表单
+        if (bindForm.alipay_login_id && !withdrawForm.alipay_account) {
+          withdrawForm.alipay_account = bindForm.alipay_login_id
+        }
+        if (bindForm.alipay_real_name && !withdrawForm.alipay_name) {
+          withdrawForm.alipay_name = bindForm.alipay_real_name
+        }
+        break
+      case 'wallet-bind':
+        await loadUserInfo()
         break
     }
   } finally {
@@ -1204,6 +1380,8 @@ onMounted(async () => {
   
   initEditForm()
   userLocation.value = localStorage.getItem('user_location') || '未设置'
+  // 初始化绑定表单数据
+  loadUserInfo()
 })
 </script>
 
@@ -1398,6 +1576,8 @@ onMounted(async () => {
 
 /* 订单卡片（大） */
 .orders-list { display: flex; flex-direction: column; gap: 16px; }
+.settlement-summary { margin-top: 6px; display: flex; align-items: center; gap: 6px; }
+.settlement-account { margin-left: 6px; color: #606266; font-size: 12px; }
 
 .order-card-large {
   background: var(--bg-white);

@@ -11,6 +11,12 @@
           <el-option label="已完成" value="completed" />
           <el-option label="已取消" value="cancelled" />
         </el-select>
+        <el-select v-model="settleFilter" placeholder="分账状态" style="width: 150px; margin-left: 12px" clearable>
+          <el-option label="全部" value="" />
+          <el-option label="待分账" value="pending" />
+          <el-option label="已分账" value="settled" />
+          <el-option label="分账失败" value="failed" />
+        </el-select>
         <el-input
           v-model="search"
           placeholder="搜索订单号、商品、买家"
@@ -42,6 +48,14 @@
       <el-table-column prop="status" label="状态" width="120">
         <template #default="{ row }">
           <el-tag :type="getStatusType(row.status)">{{ getStatusText(row.status) }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="分账状态" width="120">
+        <template #default="{ row }">
+          <el-tag v-if="row.settlement_status" :type="row.settlement_status==='settled'?'success':(row.settlement_status==='failed'?'danger':'warning')">
+            {{ row.settlement_status==='settled'?'已分账':(row.settlement_status==='failed'?'分账失败':'待分账') }}
+          </el-tag>
+          <span v-else>-</span>
         </template>
       </el-table-column>
       <el-table-column label="物流信息" width="180">
@@ -80,6 +94,8 @@
           >
             退款
           </el-button>
+          <el-button v-if="hasPerm('payment:view')" size="small" type="success" @click="openSettlement(row)">分账详情</el-button>
+          <el-button v-if="hasPerm('payment:write')" size="small" @click="retrySettlement(row)">重试分账</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -104,10 +120,10 @@
       @close="resetShipForm"
     >
       <el-form :model="shipForm" label-width="100px">
-        <el-form-item label="物流公司" required>
+        <el-form-item label="物流公司" :required="true">
           <el-input v-model="shipForm.carrier" placeholder="请输入物流公司名称" />
         </el-form-item>
-        <el-form-item label="运单号" required>
+        <el-form-item label="运单号" :required="true">
           <el-input v-model="shipForm.tracking_number" placeholder="请输入运单号" />
         </el-form-item>
       </el-form>
@@ -116,6 +132,46 @@
         <el-button type="primary" :loading="shipping" @click="confirmShip">
           确认发货
         </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 分账详情 -->
+  <el-dialog v-model="settlementDialogVisible" title="分账详情" width="600px">
+      <div v-if="settlementDetail">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="订单ID">{{ settlementDetail.id }}</el-descriptions-item>
+          <el-descriptions-item label="订单状态">{{ getStatusText(settlementDetail.status) }}</el-descriptions-item>
+          <el-descriptions-item label="支付宝交易号">{{ settlementDetail.alipay_trade_no || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="分账状态">{{ settlementDetail.settlement_status || 'pending' }}</el-descriptions-item>
+          <el-descriptions-item label="分账时间">{{ settlementDetail.settled_at || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="卖家分账金额">¥{{ settlementDetail.seller_settle_amount ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="平台佣金">¥{{ settlementDetail.platform_commission_amount ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="结算方式">
+            <el-tag :type="settlementDetail.settlement_method==='TRANSFER'?'warning':'success'">
+              {{ settlementDetail.settlement_method==='TRANSFER'?'转账代结算':'分账结算' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="结算到账账户">{{ settlementDetail.settlement_account || settlementDetail.seller?.alipay_login_id || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="settlementDetail.transfer_order_id" label="转账订单号">{{ settlementDetail.transfer_order_id }}</el-descriptions-item>
+          <el-descriptions-item label="卖家姓名">{{ settlementDetail.seller?.alipay_real_name || '-' }}</el-descriptions-item>
+        </el-descriptions>
+        <div style="margin-top: 12px">
+          <el-tag type="info" v-if="settlementDetail.can_retry===false">不可重试：请检查卖家绑定或交易号</el-tag>
+          <el-tag type="success" v-else>可重试分账</el-tag>
+        </div>
+        <el-divider content-position="left">分账历程</el-divider>
+        <el-empty v-if="!settlementHistory.length" description="暂无分账记录" />
+        <el-timeline v-else>
+          <el-timeline-item v-for="h in settlementHistory" :key="h.id" :timestamp="h.created_at" placement="top">
+            <div style="font-weight: 500">{{ h.action==='settlement_retry'?'管理员重试':'自动分账' }}</div>
+            <div style="color:#666; font-size:12px">{{ h.snapshot?.result || '-' }}</div>
+            <div style="color:#999; font-size:12px">{{ h.snapshot?.code }} {{ h.snapshot?.sub_code }} {{ h.snapshot?.msg || '' }} {{ h.snapshot?.sub_msg || '' }}</div>
+          </el-timeline-item>
+        </el-timeline>
+      </div>
+      <template #footer>
+        <el-button @click="settlementDialogVisible = false">关闭</el-button>
+        <el-button v-if="hasPerm('payment:write')" type="primary" :loading="retrying" @click="retrySettlement(settlementDetail)">重试分账</el-button>
       </template>
     </el-dialog>
   </div>
@@ -134,10 +190,15 @@ const orders = ref([])
 const loading = ref(false)
 const search = ref('')
 const statusFilter = ref('')
+const settleFilter = ref('')
 const pagination = ref({ current: 1, pageSize: 20, total: 0 })
 const showShipDialog = ref(false)
 const shipping = ref(false)
 const currentShipOrder = ref(null)
+const settlementDialogVisible = ref(false)
+const settlementDetail = ref(null)
+const settlementHistory = ref([])
+const retrying = ref(false)
 
 const shipForm = reactive({
   carrier: '',
@@ -162,9 +223,8 @@ const loadOrders = async () => {
       page: pagination.value.current,
       page_size: pagination.value.pageSize
     }
-    if (statusFilter.value) {
-      params.status = statusFilter.value
-    }
+    if (statusFilter.value) params.status = statusFilter.value
+    if (settleFilter.value) params.settlement_status = settleFilter.value
     const res = await adminApi.get('/payment/orders', { params })
     orders.value = res.data?.results || []
     pagination.value.total = res.data?.count || 0
@@ -248,6 +308,34 @@ const refundOrder = async (row) => {
   }
 }
 
+const openSettlement = async (row) => {
+    try {
+      const res = await adminApi.get(`/payment/order/${row.id}/settlement`)
+      settlementDetail.value = res.data
+      const his = await adminApi.get(`/payment/order/${row.id}/settlement/history`)
+      settlementHistory.value = his.data?.history || []
+      settlementDialogVisible.value = true
+    } catch (error) {
+      ElMessage.error('获取分账详情失败')
+    }
+  }
+  const retrySettlement = async (row) => {
+    try {
+      await ElMessageBox.confirm(`重试分账订单 #${row.id}？`, '提示', { type: 'warning' })
+      retrying.value = true
+      const res = await adminApi.post(`/payment/order/${row.id}/settlement/retry`)
+      const ok = res.data?.success
+      ElMessage[ok ? 'success' : 'error'](ok ? '已重试分账' : (res.data?.detail || '重试失败'))
+    } catch (error) {
+      if (error !== 'cancel') {
+        ElMessage.error('重试分账失败')
+      }
+    } finally {
+      retrying.value = false
+    }
+  }
+
+
 const resetShipForm = () => {
   shipForm.carrier = ''
   shipForm.tracking_number = ''
@@ -282,6 +370,8 @@ onMounted(() => {
   align-items: center;
 }
 </style>
+
+
 
 
 

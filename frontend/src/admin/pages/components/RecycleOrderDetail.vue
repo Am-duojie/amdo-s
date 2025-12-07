@@ -277,7 +277,7 @@
         <el-button
           v-if="canShowPaymentButton"
           type="warning"
-          @click="showPaymentDialog = true"
+          @click="openPaymentDialog"
         >
           打款给用户
         </el-button>
@@ -419,7 +419,7 @@
         <el-form-item v-if="paymentForm.payment_method === 'transfer'" label="打款账户" required>
           <el-input
             v-model="paymentForm.payment_account"
-            placeholder="请输入用户的收款账户"
+            :placeholder="(detail.user && detail.user.alipay_login_id) ? ('已绑定：' + detail.user.alipay_login_id) : '请输入用户的收款账户'"
           />
         </el-form-item>
         <el-form-item label="备注">
@@ -539,6 +539,13 @@ const statusMap = {
   inspected: { text: '已检测', type: 'success' },
   completed: { text: '已完成', type: 'success' },
   cancelled: { text: '已取消', type: 'info' }
+} 
+
+const openPaymentDialog = () => {
+  const loginId = (detail.value && detail.value.user && detail.value.user.alipay_login_id) ? detail.value.user.alipay_login_id : ''
+  paymentForm.payment_method = loginId ? 'transfer' : 'wallet'
+  paymentForm.payment_account = loginId || ''
+  showPaymentDialog.value = true
 }
 
 const conditionMap = {
@@ -712,20 +719,24 @@ const saveFinalPrice = async () => {
   }
 }
 
-const saveReport = async () => {
-  try {
-    let checkItems = {}
+  const saveReport = async () => {
     try {
-      checkItems = JSON.parse(reportForm.checkItemsJson || '{}')
-    } catch (e) {
-      ElMessage.error('检测项目JSON格式错误')
-      return
-    }
-    if (!reportForm.final_price || reportForm.final_price <= 0) {
-      ElMessage.warning('请输入有效的最终价格')
-      return
-    }
-    savingReport.value = true
+      let checkItems = {}
+      try {
+        checkItems = JSON.parse(reportForm.checkItemsJson || '{}')
+      } catch (e) {
+        ElMessage.error('检测项目JSON格式错误')
+        return
+      }
+      if (typeof checkItems !== 'object' || Array.isArray(checkItems) || checkItems === null) {
+        ElMessage.error('检测项目必须是对象(JSON)')
+        return
+      }
+      if (!reportForm.final_price || reportForm.final_price <= 0) {
+        ElMessage.warning('请输入有效的最终价格')
+        return
+      }
+      savingReport.value = true
     
     // 先保存质检报告
     await adminApi.post(`/inspection-orders/${props.orderId}/report`, {

@@ -1,7 +1,8 @@
 import time
 from datetime import datetime, timedelta
+import json
 from django.utils import timezone
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
@@ -404,9 +405,16 @@ class InspectionOrderDetailView(APIView):
         except RecycleOrder.DoesNotExist:
             return Response({'success': False})
         rep = o.admin_reports.order_by('-id').first()
+        profile = getattr(o.user, 'profile', None)
         return Response({'success': True, 'item': {
             'id': o.id,
-            'user': {'id': o.user.id, 'username': o.user.username, 'email': getattr(o.user, 'email', '')},
+            'user': {
+                'id': o.user.id,
+                'username': o.user.username,
+                'email': getattr(o.user, 'email', ''),
+                'alipay_login_id': (getattr(profile, 'alipay_login_id', '') if profile else ''),
+                'alipay_real_name': (getattr(profile, 'alipay_real_name', '') if profile else '')
+            },
             'status': o.status,
             'device_type': o.device_type,
             'brand': o.brand,
@@ -500,6 +508,13 @@ class InspectionOrderDetailView(APIView):
             return Response({'detail': 'Forbidden'}, status=403)
         items = request.data.get('check_items', {})
         remarks = request.data.get('remarks', '')
+        if isinstance(items, str):
+            try:
+                items = json.loads(items)
+            except Exception:
+                return Response({'success': False, 'detail': '检测项目JSON解析失败'}, status=400)
+        if not isinstance(items, dict):
+            return Response({'success': False, 'detail': '检测项目必须为对象'}, status=400)
         try:
             o = RecycleOrder.objects.get(id=order_id)
         except RecycleOrder.DoesNotExist:
@@ -757,6 +772,11 @@ class InspectionOrderPaymentView(APIView):
                 return Response({'success': False, 'detail': '打款方式不支持'}, status=400)
             
             if payment_method == 'transfer':
+                if not payment_account:
+                    profile = getattr(o.user, 'profile', None)
+                    payment_account = getattr(profile, 'alipay_login_id', '') if profile else ''
+                if not payment_account:
+                    return Response({'success': False, 'detail': '收款账户不能为空'}, status=400)
                 o.payment_status = 'paid'
                 o.paid_at = timezone.now()
                 o.payment_method = 'transfer'
@@ -769,6 +789,22 @@ class InspectionOrderPaymentView(APIView):
                     parts.append(f'收款账户: {payment_account}')
                 o.payment_note = '\n'.join(parts)
                 o.save()
+
+                # 记录交易（用于前端“钱包-交易记录”展示提示）
+                from app.secondhand_app.models import Wallet, WalletTransaction
+                wallet, _ = Wallet.objects.get_or_create(user=o.user)
+                from decimal import Decimal
+                WalletTransaction.objects.create(
+                    wallet=wallet,
+                    transaction_type='withdraw',
+                    amount=Decimal(str(-total_amount)),
+                    balance_after=wallet.balance,
+                    related_order=o,
+                    withdraw_status='success',
+                    alipay_account=payment_account or '',
+                    note=f'平台已打款到支付宝（订单#{o.id}），金额：¥{total_amount}'
+                )
+
                 return Response({'success': True, 'message': '打款成功，已直接转账', 'amount': total_amount})
             
             # 将钱存入用户钱包
@@ -1246,18 +1282,26 @@ class PaymentOrdersView(APIView):
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
         status_filter = request.query_params.get('status', '')
-        qs = Order.objects.all().order_by('-created_at')
+        settlement_filter = request.query_params.get('settlement_status', '').strip()
+        qs = Order.objects.select_related('product__seller', 'buyer').all().order_by('-created_at')
         if status_filter:
             qs = qs.filter(status=status_filter)
+        if settlement_filter:
+            qs = qs.filter(settlement_status=settlement_filter)
         total = qs.count()
         items = qs[(page-1)*page_size: page*page_size]
         data = [{
             'id': o.id,
             'product': o.product.title if o.product else '',
             'buyer': o.buyer.username if o.buyer else '',
+            'seller': o.product.seller.username if getattr(o, 'product', None) and getattr(o.product, 'seller', None) else '',
             'total_price': float(o.total_price),
             'status': o.status,
-            'created_at': o.created_at.isoformat()
+            'settlement_status': getattr(o, 'settlement_status', 'pending'),
+            'alipay_trade_no': getattr(o, 'alipay_trade_no', ''),
+            'created_at': o.created_at.isoformat(),
+            'seller_bound': (getattr(o.product.seller, 'profile', None) and bool(getattr(o.product.seller.profile, 'alipay_login_id', ''))) or False,
+            'can_retry': ((getattr(o.product.seller, 'profile', None) and bool(getattr(o.product.seller.profile, 'alipay_login_id', ''))) and bool(getattr(o, 'alipay_trade_no', '')))
         } for o in items]
         return Response({'results': data, 'count': total})
 
@@ -1300,6 +1344,218 @@ class PaymentOrderActionView(APIView):
             AdminAuditLog.objects.create(actor=admin, target_type='Order', target_id=o.id, action='ship', snapshot_json={'carrier': carrier, 'tracking_number': tracking_number})
             return Response({'success': True})
         return Response({'success': False}, status=400)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class PaymentOrderSettlementView(APIView):
+    authentication_classes = []
+    permission_classes = []
+    
+    def get(self, request, order_id, action=None):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['payment:view']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        try:
+            o = Order.objects.select_related('product__seller__profile', 'buyer').get(id=order_id)
+            seller_profile = getattr(o.product.seller, 'profile', None)
+            seller_login_id = seller_profile.alipay_login_id if seller_profile else ''
+            seller_user_id = seller_profile.alipay_user_id if seller_profile else ''
+            seller_user_id = seller_profile.alipay_user_id if seller_profile else ''
+            seller_user_id = seller_profile.alipay_user_id if seller_profile else ''
+            seller_user_id = seller_profile.alipay_user_id if seller_profile else ''
+            seller_user_id = seller_profile.alipay_user_id if seller_profile else ''
+            seller_user_id = seller_profile.alipay_user_id if seller_profile else ''
+            if action == 'history':
+                logs = AdminAuditLog.objects.filter(target_type__in=['Order','VerifiedOrder'], target_id=o.id, action__in=['settlement_auto','settlement_retry']).order_by('created_at')
+                history = [{
+                    'id': lg.id,
+                    'action': lg.action,
+                    'created_at': lg.created_at.isoformat(),
+                    'snapshot': lg.snapshot_json or {}
+                } for lg in logs]
+                return Response({'id': o.id, 'history': history})
+            # 最近一次分账重试审计日志
+            last_log = AdminAuditLog.objects.filter(target_type='Order', target_id=o.id, action='settlement_retry').order_by('-id').first()
+            last_log_info = None
+            if last_log:
+                last_log_info = {
+                    'id': last_log.id,
+                    'created_at': last_log.created_at.isoformat(),
+                    'snapshot': last_log.snapshot_json or {}
+                }
+            can_retry = bool(seller_login_id) and bool(getattr(o, 'alipay_trade_no', ''))
+            return Response({
+                'id': o.id,
+                'status': o.status,
+                'alipay_trade_no': getattr(o, 'alipay_trade_no', ''),
+                'settlement_status': getattr(o, 'settlement_status', 'pending'),
+                'settled_at': o.settled_at.isoformat() if getattr(o, 'settled_at', None) else None,
+                'seller_settle_amount': float(o.seller_settle_amount) if o.seller_settle_amount else None,
+                'platform_commission_amount': float(o.platform_commission_amount) if o.platform_commission_amount else None,
+                'settlement_method': getattr(o, 'settlement_method', ''),
+                'settlement_account': (seller_user_id or seller_login_id),
+                'transfer_order_id': getattr(o, 'transfer_order_id', ''),
+                'seller': {
+                    'id': o.product.seller.id,
+                    'username': o.product.seller.username,
+                    'alipay_login_id': seller_login_id,
+                    'alipay_real_name': seller_profile.alipay_real_name if seller_profile else '',
+                },
+                'can_retry': can_retry,
+                'last_settlement_log': last_log_info
+            })
+        except Order.DoesNotExist:
+            return Response({'detail': 'order not found'}, status=404)
+    
+    def post(self, request, order_id, action):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['payment:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        if action != 'retry':
+            return Response({'success': False, 'detail': 'unknown action'}, status=400)
+        try:
+            o = Order.objects.select_related('product__seller__profile').get(id=order_id)
+            seller_profile = getattr(o.product.seller, 'profile', None)
+            seller_login_id = seller_profile.alipay_login_id if seller_profile else ''
+            seller_user_id = seller_profile.alipay_user_id if seller_profile else ''
+            if not seller_login_id:
+                return Response({'success': False, 'detail': '卖家未绑定支付宝登录账号'}, status=400)
+            from app.secondhand_app.alipay_client import AlipayClient
+            alipay = AlipayClient()
+            trade_no = getattr(o, 'alipay_trade_no', '')
+            if not trade_no:
+                q = alipay.query_trade(f'normal_{o.id}')
+                if q.get('success'):
+                    trade_no = q.get('trade_no', '')
+            if not trade_no:
+                return Response({'success': False, 'detail': '无法获取支付宝交易号'}, status=400)
+            from decimal import Decimal
+            seller_amount = Decimal(str(o.product.price))
+            commission_amount = Decimal(str(o.total_price)) - seller_amount
+            if commission_amount < 0:
+                commission_amount = Decimal('0.00')
+            out_request_no = f'admin_retry_settle_{o.id}_{int(time.time())}'
+            if seller_user_id:
+                result = alipay.settle_order(
+                    trade_no=trade_no,
+                    out_request_no=out_request_no,
+                    splits=[{
+                        'trans_in': seller_user_id,
+                        'trans_in_type': 'userId',
+                        'amount': float(seller_amount),
+                        'desc': '易淘分账-卖家(管理员重试)'
+                    }]
+                )
+            else:
+                result = alipay.settle_order(
+                    trade_no=trade_no,
+                    out_request_no=out_request_no,
+                    splits=[{
+                        'trans_in': seller_login_id,
+                        'trans_in_type': 'loginName',
+                        'amount': float(seller_amount),
+                        'desc': '易淘分账-卖家(管理员重试)'
+                    }]
+                )
+            if result.get('success'):
+                o.settlement_status = 'settled'
+                o.settled_at = timezone.now()
+                o.settle_request_no = out_request_no
+                o.seller_settle_amount = seller_amount
+                o.platform_commission_amount = commission_amount
+                o.settlement_method = 'ROYALTY'
+                o.save()
+                try:
+                    from app.secondhand_app.models import Wallet, WalletTransaction
+                    wallet, _ = Wallet.objects.get_or_create(user=o.product.seller)
+                    WalletTransaction.objects.create(
+                        wallet=wallet,
+                        transaction_type='income',
+                        amount=seller_amount,
+                        balance_after=wallet.balance,
+                        related_market_order=o,
+                        alipay_account=(seller_user_id or seller_login_id),
+                        alipay_name=(seller_profile.alipay_real_name if seller_profile else ''),
+                        note=f'订单#{o.id} 分账完成，资金已存入支付宝: {(seller_user_id or seller_login_id)}'
+                    )
+                except Exception:
+                    pass
+                AdminAuditLog.objects.create(actor=admin, target_type='Order', target_id=o.id, action='settlement_retry', snapshot_json={'result': 'success'})
+                return Response({'success': True})
+            else:
+                o.settlement_status = 'failed'
+                o.settle_request_no = out_request_no
+                o.save()
+                AdminAuditLog.objects.create(actor=admin, target_type='Order', target_id=o.id, action='settlement_retry', snapshot_json={'result': 'failed', 'code': result.get('code'), 'msg': result.get('msg')})
+                try:
+                    from django.conf import settings
+                    from django.utils import timezone
+                    if getattr(settings, 'SETTLEMENT_FALLBACK_TO_TRANSFER', False):
+                        out_biz_no = f'admin_settle_transfer_{o.id}_{int(time.time())}'
+                        transfer_res = alipay.transfer_to_account(
+                            out_biz_no=out_biz_no,
+                            payee_account=(seller_login_id or seller_user_id),
+                            amount=float(seller_amount),
+                            payee_real_name=(seller_profile.alipay_real_name if seller_profile else None),
+                            remark='易淘分账-管理员转账代结算'
+                        )
+                        if transfer_res.get('success'):
+                            o.settlement_status = 'settled'
+                            o.settled_at = timezone.now()
+                            o.seller_settle_amount = seller_amount
+                            o.platform_commission_amount = commission_amount
+                            o.settlement_method = 'TRANSFER'
+                            o.transfer_order_id = transfer_res.get('order_id','')
+                            o.save()
+                            try:
+                                from app.secondhand_app.models import Wallet, WalletTransaction
+                                wallet, _ = Wallet.objects.get_or_create(user=o.product.seller)
+                                WalletTransaction.objects.create(
+                                    wallet=wallet,
+                                    transaction_type='income',
+                                    amount=seller_amount,
+                                    balance_after=wallet.balance,
+                                    related_market_order=o,
+                                    alipay_account=(seller_user_id or seller_login_id),
+                                    alipay_name=(seller_profile.alipay_real_name if seller_profile else ''),
+                                    alipay_order_id=transfer_res.get('order_id',''),
+                                    note=f'订单#{o.id} 转账代结算成功，资金已存入支付宝: {(seller_user_id or seller_login_id)}'
+                                )
+                            except Exception:
+                                pass
+                            AdminAuditLog.objects.create(actor=admin, target_type='Order', target_id=o.id, action='settlement_retry_transfer', snapshot_json={'result': 'success'})
+                            return Response({'success': True})
+                except Exception:
+                    pass
+                return Response({'success': False, 'detail': result.get('msg', '分账失败')}, status=500)
+        except Order.DoesNotExist:
+            return Response({'detail': 'order not found'}, status=404)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class SettlementSummaryView(APIView):
+    authentication_classes = []
+    permission_classes = []
+    
+    def get(self, request):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['payment:view']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        qs = Order.objects.all()
+        counts = qs.values('settlement_status').annotate(cnt=Count('id'))
+        totals = qs.aggregate(
+            total_commission=Sum('platform_commission_amount'),
+            total_seller_amount=Sum('seller_settle_amount')
+        )
+        return Response({
+            'status_counts': {c['settlement_status'] or 'pending': c['cnt'] for c in counts},
+            'total_commission': float(totals['total_commission'] or 0),
+            'total_seller_amount': float(totals['total_seller_amount'] or 0)
+        })
 
 # 官方验订单相关视图
 @method_decorator(csrf_exempt, name='dispatch')

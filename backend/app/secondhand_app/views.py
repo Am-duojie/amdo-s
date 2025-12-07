@@ -36,7 +36,9 @@ class UserViewSet(viewsets.ModelViewSet):
             serializer = UserUpdateSerializer(request.user, data=request.data, partial=True, context={'request': request})
             if serializer.is_valid():
                 serializer.save()
-                return Response(serializer.data)
+                # 使用 UserSerializer 返回完整数据，包括 alipay_login_id 等字段
+                user_serializer = UserSerializer(request.user, context={'request': request})
+                return Response(user_serializer.data)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['post'], permission_classes=[])
@@ -402,6 +404,13 @@ class ProductViewSet(viewsets.ModelViewSet):
         serializer = ProductSerializer(products, many=True, context={'request': request})
         return Response(serializer.data)
 
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def my_sales(self, request):
+        """获取当前用户作为卖家的订单（含结算状态与账户）"""
+        orders = Order.objects.filter(product__seller=request.user).order_by('-created_at')
+        serializer = OrderSerializer(orders, many=True, context={'request': request})
+        return Response(serializer.data)
+
 
 class OrderViewSet(viewsets.ModelViewSet):
     """订单视图集"""
@@ -445,6 +454,153 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         order.status = status_value
         order.save()
+
+        # 买家确认收货后触发分账结算（普通订单）
+        try:
+            from django.conf import settings
+            from django.utils import timezone
+            if status_value == 'completed' and getattr(settings, 'SETTLE_ON_ORDER_COMPLETED', False) and getattr(settings, 'ENABLE_ALIPAY_ROYALTY', False):
+                if not order.delivered_at:
+                    order.delivered_at = timezone.now()
+                    order.save()
+                # 仅当订单已支付且分账待处理
+                if getattr(order, 'settlement_status', 'pending') == 'pending' and order.status in ['completed']:
+                    seller_profile = getattr(order.product.seller, 'profile', None)
+                    seller_login_id = seller_profile.alipay_login_id if seller_profile else ''
+                    seller_user_id = seller_profile.alipay_user_id if seller_profile else ''
+                    if not seller_login_id:
+                        logger.error(f'分账暂缓：卖家未绑定支付宝登录账号，order_id={order.id}')
+                        # 保持为pending，以便卖家绑定后自动结算
+                        order.settlement_status = 'pending'
+                        order.save()
+                    else:
+                        from app.secondhand_app.alipay_client import AlipayClient
+                        alipay = AlipayClient()
+                        # 交易号优先用记录的，其次主动查询
+                        trade_no = getattr(order, 'alipay_trade_no', '')
+                        if not trade_no:
+                            query = alipay.query_trade(f'normal_{order.id}')
+                            if query.get('success'):
+                                trade_no = query.get('trade_no', '')
+                        if not trade_no:
+                            logger.error(f'分账暂缓：无法获取支付宝交易号，order_id={order.id}')
+                            # 保持为pending，待支付回调或同步查询后再结算
+                            order.settlement_status = 'pending'
+                            order.save()
+                        else:
+                            # 计算分账金额（卖家为商品价格，佣金为差额）
+                            from decimal import Decimal
+                            seller_amount = Decimal(str(order.product.price))
+                            commission_amount = Decimal(str(order.total_price)) - seller_amount
+                            if commission_amount < 0:
+                                commission_amount = Decimal('0.00')
+                            out_request_no = f'settle_{order.id}_{int(timezone.now().timestamp())}'
+                            if seller_user_id:
+                                result = alipay.settle_order(
+                                    trade_no=trade_no,
+                                    out_request_no=out_request_no,
+                                    splits=[{
+                                        'trans_in': seller_user_id,
+                                        'trans_in_type': 'userId',
+                                        'amount': float(seller_amount),
+                                        'desc': '易淘分账-卖家'
+                                    }]
+                                )
+                            else:
+                                result = alipay.settle_order(
+                                    trade_no=trade_no,
+                                    out_request_no=out_request_no,
+                                    splits=[{
+                                        'trans_in': seller_login_id,
+                                        'trans_in_type': 'loginName',
+                                        'amount': float(seller_amount),
+                                        'desc': '易淘分账-卖家'
+                                    }]
+                                )
+                            if result.get('success'):
+                                order.settlement_status = 'settled'
+                                order.settled_at = timezone.now()
+                                order.settle_request_no = out_request_no
+                                order.seller_settle_amount = seller_amount
+                                order.platform_commission_amount = commission_amount
+                                order.settlement_method = 'ROYALTY'
+                                order.save()
+                                try:
+                                    wallet, _ = Wallet.objects.get_or_create(user=order.product.seller)
+                                    WalletTransaction.objects.create(
+                                        wallet=wallet,
+                                        transaction_type='income',
+                                        amount=seller_amount,
+                                        balance_after=wallet.balance,
+                                        related_market_order=order,
+                                        alipay_account=(seller_user_id or seller_login_id),
+                                        alipay_name=(seller_profile.alipay_real_name if seller_profile else ''),
+                                        note=f'订单#{order.id} 分账完成，资金已存入支付宝: {(seller_user_id or seller_login_id)}'
+                                    )
+                                except Exception:
+                                    pass
+                            else:
+                                order.settlement_status = 'failed'
+                                order.settle_request_no = out_request_no
+                                order.save()
+                                logger.error(f"分账失败: code={result.get('code')}, msg={result.get('msg')}, sub={result.get('sub_code')} {result.get('sub_msg')}")
+                                try:
+                                    from app.admin_api.models import AdminAuditLog
+                                    AdminAuditLog.objects.create(
+                                        actor=None,
+                                        target_type='Order',
+                                        target_id=order.id,
+                                        action='settlement_auto',
+                                        snapshot_json={
+                                            'result': 'failed',
+                                            'code': result.get('code'),
+                                            'msg': result.get('msg'),
+                                            'sub_code': result.get('sub_code'),
+                                            'sub_msg': result.get('sub_msg')
+                                        }
+                                    )
+                                except Exception:
+                                    pass
+                                try:
+                                    if getattr(settings, 'SETTLEMENT_FALLBACK_TO_TRANSFER', False):
+                                        out_biz_no = f'settle_transfer_{order.id}_{int(timezone.now().timestamp())}'
+                                        transfer_res = alipay.transfer_to_account(
+                                            out_biz_no=out_biz_no,
+                                            payee_account=(seller_login_id or seller_user_id),
+                                            amount=float(seller_amount),
+                                            payee_real_name=(seller_profile.alipay_real_name if seller_profile else None),
+                                            remark='易淘分账-转账代结算'
+                                        )
+                                        if transfer_res.get('success'):
+                                            order.settlement_status = 'settled'
+                                            order.settled_at = timezone.now()
+                                            order.platform_commission_amount = commission_amount
+                                            order.seller_settle_amount = seller_amount
+                                            order.settlement_method = 'TRANSFER'
+                                            order.transfer_order_id = transfer_res.get('order_id','')
+                                            order.save()
+                                            logger.info(f"分账失败后转账代结算成功: order_id={order.id}")
+                                            try:
+                                                wallet, _ = Wallet.objects.get_or_create(user=order.product.seller)
+                                                WalletTransaction.objects.create(
+                                                    wallet=wallet,
+                                                    transaction_type='income',
+                                                    amount=seller_amount,
+                                                    balance_after=wallet.balance,
+                                                    related_market_order=order,
+                                                    alipay_account=(seller_user_id or seller_login_id),
+                                                    alipay_name=(seller_profile.alipay_real_name if seller_profile else ''),
+                                                    alipay_order_id=transfer_res.get('order_id',''),
+                                                    note=f'订单#{order.id} 转账代结算成功，资金已存入支付宝: {(seller_user_id or seller_login_id)}'
+                                                )
+                                            except Exception:
+                                                pass
+                                        else:
+                                            logger.error(f"转账代结算失败: code={transfer_res.get('code')}, msg={transfer_res.get('msg')}, sub={transfer_res.get('sub_code')} {transfer_res.get('sub_msg')}")
+                                except Exception as e:
+                                    logger.error(f'转账代结算异常: {str(e)}', exc_info=True)
+        except Exception as e:
+            logger.error(f'订单分账异常: {str(e)}', exc_info=True)
         serializer = OrderSerializer(order)
         return Response(serializer.data)
 
@@ -877,6 +1033,85 @@ class VerifiedOrderViewSet(viewsets.ModelViewSet):
         
         order.status = status_value
         order.save()
+        # 官方验货订单完成后，同步触发分账（卖家为官方商品卖家）
+        try:
+            from django.conf import settings
+            from django.utils import timezone
+            if status_value == 'completed' and getattr(settings, 'SETTLE_ON_ORDER_COMPLETED', False) and getattr(settings, 'ENABLE_ALIPAY_ROYALTY', False):
+                if not order.delivered_at:
+                    order.delivered_at = timezone.now()
+                    order.save()
+                seller_profile = getattr(order.product.seller, 'profile', None)
+                seller_login_id = seller_profile.alipay_login_id if seller_profile else ''
+                if not seller_login_id:
+                    logger.error(f'分账暂缓：卖家未绑定支付宝登录账号，verified_order_id={order.id}')
+                    # 保持待分账，等待卖家绑定后自动结算
+                    if hasattr(order, 'settlement_status'):
+                        order.settlement_status = 'pending'
+                        order.save()
+                else:
+                    from app.secondhand_app.alipay_client import AlipayClient
+                    alipay = AlipayClient()
+                    trade_no = getattr(order, 'alipay_trade_no', '')
+                    if not trade_no:
+                        query = alipay.query_trade(f'verified_{order.id}')
+                        if query.get('success'):
+                            trade_no = query.get('trade_no', '')
+                    if not trade_no:
+                        logger.error(f'分账暂缓：无法获取支付宝交易号，verified_order_id={order.id}')
+                        if hasattr(order, 'settlement_status'):
+                            order.settlement_status = 'pending'
+                            order.save()
+                    else:
+                        from decimal import Decimal
+                        seller_amount = Decimal(str(order.product.price))
+                        commission_amount = Decimal(str(order.total_price)) - seller_amount
+                        if commission_amount < 0:
+                            commission_amount = Decimal('0.00')
+                        out_request_no = f'settle_verified_{order.id}_{int(timezone.now().timestamp())}'
+                        result = alipay.settle_order(
+                            trade_no=trade_no,
+                            out_request_no=out_request_no,
+                            splits=[{
+                                'trans_in': seller_login_id,
+                                'trans_in_type': 'ALIPAY_LOGON_ID',
+                                'amount': float(seller_amount),
+                                'desc': '易淘分账-卖家(官方验货)'
+                            }]
+                        )
+                        if result.get('success'):
+                            if hasattr(order, 'settlement_status'):
+                                order.settlement_status = 'settled'
+                                order.settled_at = timezone.now()
+                                order.settle_request_no = out_request_no
+                                order.seller_settle_amount = seller_amount
+                                order.platform_commission_amount = commission_amount
+                                order.save()
+                        else:
+                            if hasattr(order, 'settlement_status'):
+                                order.settlement_status = 'failed'
+                                order.settle_request_no = out_request_no
+                                order.save()
+                            logger.error(f"验货分账失败: code={result.get('code')}, msg={result.get('msg')}, sub={result.get('sub_code')} {result.get('sub_msg')}")
+                            try:
+                                from app.admin_api.models import AdminAuditLog
+                                AdminAuditLog.objects.create(
+                                    actor=None,
+                                    target_type='VerifiedOrder',
+                                    target_id=order.id,
+                                    action='settlement_auto',
+                                    snapshot_json={
+                                        'result': 'failed',
+                                        'code': result.get('code'),
+                                        'msg': result.get('msg'),
+                                        'sub_code': result.get('sub_code'),
+                                        'sub_msg': result.get('sub_msg')
+                                    }
+                                )
+                            except Exception:
+                                pass
+        except Exception as e:
+            logger.error(f'验货订单分账异常: {str(e)}', exc_info=True)
         serializer = VerifiedOrderSerializer(order)
         return Response(serializer.data)
 

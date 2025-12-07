@@ -159,6 +159,12 @@ def alipay_payment_notify(request):
             if order.status == 'pending':
                 # 更新订单状态
                 order.status = 'paid'
+                # 记录支付宝交易号
+                if hasattr(order, 'alipay_trade_no'):
+                    order.alipay_trade_no = trade_no
+                # 支付完成后分账仍待触发
+                if hasattr(order, 'settlement_status') and order.settlement_status != 'settled':
+                    order.settlement_status = 'pending'
                 order.save()
                 
                 logger.info(f'订单 {out_trade_no} 支付成功，状态已更新')

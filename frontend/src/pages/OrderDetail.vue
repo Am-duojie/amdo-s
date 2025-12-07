@@ -131,6 +131,35 @@
                 取消订单
               </el-button>
             </div>
+
+            <!-- 结算信息（卖家可见） -->
+            <div class="section" v-if="isSeller && order.settlement_status">
+              <h3>结算信息</h3>
+              <div style="margin-bottom:8px">
+                <el-tag :type="order.settlement_status==='settled'?'success':(order.settlement_status==='failed'?'danger':'warning')">
+                  {{ order.settlement_status==='settled'?'已结算到账':(order.settlement_status==='failed'?'结算失败':'待结算') }}
+                </el-tag>
+                <el-tag style="margin-left:8px" v-if="order.settlement_method" :type="order.settlement_method==='TRANSFER'?'warning':'success'">
+                  {{ order.settlement_method==='TRANSFER'?'转账代结算':'分账结算' }}
+                </el-tag>
+              </div>
+              <div class="info-row">
+                <span class="label">到账账户：</span>
+                <span class="value">{{ order.settlement_account || order.product?.seller?.profile?.alipay_login_id || '-' }}</span>
+              </div>
+              <div class="info-row" v-if="order.transfer_order_id">
+                <span class="label">转账订单号：</span>
+                <span class="value">{{ order.transfer_order_id }}</span>
+              </div>
+              <div class="info-row">
+                <span class="label">分账金额：</span>
+                <span class="value">¥{{ order.seller_settle_amount ?? '-' }}</span>
+              </div>
+              <div class="info-row">
+                <span class="label">平台佣金：</span>
+                <span class="value">¥{{ order.platform_commission_amount ?? '-' }}</span>
+              </div>
+            </div>
           </div>
         </el-loading>
       </el-card>

@@ -117,3 +117,5 @@ if ($start -eq "y" -or $start -eq "Y") {
     Write-Host "然后在 settings.py 中更新 BACKEND_URL" -ForegroundColor Cyan
 }
 
+
+

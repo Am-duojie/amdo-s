@@ -246,3 +246,5 @@ if ($currentPath -notlike "*$ngrokPath*") {
 
 完成！现在可以在任何目录下直接使用 `ngrok` 命令了。
 
+
+

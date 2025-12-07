@@ -120,6 +120,15 @@ class Order(models.Model):
     note = models.TextField(blank=True, verbose_name='备注')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+    # 支付/分账扩展字段
+    alipay_trade_no = models.CharField(max_length=64, blank=True, verbose_name='支付宝交易号')
+    settlement_status = models.CharField(max_length=20, choices=[('pending','待分账'),('settled','已分账'),('failed','分账失败')], default='pending', verbose_name='分账状态')
+    settled_at = models.DateTimeField(null=True, blank=True, verbose_name='分账时间')
+    settle_request_no = models.CharField(max_length=64, blank=True, verbose_name='分账请求号')
+    seller_settle_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name='卖家分账金额')
+    platform_commission_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name='平台佣金金额')
+    settlement_method = models.CharField(max_length=20, blank=True, verbose_name='结算方式')
+    transfer_order_id = models.CharField(max_length=100, blank=True, verbose_name='支付宝转账订单号')
 
     class Meta:
         verbose_name = '订单'
@@ -192,6 +201,10 @@ class UserProfile(models.Model):
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True, verbose_name='头像')
     bio = models.TextField(max_length=500, blank=True, verbose_name='个人简介')
     location = models.CharField(max_length=100, blank=True, verbose_name='所在地')
+    # 支付宝收款账户（用于分账）
+    alipay_login_id = models.CharField(max_length=200, blank=True, verbose_name='支付宝登录账号')
+    alipay_user_id = models.CharField(max_length=30, blank=True, verbose_name='支付宝用户ID')
+    alipay_real_name = models.CharField(max_length=50, blank=True, verbose_name='支付宝姓名')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
 
@@ -257,7 +270,8 @@ class WalletTransaction(models.Model):
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES, verbose_name='交易类型')
     amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name='金额')
     balance_after = models.DecimalField(max_digits=10, decimal_places=2, verbose_name='交易后余额')
-    related_order = models.ForeignKey('RecycleOrder', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='关联订单')
+    related_order = models.ForeignKey('RecycleOrder', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='关联回收订单')
+    related_market_order = models.ForeignKey('Order', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='关联交易订单')
     note = models.TextField(blank=True, verbose_name='备注')
     # 提现相关
     withdraw_status = models.CharField(max_length=20, choices=WITHDRAW_STATUS, null=True, blank=True, verbose_name='提现状态')

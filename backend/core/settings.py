@@ -324,3 +324,14 @@ LOGGING = {
         },
     },
 }
+
+# ========== 分账与佣金配置 ==========
+# 是否启用支付宝分账结算（沙箱可用）
+ENABLE_ALIPAY_ROYALTY = True
+# 平台佣金比例（示例：5%）
+PLATFORM_COMMISSION_RATE = 0.05
+# 买家确认收货后自动分账
+SETTLE_ON_ORDER_COMPLETED = True
+# 可选：平台自身登录账号（如需显式分账到平台账户）
+PLATFORM_ALIPAY_LOGON_ID = ''
+SETTLEMENT_FALLBACK_TO_TRANSFER = True

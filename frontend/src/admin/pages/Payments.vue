@@ -3,7 +3,15 @@
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px">
       <h2 style="margin: 0">支付订单管理</h2>
     </div>
-    
+
+    <div v-if="summary" style="display:flex;gap:16px;margin-bottom:12px">
+      <el-tag type="info">待分账: {{ summary.status_counts?.pending || 0 }}</el-tag>
+      <el-tag type="success">已分账: {{ summary.status_counts?.settled || 0 }}</el-tag>
+      <el-tag type="warning">分账失败: {{ summary.status_counts?.failed || 0 }}</el-tag>
+      <el-tag type="primary">卖家总分账: ¥{{ summary.total_seller_amount?.toFixed?.(2) || '0.00' }}</el-tag>
+      <el-tag type="danger">平台佣金总额: ¥{{ summary.total_commission?.toFixed?.(2) || '0.00' }}</el-tag>
+    </div>
+
     <div style="display:flex;gap:8px;margin-bottom:16px">
       <el-select v-model="status" placeholder="订单状态" style="width:180px">
         <el-option label="全部" value="" />
@@ -29,12 +37,22 @@
           <el-tag :type="getStatusType(row.status)">{{ getStatusText(row.status) }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column prop="settlement_status" label="分账状态" width="120">
+        <template #default="{ row }">
+          <el-tag v-if="row.settlement_status" :type="row.settlement_status==='settled'?'success':(row.settlement_status==='failed'?'danger':'warning')">
+            {{ row.settlement_status==='settled'?'已分账':(row.settlement_status==='failed'?'分账失败':'待分账') }}
+          </el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="created_at" label="创建时间" width="180" />
       <el-table-column label="操作" width="350">
         <template #default="{row}">
           <el-button v-if="hasPerm('payment:view')" size="small" @click="query(row)">查询支付</el-button>
           <el-button v-if="hasPerm('payment:write') && row.status === 'paid'" size="small" type="danger" @click="refund(row)">退款</el-button>
           <el-button v-if="hasPerm('order:ship') && row.status === 'paid'" size="small" type="primary" @click="openShipDialog(row)">发货</el-button>
+          <el-button v-if="hasPerm('payment:view')" size="small" type="success" @click="openSettlement(row)">分账详情</el-button>
+          <el-button v-if="hasPerm('payment:write')" size="small" @click="retrySettlement(row)">重试分账</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -62,6 +80,26 @@
         <el-button type="primary" :loading="shipping" @click="confirmShip">确认发货</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="settlementDialogVisible" title="分账详情" width="600px">
+      <div v-if="settlementDetail">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="订单ID">{{ settlementDetail.id }}</el-descriptions-item>
+          <el-descriptions-item label="订单状态">{{ getStatusText(settlementDetail.status) }}</el-descriptions-item>
+          <el-descriptions-item label="支付宝交易号">{{ settlementDetail.alipay_trade_no || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="分账状态">{{ settlementDetail.settlement_status || 'pending' }}</el-descriptions-item>
+          <el-descriptions-item label="分账时间">{{ settlementDetail.settled_at || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="卖家分账金额">¥{{ settlementDetail.seller_settle_amount ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="平台佣金">¥{{ settlementDetail.platform_commission_amount ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="卖家支付宝账号">{{ settlementDetail.seller?.alipay_login_id || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="卖家姓名">{{ settlementDetail.seller?.alipay_real_name || '-' }}</el-descriptions-item>
+        </el-descriptions>
+      </div>
+      <template #footer>
+        <el-button @click="settlementDialogVisible = false">关闭</el-button>
+        <el-button v-if="hasPerm('payment:write')" type="primary" :loading="retrying" @click="doRetrySettlement">重试分账</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -80,6 +118,10 @@ const status = ref('')
 const shipDialogVisible = ref(false)
 const shipping = ref(false)
 const currentShipOrder = ref(null)
+const settlementDialogVisible = ref(false)
+const settlementDetail = ref(null)
+const retrying = ref(false)
+const summary = ref(null)
 
 const shipForm = reactive({
   carrier: '',
@@ -121,6 +163,12 @@ const load = async () => {
   } catch (error) {
     ElMessage.error('加载失败')
   }
+}
+const loadSummary = async () => {
+  try {
+    const res = await adminApi.get('/payment/settlements/summary')
+    summary.value = res.data || null
+  } catch {}
 }
 const handlePageChange = () => load()
 const query = async (row) => {
@@ -184,6 +232,48 @@ const confirmShip = async () => {
   }
 }
 
-onMounted(load)
-</script>
+const openSettlement = async (row) => {
+  try {
+    const res = await adminApi.get(`/payment/order/${row.id}/settlement`)
+    settlementDetail.value = res.data
+    settlementDialogVisible.value = true
+  } catch (error) {
+    ElMessage.error('获取分账详情失败')
+  }
+}
 
+const retrySettlement = async (row) => {
+  try {
+    await ElMessageBox.confirm(`重试分账订单 #${row.id}？`, '提示', { type: 'warning' })
+    retrying.value = true
+    const res = await adminApi.post(`/payment/order/${row.id}/settlement/retry`)
+    const ok = res.data?.success
+    ElMessage[ok ? 'success' : 'error'](ok ? '已重试分账' : (res.data?.detail || '重试失败'))
+    await loadSummary()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('重试分账失败')
+    }
+  } finally {
+    retrying.value = false
+  }
+}
+
+const doRetrySettlement = async () => {
+  if (!settlementDetail.value) return
+  retrying.value = true
+  try {
+    const res = await adminApi.post(`/payment/order/${settlementDetail.value.id}/settlement/retry`)
+    const ok = res.data?.success
+    ElMessage[ok ? 'success' : 'error'](ok ? '已重试分账' : (res.data?.detail || '重试失败'))
+    await openSettlement({ id: settlementDetail.value.id })
+    await loadSummary()
+  } catch (error) {
+    ElMessage.error('重试分账失败')
+  } finally {
+    retrying.value = false
+  }
+}
+
+onMounted(async () => { await load(); await loadSummary() })
+</script>

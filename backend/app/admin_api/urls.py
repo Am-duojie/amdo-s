@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import LoginView, RefreshTokenView, LogoutView, DashboardMetricsView, StatisticsView, InspectionOrdersView, InspectionOrderDetailView, InspectionOrderLogisticsView, InspectionOrderPriceView, InspectionOrderPaymentView, InspectionOrderPublishVerifiedView, InspectionOrdersBatchUpdateView, RecycledProductsView, VerifiedListingsView, AuditQueueView, UsersView, AuditLogsView, RolesView, PaymentOrdersView, PaymentOrderActionView, VerifiedOrdersAdminView, ShopsAdminView, AuthMeView, ChangePasswordView, PermissionsView, MenusView, CategoriesAdminView, ProductsAdminView, UsersFrontendAdminView, MessagesAdminView, AddressesAdminView
+from .views import LoginView, RefreshTokenView, LogoutView, DashboardMetricsView, StatisticsView, InspectionOrdersView, InspectionOrderDetailView, InspectionOrderLogisticsView, InspectionOrderPriceView, InspectionOrderPaymentView, InspectionOrderPublishVerifiedView, InspectionOrdersBatchUpdateView, RecycledProductsView, VerifiedListingsView, AuditQueueView, UsersView, AuditLogsView, RolesView, PaymentOrdersView, PaymentOrderActionView, PaymentOrderSettlementView, SettlementSummaryView, VerifiedOrdersAdminView, ShopsAdminView, AuthMeView, ChangePasswordView, PermissionsView, MenusView, CategoriesAdminView, ProductsAdminView, UsersFrontendAdminView, MessagesAdminView, AddressesAdminView
 
 urlpatterns = [
     path('auth/login', LoginView.as_view()),
@@ -34,7 +34,11 @@ urlpatterns = [
     path('users/<int:uid>', UsersView.as_view()),
     path('roles', RolesView.as_view()),
     path('payment/orders', PaymentOrdersView.as_view()),
+    # 将更具体的分账路由置于通配action路由之前，避免被匹配到action视图
+    path('payment/order/<int:order_id>/settlement', PaymentOrderSettlementView.as_view()),
+    path('payment/order/<int:order_id>/settlement/<str:action>', PaymentOrderSettlementView.as_view()),
     path('payment/order/<int:order_id>/<str:action>', PaymentOrderActionView.as_view()),
+    path('payment/settlements/summary', SettlementSummaryView.as_view()),
     path('verified-orders', VerifiedOrdersAdminView.as_view()),
     path('verified-orders/<int:oid>', VerifiedOrdersAdminView.as_view()),
     path('verified-orders/<int:oid>/<str:action>', VerifiedOrdersAdminView.as_view()),

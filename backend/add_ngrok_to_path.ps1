@@ -121,3 +121,5 @@ if ($currentPath -like "*$ngrokPath*") {
 Write-Host ""
 Write-Host "配置完成！" -ForegroundColor Green
 
+
+

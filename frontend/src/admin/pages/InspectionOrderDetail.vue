@@ -776,20 +776,24 @@ const markReceived = async () => {
   }
 }
 
-const saveReport = async () => {
-  try {
-    let checkItems = {}
+  const saveReport = async () => {
     try {
-      checkItems = JSON.parse(reportForm.checkItemsJson || '{}')
-    } catch (e) {
-      ElMessage.error('检测项目JSON格式错误')
-      return
-    }
-    savingReport.value = true
-    await adminApi.post(`/inspection-orders/${orderId}/report`, {
-      check_items: checkItems,
-      remarks: reportForm.remarks
-    })
+      let checkItems = {}
+      try {
+        checkItems = JSON.parse(reportForm.checkItemsJson || '{}')
+      } catch (e) {
+        ElMessage.error('检测项目JSON格式错误')
+        return
+      }
+      if (typeof checkItems !== 'object' || Array.isArray(checkItems) || checkItems === null) {
+        ElMessage.error('检测项目必须是对象(JSON)')
+        return
+      }
+      savingReport.value = true
+      await adminApi.post(`/inspection-orders/${orderId}/report`, {
+        check_items: checkItems,
+        remarks: reportForm.remarks
+      })
     ElMessage.success('质检报告保存成功')
     showReportDialog.value = false
     await loadDetail()
