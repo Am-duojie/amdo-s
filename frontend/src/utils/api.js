@@ -4,8 +4,38 @@ import ErrorHandler from './errorHandler'
 // API基础地址配置
 // 本地开发: http://127.0.0.1:8000/api
 // 生产环境: http://你的服务器IP:8000/api 或 https://你的域名/api
-/** @type {string} */
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
+// ngrok 访问: 自动检测并使用后端的 ngrok 地址
+
+// 检测是否通过 ngrok 访问
+const isNgrokAccess = typeof window !== 'undefined' && 
+  (window.location.hostname.includes('ngrok-free.dev') || 
+   window.location.hostname.includes('ngrok.io') || 
+   window.location.hostname.includes('ngrok.app'))
+
+// 如果通过 ngrok 访问，尝试从 localStorage 获取后端 ngrok 地址
+// 或者使用环境变量，或者从当前域名推断（假设后端和前端使用相同的 ngrok 账户）
+let API_BASE_URL = import.meta.env.VITE_API_URL
+
+if (!API_BASE_URL) {
+  if (isNgrokAccess) {
+    // 通过 ngrok 访问时，尝试获取后端地址
+    const backendNgrokUrl = localStorage.getItem('BACKEND_NGROK_URL') || 
+                           import.meta.env.VITE_BACKEND_NGROK_URL
+    
+    if (backendNgrokUrl) {
+      API_BASE_URL = `${backendNgrokUrl}/api`
+    } else {
+      // 如果前端和后端使用相同的 ngrok 账户，可以尝试推断
+      // 但通常前后端地址不同，所以需要手动配置
+      console.warn('通过 ngrok 访问但未配置后端地址，请设置 BACKEND_NGROK_URL')
+      // 临时方案：使用相对路径，但这需要 vite proxy 支持（通过 ngrok 时可能不工作）
+      API_BASE_URL = '/api'
+    }
+  } else {
+    // 本地访问，使用 localhost
+    API_BASE_URL = 'http://127.0.0.1:8000/api'
+  }
+}
 const API_DEBUG = (import.meta.env.VITE_API_DEBUG === 'true') || import.meta.env.DEV || (typeof localStorage !== 'undefined' && localStorage.getItem('DEBUG_API') === 'true')
 if (API_DEBUG) console.log('API基础地址:', API_BASE_URL)
 

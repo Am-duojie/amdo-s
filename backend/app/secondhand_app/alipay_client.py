@@ -6,6 +6,7 @@ import json
 import hashlib
 import base64
 from datetime import datetime
+from html import escape
 from Crypto.PublicKey import RSA
 from Crypto.Signature import pkcs1_15
 from Crypto.Hash import SHA256
@@ -110,6 +111,69 @@ class AlipayClient:
             formatted_key += key_str[i:i+64] + '\n'
         formatted_key += "-----END PUBLIC KEY-----"
         return formatted_key
+    
+    def _build_payment_form(self, params):
+        """
+        构建支付宝支付表单HTML
+        用于POST方式提交，作为URL跳转的备用方案
+        """
+        form_fields = []
+        for k, v in sorted(params.items()):
+            if v is not None:
+                # HTML转义，防止XSS攻击
+                escaped_key = escape(str(k))
+                escaped_value = escape(str(v))
+                form_fields.append(f'<input type="hidden" name="{escaped_key}" value="{escaped_value}">')
+        
+        form_html = f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>正在跳转到支付宝...</title>
+            <style>
+                body {{
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    min-height: 100vh;
+                    margin: 0;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                }}
+                .container {{
+                    background: white;
+                    padding: 40px;
+                    border-radius: 12px;
+                    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                    text-align: center;
+                }}
+                .loading {{
+                    font-size: 18px;
+                    color: #667eea;
+                    margin-top: 20px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>正在跳转到支付宝支付页面...</h2>
+                <div class="loading">如果页面没有自动跳转，请点击下方按钮</div>
+                <form id="alipay_form" method="post" action="{self.gateway_url}">
+                    {''.join(form_fields)}
+                    <button type="submit" style="margin-top: 20px; padding: 12px 24px; background: #667eea; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer;">
+                        前往支付宝支付
+                    </button>
+                </form>
+                <script>
+                    // 自动提交表单
+                    document.getElementById('alipay_form').submit();
+                </script>
+            </div>
+        </body>
+        </html>
+        '''
+        return form_html
     
     def _sign(self, data):
         """
@@ -221,7 +285,7 @@ class AlipayClient:
             logger.error(f'签名验证失败: {str(e)}', exc_info=True)
             return False
     
-    def create_trade(self, out_trade_no, subject, total_amount, return_url=None, notify_url=None, **kwargs):
+    def create_trade(self, out_trade_no, subject, total_amount, return_url=None, notify_url=None, enable_royalty=False, **kwargs):
         """
         创建交易订单（电脑网站支付）
         接口：alipay.trade.page.pay
@@ -233,11 +297,13 @@ class AlipayClient:
         - total_amount: 订单总金额，单位为元，精确到小数点后两位
         - return_url: 支付成功后跳转的页面（可选）
         - notify_url: 支付结果异步通知地址（可选）
+        - enable_royalty: 是否启用分账冻结（默认False）
         
         注意：
         1. return_url 和 notify_url 应该作为顶级参数，而不是放在 biz_content 中
         2. biz_content 必须是JSON字符串格式
         3. 所有参数值在签名时使用原始值，URL编码只在构建URL时进行
+        4. 如果启用分账，需要设置 extend_params.royalty_freeze = "true"
         """
         # 构建业务参数（biz_content）
         # 根据支付宝官方文档，biz_content 是JSON字符串格式
@@ -247,6 +313,14 @@ class AlipayClient:
             'total_amount': f'{float(total_amount):.2f}',  # 订单总金额，保留两位小数
             'subject': str(subject)[:256],  # 订单标题，最长256字符
         }
+        
+        # 如果启用分账，设置分账冻结参数
+        # 根据支付宝分账文档，需要在创建订单时设置 extend_params.royalty_freeze = "true"
+        if enable_royalty:
+            biz_content['extend_params'] = {
+                'royalty_freeze': 'true'  # 冻结分账，等待后续分账结算
+            }
+            logger.info(f'已启用分账冻结: out_trade_no={out_trade_no}')
         
         # 添加其他业务参数（如果有）
         biz_content.update(kwargs)
@@ -286,30 +360,37 @@ class AlipayClient:
         logger.info(f'notify_url: {notify_url}')
         logger.info(f'完整参数: {params}')
         
-        # 构建完整URL（GET方式，需要URL编码）
+        # 构建支付URL（GET方式）
+        # 支付宝官方推荐使用GET方式，参数值需要进行URL编码
         # 注意：签名时使用的是原始值（未编码），URL编码只在构建URL时进行
-        # 支付宝官方文档要求：参数值需要进行URL编码，空格编码为%20
         # 按参数名排序（与签名时一致，确保URL参数顺序与签名时一致）
         sorted_params = sorted(params.items())
         # 手动构建查询字符串，使用quote进行编码
-        # quote函数默认将空格编码为%20，符合支付宝要求
         query_parts = []
         for k, v in sorted_params:
             if v is not None:  # 过滤None值
-                # 参数名和参数值都需要URL编码
-                # safe='' 表示不保留任何特殊字符，全部编码
+                # 参数名进行URL编码
                 encoded_key = quote(str(k), safe='')
-                encoded_value = quote(str(v), safe='')
+                # 参数值进行URL编码
+                # 注意：支付宝要求参数值必须进行URL编码
+                # 对于JSON字符串（biz_content），需要整体编码
+                # quote函数会将空格编码为%20，符合支付宝要求
+                encoded_value = quote(str(v), safe='', encoding='utf-8')
                 query_parts.append(f'{encoded_key}={encoded_value}')
         query_string = '&'.join(query_parts)
         payment_url = f'{self.gateway_url}?{query_string}'
         
         logger.info(f'支付URL长度: {len(payment_url)} 字符')
-        logger.debug(f'支付URL: {payment_url[:500]}...')  # 只打印前500个字符
+        logger.debug(f'支付URL（前500字符）: {payment_url[:500]}...')
+        
+        # 同时返回表单HTML，作为备用方案
+        # 如果URL跳转失败或页面空白，可以使用表单提交
+        form_html = self._build_payment_form(params)
         
         return {
             'success': True,
             'payment_url': payment_url,
+            'form_html': form_html,  # 表单HTML，备用方案
             'params': params
         }
     
@@ -507,7 +588,7 @@ class AlipayClient:
                 'msg': f'转账失败: {str(e)}'
             }
 
-    def settle_order(self, trade_no, out_request_no, splits, settle_mode='ROYALTY'):
+    def settle_order(self, trade_no, out_request_no, splits, settle_mode='ROYALTY', trans_out=None, trans_out_type=None):
         """
         交易分账结算
         接口：alipay.trade.order.settle
@@ -518,12 +599,15 @@ class AlipayClient:
         - out_request_no: 商户分账请求唯一编号
         - splits: 分账明细列表，例如：
           [{
-             'trans_in': 'buyer@example.com',
+             'trans_in': '208872****140864',  # 分账接收方账号
              'amount': 100.00,
              'desc': '二手交易分账-卖家',
-             'trans_in_type': 'ALIPAY_LOGON_ID'
+             'trans_in_type': 'userId',  # 或 'loginName'
+             'royalty_scene': '平台服务费'  # 可选
           }]
         - settle_mode: 结算模式，默认 ROYALTY（分账）
+        - trans_out: 分账转出方账号（可选，如果不提供则使用商户账号）
+        - trans_out_type: 分账转出方账号类型（可选，'userId' 或 'loginName'）
         
         返回：
         {
@@ -548,10 +632,37 @@ class AlipayClient:
             desc = s.get('desc')
             if desc:
                 item['desc'] = str(desc)[:200]
-            # 可选：指定账户类型（如 ALIPAY_LOGON_ID / ALIPAY_USER_ID）
+            # 分账接收方账号类型（userId 或 loginName）
             trans_in_type = s.get('trans_in_type')
             if trans_in_type:
-                item['trans_in_type'] = str(trans_in_type)
+                # 确保使用正确的值：userId 或 loginName（不是 ALIPAY_LOGON_ID）
+                if trans_in_type in ['userId', 'loginName']:
+                    item['trans_in_type'] = trans_in_type
+                elif trans_in_type == 'ALIPAY_LOGON_ID':
+                    item['trans_in_type'] = 'loginName'  # 兼容旧代码
+                elif trans_in_type == 'ALIPAY_USER_ID':
+                    item['trans_in_type'] = 'userId'  # 兼容旧代码
+                else:
+                    item['trans_in_type'] = 'loginName'  # 默认值
+            else:
+                item['trans_in_type'] = 'loginName'  # 默认值
+            
+            # 分账转出方信息（如果提供）
+            if trans_out:
+                item['trans_out'] = str(trans_out)
+                if trans_out_type:
+                    if trans_out_type in ['userId', 'loginName']:
+                        item['trans_out_type'] = trans_out_type
+                    else:
+                        item['trans_out_type'] = 'userId'  # 默认值
+                else:
+                    item['trans_out_type'] = 'userId'  # 默认值
+            
+            # 分账场景（可选）
+            royalty_scene = s.get('royalty_scene')
+            if royalty_scene:
+                item['royalty_scene'] = str(royalty_scene)[:64]
+            
             royalty_parameters.append(item)
 
         biz_content = {
@@ -559,6 +670,12 @@ class AlipayClient:
             'out_request_no': str(out_request_no),
             'royalty_parameters': royalty_parameters,
         }
+        
+        # 根据支付宝文档，需要设置 extend_params.royalty_finish = "true"
+        biz_content['extend_params'] = {
+            'royalty_finish': 'true'  # 完成分账
+        }
+        
         # 结算模式（默认为分账）
         if settle_mode:
             biz_content['settle_mode'] = str(settle_mode)

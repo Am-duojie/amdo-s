@@ -271,9 +271,22 @@ ALIPAY_APP_PRIVATE_KEY = 'MIIEowIBAAKCAQEApdiTemjXz2N105BvALkPBuHrp2dJwNJnO9SqtG
 ALIPAY_PUBLIC_KEY = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjvYXLvwQOhTEtpuDEGJB5+TFhqgAObVy9LD4qfi60xS78kl8EkWg3AMq4n5mwwIvkExF3sByHKJQ5M12RsnUFCxaQUwdiGpPeFk9nkB6BZoDyegj68Na5HnC50kvwO5C9f+dKEBsTGaUsrXjBWlGqj6g+XnCeUffY9Xi9XHIwn/lXC0uekoXYR1qU5/QKLGuwXiPuBQVvyRVZBEUO7rZWPbhvbG48WWmgytdMeTIYdvPnjI7u5oEITTwCwCL2h8swQu3W7sxBEz9vA/G3IpYbZbuutVTjrnP/vWuY9nc0wwutPGEn6xWiZ2raj/pJ5kgOPSSkqIIBDE2Q0yssbMzTwIDAQAB'  # 支付宝公钥（必填，从控制台获取，已更新）
 
 # 前后端URL配置（用于动态构建回调地址）
-FRONTEND_URL = 'http://localhost:5173'  # 前端地址
-# 使用 ngrok 内网穿透地址（从 ngrok 启动信息中获取）
-BACKEND_URL = 'https://hypochondriacally-nondiscretionary-kylie.ngrok-free.dev'  # ngrok 公网地址
+# 注意：
+# 1. 如果只启动了后端 ngrok 隧道（8000端口），前端应该使用 localhost
+# 2. 如果前后端都启动了 ngrok 隧道，则分别配置对应的地址
+# 3. 当前代码会自动检测 ngrok：
+#    - 如果前端是 ngrok 地址，直接跳转到前端（最佳体验）
+#    - 如果前端是 localhost 但后端是 ngrok，使用后端重定向页面
+
+# 前端地址配置
+# 使用前端 ngrok 地址
+# 前端地址（现在使用本地地址）
+FRONTEND_URL = 'http://localhost:5173'  # 本地前端地址
+# 如果使用 ngrok 前端隧道，取消下面的注释并注释掉上面的行：
+# FRONTEND_URL = 'https://georgianna-presanitary-clair.ngrok-free.dev'  # 前端 ngrok 地址
+
+# 后端地址（使用 ngrok 内网穿透地址，用于支付回调）
+BACKEND_URL = 'https://hypochondriacally-nondiscretionary-kylie.ngrok-free.dev'  # 后端 ngrok 地址
 # 注意：每次重启 ngrok，地址可能会变化，需要更新此配置
 # 本地地址（不使用 ngrok 时）：
 # BACKEND_URL = 'http://127.0.0.1:8000'

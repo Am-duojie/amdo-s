@@ -47,6 +47,7 @@ urlpatterns = [
     path('api/payment/create/', payment_views.create_payment, name='create_payment'),
     path('api/payment/create-url/', payment_views.create_payment_url, name='create_payment_url'),
     path('api/payment/query/<int:order_id>/', payment_views.query_payment, name='query_payment'),
+    path('api/payment/redirect/', payment_views.payment_redirect, name='payment_redirect'),
     path('api/payment/alipay/notify/', payment_views.alipay_payment_notify, name='alipay_payment_notify'),
 ]
 

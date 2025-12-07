@@ -167,6 +167,12 @@ const routes = [
     component: () => import('@/pages/VerifiedOrderDetail.vue'),
     meta: { requiresAuth: true, theme: 'blue', hideSearch: false, verifiedMode: true }
   },
+  {
+    path: '/payment/return',
+    name: 'PaymentReturn',
+    component: () => import('@/pages/PaymentReturn.vue'),
+    meta: { hideSearch: true, theme: 'yellow' }
+  },
 
 ]
 

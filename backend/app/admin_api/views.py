@@ -1446,7 +1446,8 @@ class PaymentOrderSettlementView(APIView):
                         'trans_in': seller_user_id,
                         'trans_in_type': 'userId',
                         'amount': float(seller_amount),
-                        'desc': '易淘分账-卖家(管理员重试)'
+                        'desc': '易淘分账-卖家(管理员重试)',
+                        'royalty_scene': '平台服务费'
                     }]
                 )
             else:
@@ -1457,7 +1458,8 @@ class PaymentOrderSettlementView(APIView):
                         'trans_in': seller_login_id,
                         'trans_in_type': 'loginName',
                         'amount': float(seller_amount),
-                        'desc': '易淘分账-卖家(管理员重试)'
+                        'desc': '易淘分账-卖家(管理员重试)',
+                        'royalty_scene': '平台服务费'
                     }]
                 )
             if result.get('success'):

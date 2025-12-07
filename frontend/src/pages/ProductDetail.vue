@@ -576,9 +576,29 @@ const createPayment = async () => {
     })
     
     if (res.data.success) {
-      // 如果返回支付URL（支付宝），直接跳转
+      // 优先使用表单提交方式（更可靠）
+      if (res.data.form_html) {
+        // 创建新窗口并写入表单HTML，自动提交
+        const newWindow = window.open('', '_blank')
+        if (newWindow) {
+          newWindow.document.write(res.data.form_html)
+          newWindow.document.close()
+        } else {
+          // 如果弹窗被阻止，使用当前窗口
+          document.write(res.data.form_html)
+          document.close()
+        }
+        return
+      }
+      
+      // 备用方案：如果返回支付URL（支付宝），直接跳转
       if (res.data.payment_url) {
-        window.location.href = res.data.payment_url
+        // 尝试在新窗口打开
+        const newWindow = window.open(res.data.payment_url, '_blank')
+        if (!newWindow) {
+          // 如果弹窗被阻止，使用当前窗口
+          window.location.href = res.data.payment_url
+        }
         return
       }
       

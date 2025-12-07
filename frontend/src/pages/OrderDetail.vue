@@ -251,8 +251,41 @@ const isSeller = computed(() => {
 onMounted(() => {
   if (orderId.value) {
     loadOrder()
+    // 检查是否是支付返回页面（支付宝支付成功后会通过 return_url 跳转回来）
+    checkPaymentReturn()
   }
 })
+
+// 检查支付返回参数
+const checkPaymentReturn = async () => {
+  const query = route.query
+  // 支付宝支付成功后会返回 out_trade_no 和 trade_status 等参数
+  if (query.out_trade_no || query.trade_status) {
+    // 延迟一下，确保订单数据已加载
+    setTimeout(async () => {
+      try {
+        // 查询支付状态
+        const res = await api.get(`/payment/query/${orderId.value}/?order_type=normal`)
+        if (res.data.success && res.data.paid) {
+          ElMessage.success('支付成功！')
+          // 重新加载订单信息
+          await loadOrder()
+          // 清除 URL 参数，避免刷新时重复处理
+          router.replace({ path: route.path, query: {} })
+        } else if (query.trade_status) {
+          // 如果支付宝返回了状态但查询未成功，可能是异步通知还未处理
+          ElMessage.info('支付处理中，请稍候...')
+          // 重新加载订单信息
+          await loadOrder()
+        }
+      } catch (error) {
+        console.error('检查支付状态失败:', error)
+        // 即使查询失败，也重新加载订单（可能异步通知已处理）
+        await loadOrder()
+      }
+    }, 500)
+  }
+}
 
 const loadOrder = async () => {
   loading.value = true
@@ -342,9 +375,29 @@ const createPayment = async () => {
     })
     
     if (res.data.success) {
-      // 如果返回支付URL（支付宝），直接跳转
+      // 优先使用表单提交方式（更可靠）
+      if (res.data.form_html) {
+        // 创建新窗口并写入表单HTML，自动提交
+        const newWindow = window.open('', '_blank')
+        if (newWindow) {
+          newWindow.document.write(res.data.form_html)
+          newWindow.document.close()
+        } else {
+          // 如果弹窗被阻止，使用当前窗口
+          document.write(res.data.form_html)
+          document.close()
+        }
+        return
+      }
+      
+      // 备用方案：如果返回支付URL（支付宝），直接跳转
       if (res.data.payment_url) {
-        window.location.href = res.data.payment_url
+        // 尝试在新窗口打开
+        const newWindow = window.open(res.data.payment_url, '_blank')
+        if (!newWindow) {
+          // 如果弹窗被阻止，使用当前窗口
+          window.location.href = res.data.payment_url
+        }
         return
       }
       

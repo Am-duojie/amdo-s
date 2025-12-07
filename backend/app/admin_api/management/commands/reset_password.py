@@ -71,3 +71,5 @@ class Command(BaseCommand):
                 except AdminUser.DoesNotExist:
                     pass
 
+
+

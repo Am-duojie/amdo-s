@@ -215,7 +215,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
                                 'trans_in': profile.alipay_user_id,
                                 'trans_in_type': 'userId',
                                 'amount': float(seller_amount),
-                                'desc': '易淘分账-卖家(绑定后自动结算)'
+                                'desc': '易淘分账-卖家(绑定后自动结算)',
+                                'royalty_scene': '平台服务费'
                             }]
                         )
                     else:
@@ -226,7 +227,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
                                 'trans_in': profile.alipay_login_id,
                                 'trans_in_type': 'loginName',
                                 'amount': float(seller_amount),
-                                'desc': '易淘分账-卖家(绑定后自动结算)'
+                                'desc': '易淘分账-卖家(绑定后自动结算)',
+                                'royalty_scene': '平台服务费'
                             }]
                         )
                     if res.get('success'):

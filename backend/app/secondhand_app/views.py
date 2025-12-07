@@ -495,6 +495,9 @@ class OrderViewSet(viewsets.ModelViewSet):
                             if commission_amount < 0:
                                 commission_amount = Decimal('0.00')
                             out_request_no = f'settle_{order.id}_{int(timezone.now().timestamp())}'
+                            # 根据支付宝分账文档，需要提供转出方信息（商户账号）
+                            # 获取商户的支付宝账号（从配置或订单中获取）
+                            # 注意：在沙箱环境中，转出方通常是商户账号
                             if seller_user_id:
                                 result = alipay.settle_order(
                                     trade_no=trade_no,
@@ -503,8 +506,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                                         'trans_in': seller_user_id,
                                         'trans_in_type': 'userId',
                                         'amount': float(seller_amount),
-                                        'desc': '易淘分账-卖家'
-                                    }]
+                                        'desc': '易淘分账-卖家',
+                                        'royalty_scene': '平台服务费'
+                                    }],
+                                    # 转出方信息（可选，如果不提供则使用商户账号）
+                                    # trans_out 和 trans_out_type 可以从订单或配置中获取
                                 )
                             else:
                                 result = alipay.settle_order(
@@ -514,8 +520,10 @@ class OrderViewSet(viewsets.ModelViewSet):
                                         'trans_in': seller_login_id,
                                         'trans_in_type': 'loginName',
                                         'amount': float(seller_amount),
-                                        'desc': '易淘分账-卖家'
-                                    }]
+                                        'desc': '易淘分账-卖家',
+                                        'royalty_scene': '平台服务费'
+                                    }],
+                                    # 转出方信息（可选，如果不提供则使用商户账号）
                                 )
                             if result.get('success'):
                                 order.settlement_status = 'settled'
@@ -1074,9 +1082,10 @@ class VerifiedOrderViewSet(viewsets.ModelViewSet):
                             out_request_no=out_request_no,
                             splits=[{
                                 'trans_in': seller_login_id,
-                                'trans_in_type': 'ALIPAY_LOGON_ID',
+                                'trans_in_type': 'loginName',
                                 'amount': float(seller_amount),
-                                'desc': '易淘分账-卖家(官方验货)'
+                                'desc': '易淘分账-卖家(官方验货)',
+                                'royalty_scene': '平台服务费'
                             }]
                         )
                         if result.get('success'):
