@@ -197,3 +197,4 @@ Write-Host "请等待 5-10 分钟后再重新启动" -ForegroundColor Yellow
 3. **考虑升级到付费版**：付费版支持更多隧道和固定域名
 
 
+

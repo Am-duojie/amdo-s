@@ -138,3 +138,4 @@ BACKEND_URL = 'http://127.0.0.1:8000'   # 本地后端地址
 - `frontend/src/router/index.js` - 路由配置（已添加支付回调路由）
 
 
+
