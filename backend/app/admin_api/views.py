@@ -1367,7 +1367,7 @@ class PaymentOrderSettlementView(APIView):
             seller_user_id = seller_profile.alipay_user_id if seller_profile else ''
             seller_user_id = seller_profile.alipay_user_id if seller_profile else ''
             if action == 'history':
-                logs = AdminAuditLog.objects.filter(target_type__in=['Order','VerifiedOrder'], target_id=o.id, action__in=['settlement_auto','settlement_retry']).order_by('created_at')
+                logs = AdminAuditLog.objects.filter(target_type__in=['Order','VerifiedOrder'], target_id=o.id, action__in=['settlement_auto','settlement_retry','settlement_retry_transfer']).order_by('created_at')
                 history = [{
                     'id': lg.id,
                     'action': lg.action,

@@ -142,7 +142,12 @@
           <el-descriptions-item label="订单ID">{{ settlementDetail.id }}</el-descriptions-item>
           <el-descriptions-item label="订单状态">{{ getStatusText(settlementDetail.status) }}</el-descriptions-item>
           <el-descriptions-item label="支付宝交易号">{{ settlementDetail.alipay_trade_no || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="分账状态">{{ settlementDetail.settlement_status || 'pending' }}</el-descriptions-item>
+          <el-descriptions-item label="分账状态">
+            <el-tag v-if="settlementDetail.settlement_status" :type="settlementDetail.settlement_status==='settled'?'success':(settlementDetail.settlement_status==='failed'?'danger':'warning')">
+              {{ settlementDetail.settlement_status==='settled'?'已分账':(settlementDetail.settlement_status==='failed'?'分账失败':'待分账') }}
+            </el-tag>
+            <span v-else>待分账</span>
+          </el-descriptions-item>
           <el-descriptions-item label="分账时间">{{ settlementDetail.settled_at || '-' }}</el-descriptions-item>
           <el-descriptions-item label="卖家分账金额">¥{{ settlementDetail.seller_settle_amount ?? '-' }}</el-descriptions-item>
           <el-descriptions-item label="平台佣金">¥{{ settlementDetail.platform_commission_amount ?? '-' }}</el-descriptions-item>
@@ -169,9 +174,18 @@
         <el-empty v-if="!settlementHistory.length" description="暂无分账记录" />
         <el-timeline v-else>
           <el-timeline-item v-for="h in settlementHistory" :key="h.id" :timestamp="h.created_at" placement="top">
-            <div style="font-weight: 500">{{ h.action==='settlement_retry'?'管理员重试':'自动分账' }}</div>
-            <div style="color:#666; font-size:12px">{{ h.snapshot?.result || '-' }}</div>
-            <div style="color:#999; font-size:12px">{{ h.snapshot?.code }} {{ h.snapshot?.sub_code }} {{ h.snapshot?.msg || '' }} {{ h.snapshot?.sub_msg || '' }}</div>
+            <div style="font-weight: 500">{{ getSettlementActionText(h.action) }}</div>
+            <div style="color:#666; font-size:12px" v-if="h.snapshot?.result">
+              <el-tag :type="h.snapshot.result==='success'?'success':'danger'" size="small">
+                {{ h.snapshot.result==='success'?'成功':'失败' }}
+              </el-tag>
+            </div>
+            <div style="color:#999; font-size:12px" v-if="h.snapshot?.code || h.snapshot?.msg">
+              {{ h.snapshot?.code }} {{ h.snapshot?.sub_code }} {{ h.snapshot?.msg || '' }} {{ h.snapshot?.sub_msg || '' }}
+            </div>
+            <div style="color:#666; font-size:12px" v-if="h.snapshot?.method">
+              结算方式: {{ h.snapshot.method==='TRANSFER'?'转账代结算':'分账结算' }}
+            </div>
           </el-timeline-item>
         </el-timeline>
       </div>
@@ -221,6 +235,15 @@ const statusMap = {
 
 const getStatusText = (status) => statusMap[status]?.text || status
 const getStatusType = (status) => statusMap[status]?.type || 'info'
+
+const getSettlementActionText = (action) => {
+  const map = {
+    'settlement_auto': '自动分账',
+    'settlement_retry': '管理员重试',
+    'settlement_retry_transfer': '管理员重试(转账)'
+  }
+  return map[action] || action
+}
 
 const loadOrders = async () => {
   loading.value = true

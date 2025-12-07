@@ -581,6 +581,23 @@ class OrderViewSet(viewsets.ModelViewSet):
                                     )
                                 except Exception:
                                     pass
+                                # 创建分账成功的审计日志
+                                try:
+                                    from app.admin_api.models import AdminAuditLog
+                                    AdminAuditLog.objects.create(
+                                        actor=None,
+                                        target_type='Order',
+                                        target_id=order.id,
+                                        action='settlement_auto',
+                                        snapshot_json={
+                                            'result': 'success',
+                                            'out_request_no': out_request_no,
+                                            'seller_amount': float(seller_amount),
+                                            'commission_amount': float(commission_amount)
+                                        }
+                                    )
+                                except Exception:
+                                    pass
                             else:
                                 # 分账失败，设置状态为failed，但不设置settlement_method（等待降级处理）
                                 order.settlement_status = 'failed'
@@ -636,6 +653,24 @@ class OrderViewSet(viewsets.ModelViewSet):
                                                     alipay_name=(seller_profile.alipay_real_name if seller_profile else ''),
                                                     alipay_order_id=transfer_res.get('order_id',''),
                                                     note=f'订单#{order.id} 转账代结算成功，资金已存入支付宝: {(seller_user_id or seller_login_id)}'
+                                                )
+                                            except Exception:
+                                                pass
+                                            # 创建转账代结算成功的审计日志
+                                            try:
+                                                from app.admin_api.models import AdminAuditLog
+                                                AdminAuditLog.objects.create(
+                                                    actor=None,
+                                                    target_type='Order',
+                                                    target_id=order.id,
+                                                    action='settlement_auto',
+                                                    snapshot_json={
+                                                        'result': 'success',
+                                                        'method': 'TRANSFER',
+                                                        'transfer_order_id': transfer_res.get('order_id',''),
+                                                        'seller_amount': float(seller_amount),
+                                                        'commission_amount': float(commission_amount)
+                                                    }
                                                 )
                                             except Exception:
                                                 pass

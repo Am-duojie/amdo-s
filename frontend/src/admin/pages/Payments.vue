@@ -87,7 +87,12 @@
           <el-descriptions-item label="订单ID">{{ settlementDetail.id }}</el-descriptions-item>
           <el-descriptions-item label="订单状态">{{ getStatusText(settlementDetail.status) }}</el-descriptions-item>
           <el-descriptions-item label="支付宝交易号">{{ settlementDetail.alipay_trade_no || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="分账状态">{{ settlementDetail.settlement_status || 'pending' }}</el-descriptions-item>
+          <el-descriptions-item label="分账状态">
+            <el-tag v-if="settlementDetail.settlement_status" :type="settlementDetail.settlement_status==='settled'?'success':(settlementDetail.settlement_status==='failed'?'danger':'warning')">
+              {{ settlementDetail.settlement_status==='settled'?'已分账':(settlementDetail.settlement_status==='failed'?'分账失败':'待分账') }}
+            </el-tag>
+            <span v-else>待分账</span>
+          </el-descriptions-item>
           <el-descriptions-item label="分账时间">{{ settlementDetail.settled_at || '-' }}</el-descriptions-item>
           <el-descriptions-item label="卖家分账金额">¥{{ settlementDetail.seller_settle_amount ?? '-' }}</el-descriptions-item>
           <el-descriptions-item label="平台佣金">¥{{ settlementDetail.platform_commission_amount ?? '-' }}</el-descriptions-item>
