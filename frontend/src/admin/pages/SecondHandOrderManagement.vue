@@ -147,8 +147,14 @@
           <el-descriptions-item label="卖家分账金额">¥{{ settlementDetail.seller_settle_amount ?? '-' }}</el-descriptions-item>
           <el-descriptions-item label="平台佣金">¥{{ settlementDetail.platform_commission_amount ?? '-' }}</el-descriptions-item>
           <el-descriptions-item label="结算方式">
-            <el-tag :type="settlementDetail.settlement_method==='TRANSFER'?'warning':'success'">
-              {{ settlementDetail.settlement_method==='TRANSFER'?'转账代结算':'分账结算' }}
+            <el-tag v-if="settlementDetail.settlement_method==='TRANSFER'" type="warning">
+              转账代结算
+            </el-tag>
+            <el-tag v-else-if="settlementDetail.settlement_method==='ROYALTY'" type="success">
+              分账结算
+            </el-tag>
+            <el-tag v-else type="info">
+              待确定
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="结算到账账户">{{ settlementDetail.settlement_account || settlementDetail.seller?.alipay_login_id || '-' }}</el-descriptions-item>

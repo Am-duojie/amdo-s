@@ -1077,7 +1077,7 @@ const getOrderStatusLabel = (status) => {
   const labels = {
     pending: '等待买家付款',
     paid: '买家已付款',
-    shipped: '等待见面交易',
+    shipped: '等待买家收货',
     completed: '交易完成',
     cancelled: '交易关闭'
   }

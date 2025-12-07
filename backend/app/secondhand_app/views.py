@@ -452,6 +452,18 @@ class OrderViewSet(viewsets.ModelViewSet):
         if status_value not in dict(Order.STATUS_CHOICES).keys():
             return Response({'detail': '无效的状态值'}, status=status.HTTP_400_BAD_REQUEST)
         
+        # 如果是发货状态，更新物流信息
+        if status_value == 'shipped':
+            from django.utils import timezone
+            carrier = request.data.get('carrier', '')
+            tracking_number = request.data.get('tracking_number', '')
+            if carrier:
+                order.carrier = carrier
+            if tracking_number:
+                order.tracking_number = tracking_number
+            if not order.shipped_at:
+                order.shipped_at = timezone.now()
+        
         order.status = status_value
         order.save()
 
@@ -495,6 +507,28 @@ class OrderViewSet(viewsets.ModelViewSet):
                             if commission_amount < 0:
                                 commission_amount = Decimal('0.00')
                             out_request_no = f'settle_{order.id}_{int(timezone.now().timestamp())}'
+                            
+                            # 根据支付宝文档，分账前需要先绑定分账关系
+                            # 尝试绑定分账关系（如果失败也不影响，可能已经绑定过）
+                            if seller_user_id:
+                                bind_result = alipay.bind_royalty_relation(
+                                    receiver_account=seller_user_id,
+                                    receiver_type='userId',
+                                    receiver_name=seller_profile.alipay_real_name if seller_profile else '',
+                                    memo='易淘分账-卖家'
+                                )
+                                if not bind_result.get('success'):
+                                    logger.warning(f'分账关系绑定失败（可能已绑定）: {bind_result.get("msg")}')
+                            elif seller_login_id:
+                                bind_result = alipay.bind_royalty_relation(
+                                    receiver_account=seller_login_id,
+                                    receiver_type='loginName',
+                                    receiver_name=seller_profile.alipay_real_name if seller_profile else '',
+                                    memo='易淘分账-卖家'
+                                )
+                                if not bind_result.get('success'):
+                                    logger.warning(f'分账关系绑定失败（可能已绑定）: {bind_result.get("msg")}')
+                            
                             # 根据支付宝分账文档，需要提供转出方信息（商户账号）
                             # 获取商户的支付宝账号（从配置或订单中获取）
                             # 注意：在沙箱环境中，转出方通常是商户账号
@@ -548,8 +582,10 @@ class OrderViewSet(viewsets.ModelViewSet):
                                 except Exception:
                                     pass
                             else:
+                                # 分账失败，设置状态为failed，但不设置settlement_method（等待降级处理）
                                 order.settlement_status = 'failed'
                                 order.settle_request_no = out_request_no
+                                # 注意：不设置settlement_method，等待降级到转账或手动重试
                                 order.save()
                                 logger.error(f"分账失败: code={result.get('code')}, msg={result.get('msg')}, sub={result.get('sub_code')} {result.get('sub_msg')}")
                                 try:

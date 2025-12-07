@@ -50,6 +50,29 @@
               </div>
             </div>
 
+            <!-- 物流信息 -->
+            <div class="section" v-if="order.status === 'shipped' || order.status === 'completed'">
+              <h3>物流信息</h3>
+              <div class="shipping-info">
+                <div class="info-row" v-if="order.carrier">
+                  <span class="label">物流公司：</span>
+                  <span class="value">{{ order.carrier }}</span>
+                </div>
+                <div class="info-row" v-if="order.tracking_number">
+                  <span class="label">运单号：</span>
+                  <span class="value">{{ order.tracking_number }}</span>
+                </div>
+                <div class="info-row" v-if="order.shipped_at">
+                  <span class="label">发货时间：</span>
+                  <span class="value">{{ formatDate(order.shipped_at) }}</span>
+                </div>
+                <div class="info-row" v-if="order.delivered_at">
+                  <span class="label">签收时间：</span>
+                  <span class="value">{{ formatDate(order.delivered_at) }}</span>
+                </div>
+              </div>
+            </div>
+
             <!-- 商品信息 -->
             <div class="section">
               <h3>商品信息</h3>
@@ -112,7 +135,7 @@
               <el-button
                 v-if="isSeller && order.status === 'paid'"
                 type="primary"
-                @click="handleStatusUpdate('shipped')"
+                @click="showShippingDialog"
               >
                 确认发货
               </el-button>
@@ -139,8 +162,17 @@
                 <el-tag :type="order.settlement_status==='settled'?'success':(order.settlement_status==='failed'?'danger':'warning')">
                   {{ order.settlement_status==='settled'?'已结算到账':(order.settlement_status==='failed'?'结算失败':'待结算') }}
                 </el-tag>
-                <el-tag style="margin-left:8px" v-if="order.settlement_method" :type="order.settlement_method==='TRANSFER'?'warning':'success'">
-                  {{ order.settlement_method==='TRANSFER'?'转账代结算':'分账结算' }}
+                <el-tag v-if="order.settlement_method==='TRANSFER'" type="warning" style="margin-left:8px">
+                  转账代结算
+                </el-tag>
+                <el-tag v-else-if="order.settlement_method==='ROYALTY'" type="success" style="margin-left:8px">
+                  分账结算
+                </el-tag>
+                <el-tag v-else-if="order.settlement_status==='pending'" type="info" style="margin-left:8px">
+                  待分账
+                </el-tag>
+                <el-tag v-else-if="order.settlement_status==='failed'" type="danger" style="margin-left:8px">
+                  分账失败
                 </el-tag>
               </div>
               <div class="info-row">
@@ -211,6 +243,33 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 发货对话框 -->
+    <el-dialog
+      v-model="shippingDialogVisible"
+      title="填写物流信息"
+      width="500px"
+      @close="closeShippingDialog"
+    >
+      <el-form :model="shippingForm" label-width="100px">
+        <el-form-item label="物流公司" required>
+          <el-input v-model="shippingForm.carrier" placeholder="请输入物流公司名称，如：顺丰、圆通、中通等" />
+        </el-form-item>
+        <el-form-item label="运单号" required>
+          <el-input v-model="shippingForm.tracking_number" placeholder="请输入运单号" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="closeShippingDialog">取消</el-button>
+        <el-button 
+          type="primary" 
+          @click="confirmShipping"
+          :loading="shippingLoading"
+        >
+          确认发货
+        </el-button>
+      </template>
+    </el-dialog>
     </div>
   </div>
 </template>
@@ -239,6 +298,14 @@ const paymentLoading = ref(false)
 const qrcodeUrl = ref('')
 const checkingPayment = ref(false)
 let paymentCheckTimer = null
+
+// 发货相关状态
+const shippingDialogVisible = ref(false)
+const shippingLoading = ref(false)
+const shippingForm = ref({
+  carrier: '',
+  tracking_number: ''
+})
 
 const isBuyer = computed(() => {
   return order.value && authStore.user?.id === order.value.buyer?.id
@@ -321,6 +388,48 @@ const handleStatusUpdate = async (newStatus) => {
     if (error !== 'cancel') {
       ElMessage.error('更新失败')
     }
+  }
+}
+
+// 显示发货对话框
+const showShippingDialog = () => {
+  shippingForm.value = {
+    carrier: order.value?.carrier || '',
+    tracking_number: order.value?.tracking_number || ''
+  }
+  shippingDialogVisible.value = true
+}
+
+// 关闭发货对话框
+const closeShippingDialog = () => {
+  shippingDialogVisible.value = false
+  shippingForm.value = {
+    carrier: '',
+    tracking_number: ''
+  }
+}
+
+// 确认发货
+const confirmShipping = async () => {
+  if (!shippingForm.value.carrier || !shippingForm.value.tracking_number) {
+    ElMessage.warning('请填写完整的物流信息')
+    return
+  }
+
+  shippingLoading.value = true
+  try {
+    await api.patch(`/orders/${orderId.value}/update_status/`, {
+      status: 'shipped',
+      carrier: shippingForm.value.carrier,
+      tracking_number: shippingForm.value.tracking_number
+    })
+    ElMessage.success('发货成功')
+    closeShippingDialog()
+    await loadOrder()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '发货失败')
+  } finally {
+    shippingLoading.value = false
   }
 }
 

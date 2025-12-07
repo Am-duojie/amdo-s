@@ -690,6 +690,7 @@ class AlipayClient:
             'biz_content': json.dumps(biz_content, ensure_ascii=False, separators=(',', ':')),
         }
 
+        # 先计算签名（包含charset参数）
         params['sign'] = self._sign(params)
 
         logger.info('========== 支付宝分账结算请求 =========')
@@ -697,10 +698,26 @@ class AlipayClient:
         logger.info(f'交易号: {trade_no}')
         logger.info(f'分账请求号: {out_request_no}')
         logger.info(f'分账明细数量: {len(royalty_parameters)}')
-        logger.info(f'完整参数: {params}')
+        logger.info(f'完整参数（签名前）: {params}')
 
         try:
-            response = requests.post(self.gateway_url, data=params, timeout=10)
+            # 根据支付宝错误提示，charset参数必须放在URL查询字符串中
+            # 其他参数（包括sign）放在POST body中
+            from urllib.parse import quote
+            
+            # 将charset参数单独提取出来，放在URL查询字符串中
+            charset_value = params.pop('charset', self.charset)
+            
+            # 构建URL查询字符串（只包含charset，需要URL编码）
+            charset_encoded = quote(charset_value, safe='')
+            query_string = f'charset={charset_encoded}'
+            url_with_charset = f"{self.gateway_url}?{query_string}"
+            
+            # 其他参数（包括sign）放在POST body中
+            logger.info(f'请求URL（含charset）: {url_with_charset}')
+            logger.info(f'POST body参数数量: {len(params)}')
+            
+            response = requests.post(url_with_charset, data=params, timeout=10)
             result = response.json()
             logger.info(f'分账结算响应: {result}')
 
@@ -732,4 +749,88 @@ class AlipayClient:
             return {
                 'success': False,
                 'msg': f'分账结算失败: {str(e)}'
+            }
+    
+    def bind_royalty_relation(self, receiver_account, receiver_type='userId', receiver_name='', memo=''):
+        """
+        绑定分账关系
+        接口：alipay.trade.royalty.relation.bind
+        文档：https://opendocs.alipay.com/open/08456h
+        
+        参数：
+        - receiver_account: 分账接收方账号（userId 或 loginName）
+        - receiver_type: 账号类型，'userId' 或 'loginName'
+        - receiver_name: 接收方姓名（可选）
+        - memo: 备注（可选）
+        
+        返回：
+        {
+          'success': True/False,
+          'code': '10000' 或错误码,
+          'msg': '处理结果'
+        }
+        """
+        from datetime import datetime
+        
+        # 构建业务参数
+        biz_content = {
+            'out_request_no': f'bind_{int(datetime.now().timestamp())}',
+            'receiver_list': [{
+                'account': str(receiver_account),
+                'type': receiver_type,
+            }]
+        }
+        
+        if receiver_name:
+            biz_content['receiver_list'][0]['name'] = str(receiver_name)[:64]
+        if memo:
+            biz_content['receiver_list'][0]['memo'] = str(memo)[:200]
+        
+        params = {
+            'app_id': self.app_id,
+            'method': 'alipay.trade.royalty.relation.bind',
+            'charset': self.charset,
+            'sign_type': self.sign_type,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'version': self.version,
+            'biz_content': json.dumps(biz_content, ensure_ascii=False, separators=(',', ':')),
+        }
+        
+        params['sign'] = self._sign(params)
+        
+        logger.info('========== 支付宝分账关系绑定请求 =========')
+        logger.info(f'接收方账号: {receiver_account}')
+        logger.info(f'账号类型: {receiver_type}')
+        
+        try:
+            # charset参数放在URL查询字符串中
+            charset_value = params.pop('charset', self.charset)
+            charset_encoded = quote(charset_value, safe='')
+            query_string = f'charset={charset_encoded}'
+            url_with_charset = f"{self.gateway_url}?{query_string}"
+            
+            response = requests.post(url_with_charset, data=params, timeout=10)
+            result = response.json()
+            logger.info(f'分账关系绑定响应: {result}')
+            
+            resp = result.get('alipay_trade_royalty_relation_bind_response', {})
+            if resp.get('code') == '10000' and resp.get('result_code') == 'SUCCESS':
+                return {
+                    'success': True,
+                    'code': '10000',
+                    'msg': resp.get('msg', 'Success'),
+                }
+            else:
+                return {
+                    'success': False,
+                    'code': resp.get('code', ''),
+                    'msg': resp.get('msg', '绑定失败'),
+                    'sub_code': resp.get('sub_code', ''),
+                    'sub_msg': resp.get('sub_msg', ''),
+                }
+        except Exception as e:
+            logger.error(f'分账关系绑定异常: {str(e)}', exc_info=True)
+            return {
+                'success': False,
+                'msg': f'分账关系绑定失败: {str(e)}'
             }
