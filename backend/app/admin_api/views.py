@@ -12,6 +12,7 @@ from .models import AdminUser, AdminRole, AdminInspectionReport, AdminAuditQueue
 from app.secondhand_app.models import RecycleOrder, VerifiedProduct, VerifiedOrder, Order, Shop, Category, Product, Message, Address
 from app.secondhand_app.alipay_client import AlipayClient
 from .serializers import AdminUserSerializer, RecycleOrderListSerializer, VerifiedProductListSerializer, AdminAuditQueueItemSerializer, ShopAdminSerializer
+from app.secondhand_app.serializers import OrderSerializer
 from .jwt import encode as jwt_encode, decode as jwt_decode
 from django.contrib.auth.hashers import check_password, make_password
 from django.views.decorators.csrf import csrf_exempt
@@ -1304,6 +1305,36 @@ class PaymentOrdersView(APIView):
             'can_retry': ((getattr(o.product.seller, 'profile', None) and bool(getattr(o.product.seller.profile, 'alipay_login_id', ''))) and bool(getattr(o, 'alipay_trade_no', '')))
         } for o in items]
         return Response({'results': data, 'count': total})
+
+@method_decorator(csrf_exempt, name='dispatch')
+class PaymentOrderDetailView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request, order_id):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['payment:view']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        try:
+            o = Order.objects.select_related(
+                'buyer__profile',
+                'product__seller__profile'
+            ).prefetch_related('product__images').get(id=order_id)
+        except Order.DoesNotExist:
+            return Response({'detail': 'order not found'}, status=404)
+
+        data = OrderSerializer(o, context={'request': request}).data
+        seller_profile = getattr(o.product.seller, 'profile', None)
+        data['seller_profile'] = {
+            'alipay_login_id': getattr(seller_profile, 'alipay_login_id', '') if seller_profile else '',
+            'alipay_real_name': getattr(seller_profile, 'alipay_real_name', '') if seller_profile else ''
+        }
+        data['buyer_profile'] = {
+            'phone': getattr(getattr(o.buyer, 'profile', None), 'phone', '') if hasattr(o.buyer, 'profile') else ''
+        }
+        return Response({'order': data})
 
 @method_decorator(csrf_exempt, name='dispatch')
 class PaymentOrderActionView(APIView):
