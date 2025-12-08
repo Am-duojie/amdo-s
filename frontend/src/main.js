@@ -11,6 +11,7 @@ import { useAdminAuthStore } from './stores/adminAuth'
 import './index.css'
 import './styles/theme.css'
 import './styles/xianyu.css'
+import './styles/admin-theme.css'
 
 const app = createApp(App)
 const pinia = createPinia()

@@ -1,13 +1,18 @@
 <template>
-  <div class="order-page">
+  <div class="order-page admin-page">
     <el-card shadow="never" class="block-card">
       <template #header>
         <div class="card-header">
-          <div class="title">
-            <el-icon><List /></el-icon>
-            <span>易淘订单管理</span>
+          <div class="title-block">
+            <div class="title-main">
+              <el-icon><List /></el-icon>
+              <span>易淘订单管理</span>
+            </div>
+            <div class="title-desc">按状态/分账快速筛选，一键发货、退款、分账重试</div>
           </div>
-          <el-button text :icon="Refresh" @click="handleRefresh">刷新</el-button>
+          <el-space>
+            <el-button text :icon="Refresh" @click="handleRefresh">刷新</el-button>
+          </el-space>
         </div>
       </template>
 
@@ -18,7 +23,7 @@
         inline
         @submit.prevent
       >
-        <el-form-item label="订单状态">
+        <el-form-item label="订单状态" class="form-item full-row">
           <el-radio-group v-model="filters.status" @change="handleSearch">
             <el-radio-button
               v-for="item in statusOptions"
@@ -30,7 +35,7 @@
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item label="分账状态">
+        <el-form-item label="分账状态" class="form-item field">
           <el-select
             v-model="filters.settlement"
             placeholder="全部"
@@ -45,7 +50,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="关键词">
+        <el-form-item label="关键词" class="form-item field">
           <el-input
             v-model="filters.keyword"
             placeholder="订单号 / 商品 / 买家"
@@ -59,8 +64,8 @@
           </el-input>
         </el-form-item>
 
-        <el-form-item>
-          <el-space>
+        <el-form-item class="form-item actions">
+          <el-space wrap>
             <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
             <el-button @click="resetFilters">重置</el-button>
           </el-space>
@@ -68,7 +73,15 @@
       </el-form>
 
       <div class="table-toolbar">
-        <span class="table-note">共 {{ pagination.total }} 条记录</span>
+        <div class="table-note">
+          <span>共 {{ pagination.total }} 条记录</span>
+          <span v-if="filters.status">· 状态：{{ getStatusText(filters.status) }}</span>
+          <span v-if="filters.settlement">· 分账：{{ getSettlementStatusText(filters.settlement) }}</span>
+          <span v-if="filters.keyword">· 关键词：{{ filters.keyword }}</span>
+        </div>
+        <el-space>
+          <el-button text :icon="Refresh" @click="handleRefresh">刷新</el-button>
+        </el-space>
       </div>
 
       <el-table
@@ -77,6 +90,7 @@
         border
         stripe
         table-layout="auto"
+        empty-text="暂无订单"
       >
         <el-table-column prop="id" label="订单号" width="110" align="center">
           <template #default="{ row }">
@@ -815,44 +829,82 @@ onMounted(() => {
 <style scoped>
 .order-page {
   padding: 20px;
-  background-color: #f6f8fa;
+  background-color: var(--admin-bg, var(--bg-page, #f6f8fa));
   min-height: calc(100vh - 84px);
 }
 
 .block-card {
-  border: none;
+  border: 1px solid var(--xy-border-color, #ebeef5);
   margin-bottom: 16px;
+  box-shadow: var(--xy-shadow, 0 2px 8px rgba(0, 0, 0, 0.04));
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 12px;
 }
 
-.card-header .title {
+.title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.title-main {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  color: #303133;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.title-desc {
+  color: #909399;
+  font-size: 13px;
 }
 
 .filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: center;
   margin-bottom: 12px;
+  padding: 4px 0;
+}
+
+.form-item {
+  margin: 0;
+}
+
+.form-item.full-row {
+  flex: 1 1 100%;
+}
+
+.form-item.field {
+  flex: 1 1 260px;
+  min-width: 220px;
+}
+
+.form-item.actions {
+  margin-left: auto;
 }
 
 .table-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin: 4px 0 10px;
+  padding: 8px 0 6px;
 }
 
 .table-note {
-  color: #909399;
+  color: #606266;
   font-size: 13px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .product-cell {

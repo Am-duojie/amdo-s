@@ -133,6 +133,7 @@ const routes = [
     component: () => import('@/admin/layout/AdminLayout.vue'),
     meta: { hideSearch: true, admin: true },
     children: [
+      { path: '', redirect: { name: 'AdminLogin' }, meta: { hideSearch: true, admin: true } },
       { path: 'dashboard', name: 'AdminDashboard', component: () => import('@/admin/pages/AdminDashboard.vue'), meta: { requiresAdminAuth: true, hideSearch: true } },
       // 回收业务
       { path: 'recycle-orders', name: 'RecycleOrderManagement', component: () => import('@/admin/pages/RecycleOrderManagement.vue'), meta: { requiresAdminAuth: true } },
@@ -159,6 +160,7 @@ const routes = [
       { path: 'frontend-users', name: 'AdminFrontendUsers', component: () => import('@/admin/pages/FrontendUsers.vue'), meta: { requiresAdminAuth: true } },
       { path: 'messages', name: 'AdminMessages', component: () => import('@/admin/pages/Messages.vue'), meta: { requiresAdminAuth: true } },
       { path: 'addresses', name: 'AdminAddresses', component: () => import('@/admin/pages/Addresses.vue'), meta: { requiresAdminAuth: true } },
+      { path: ':pathMatch(.*)*', redirect: { name: 'AdminLogin' }, meta: { hideSearch: true, admin: true } },
     ]
   },
   {

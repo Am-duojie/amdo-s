@@ -1,11 +1,19 @@
 <template>
   <div class="admin-layout">
     <div class="admin-topbar">
-      <div class="brand">易淘·管理后台</div>
+      <div class="brand">
+        <div class="brand-line">
+          <span class="brand-badge">ADMIN</span>
+          <span class="brand-main">易淘·管理后台</span>
+        </div>
+      </div>
       <div class="spacer"></div>
       <div class="user" v-if="admin.isAuthed">
-        <span class="user-name">{{ admin.user?.username }}</span>
-        <el-button size="small" @click="logout">退出</el-button>
+        <div class="user-chip">
+          <el-avatar size="small">{{ (admin.user?.username || 'U')[0].toUpperCase() }}</el-avatar>
+          <span class="user-name">{{ admin.user?.username }}</span>
+        </div>
+        <el-button size="small" type="primary" plain @click="logout">退出</el-button>
       </div>
     </div>
     <div class="admin-body">
@@ -136,25 +144,51 @@ onMounted(() => {
 <style scoped>
 .admin-layout {
   min-height: 100vh;
-  background: #f6f7f9;
+  background: var(--admin-bg, #f6f7f9);
 }
 
 .admin-topbar {
-  height: 56px;
-  background: #101820;
+  height: 64px;
+  background: linear-gradient(90deg, #0f172a 0%, #111827 100%);
   color: #fff;
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 20px;
   position: sticky;
   top: 0;
-  z-index: 100;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 120;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
 }
 
 .admin-topbar .brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.brand-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 12px;
   font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.brand-main {
+  font-weight: 800;
   font-size: 18px;
+  letter-spacing: 0.2px;
 }
 
 .admin-topbar .spacer {
@@ -165,6 +199,16 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .admin-topbar .user-name {
@@ -179,45 +223,49 @@ onMounted(() => {
 .admin-sidebar {
   width: 240px;
   background: #fff;
-  border-right: 1px solid #eee;
+  border-right: 1px solid var(--admin-border, #e5e7eb);
   overflow-y: auto;
   padding: 16px 0;
+  box-shadow: 6px 0 18px rgba(0, 0, 0, 0.04);
 }
 
 .menu-section {
-  margin-bottom: 24px;
+  margin-bottom: 18px;
 }
 
 .menu-title {
   padding: 0 16px 8px;
   font-size: 12px;
-  font-weight: 600;
-  color: #909399;
+  font-weight: 700;
+  color: #9ca3af;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.8px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
-  color: #606266;
+  padding: 11px 16px;
+  color: #4b5563;
   text-decoration: none;
-  transition: all 0.3s;
+  transition: all 0.25s;
   border-left: 3px solid transparent;
+  border-radius: 0 10px 10px 0;
+  margin-right: 8px;
 }
 
 .nav-item:hover {
-  background: #f5f7fa;
-  color: #409eff;
+  background: #f8fafc;
+  color: var(--admin-primary, #ff6a00);
 }
 
 .nav-item.router-link-active {
-  background: #ecf5ff;
-  color: #409eff;
-  border-left-color: #409eff;
-  font-weight: 500;
+  background: #fff7ed;
+  color: var(--admin-primary, #ff6a00);
+  border-left-color: var(--admin-primary, #ff6a00);
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 106, 0, 0.08);
 }
 
 .nav-item .el-icon {
@@ -228,6 +276,6 @@ onMounted(() => {
   flex: 1;
   padding: 20px;
   overflow-y: auto;
-  background: #f6f7f9;
+  background: var(--admin-bg, #f6f7f9);
 }
 </style>
