@@ -1,6 +1,9 @@
 <template>
   <div class="admin-layout">
     <div class="admin-topbar">
+      <el-button class="fold-btn" text circle @click="isCollapse = !isCollapse">
+        <el-icon><component :is="isCollapse ? Expand : Fold" /></el-icon>
+      </el-button>
       <div class="brand">
         <div class="brand-line">
           <span class="brand-badge">ADMIN</span>
@@ -17,116 +20,31 @@
       </div>
     </div>
     <div class="admin-body">
-      <aside class="admin-sidebar">
-        <div class="menu-section">
-          <div class="menu-title">数据看板</div>
-          <router-link to="/admin/dashboard" class="nav-item">
-            <el-icon><Odometer /></el-icon>
-            <span>总览</span>
-          </router-link>
-        </div>
-
-        <div class="menu-section">
-          <div class="menu-title">回收业务</div>
-          <router-link to="/admin/recycle-orders" class="nav-item">
-            <el-icon><Tickets /></el-icon>
-            <span>回收订单管理</span>
-          </router-link>
-        </div>
-
-        <div class="menu-section">
-          <div class="menu-title">官方验业务</div>
-          <router-link to="/admin/verified-products" class="nav-item">
-            <el-icon><Goods /></el-icon>
-            <span>官方验商品管理</span>
-          </router-link>
-          <router-link to="/admin/verified-orders" class="nav-item">
-            <el-icon><ShoppingCart /></el-icon>
-            <span>官方验订单管理</span>
-          </router-link>
-        </div>
-
-        <div class="menu-section">
-          <div class="menu-title">易淘业务</div>
-          <router-link v-if="hasPerm('payment:view')" to="/admin/secondhand-orders" class="nav-item">
-            <el-icon><CreditCard /></el-icon>
-            <span>易淘订单管理</span>
-          </router-link>
-          <router-link v-if="hasPerm('product:view')" to="/admin/products" class="nav-item">
-            <el-icon><Box /></el-icon>
-            <span>商品管理</span>
-          </router-link>
-          <router-link v-if="hasPerm('shop:view')" to="/admin/shops" class="nav-item">
-            <el-icon><Shop /></el-icon>
-            <span>店铺管理</span>
-          </router-link>
-        </div>
-
-        <div class="menu-section">
-          <div class="menu-title">内容管理</div>
-          <router-link to="/admin/audit-queue" class="nav-item">
-            <el-icon><DocumentChecked /></el-icon>
-            <span>内容审核</span>
-          </router-link>
-        </div>
-
-        <div class="menu-section" v-if="isSuper">
-          <div class="menu-title">系统管理</div>
-          <router-link to="/admin/users" class="nav-item">
-            <el-icon><User /></el-icon>
-            <span>管理员</span>
-          </router-link>
-          <router-link to="/admin/roles" class="nav-item">
-            <el-icon><UserFilled /></el-icon>
-            <span>角色权限</span>
-          </router-link>
-          <router-link to="/admin/audit-logs" class="nav-item">
-            <el-icon><Document /></el-icon>
-            <span>审计日志</span>
-          </router-link>
-          <router-link v-if="hasPerm('category:view')" to="/admin/categories" class="nav-item">
-            <el-icon><List /></el-icon>
-            <span>分类管理</span>
-          </router-link>
-          <router-link v-if="hasPerm('user:view')" to="/admin/frontend-users" class="nav-item">
-            <el-icon><Avatar /></el-icon>
-            <span>前端用户</span>
-          </router-link>
-          <router-link v-if="hasPerm('message:view')" to="/admin/messages" class="nav-item">
-            <el-icon><ChatDotSquare /></el-icon>
-            <span>消息管理</span>
-          </router-link>
-          <router-link v-if="hasPerm('address:view')" to="/admin/addresses" class="nav-item">
-            <el-icon><Location /></el-icon>
-            <span>地址管理</span>
-          </router-link>
-        </div>
+      <aside class="admin-sidebar" :style="{ width: isCollapse ? '64px' : '210px' }">
+        <Sidebar :collapse="isCollapse" />
       </aside>
       <main class="admin-content">
-        <router-view />
+        <div class="admin-nav">
+          <Breadcrumb />
+          <TagsView />
+        </div>
+        <AppMain />
       </main>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useAdminAuthStore } from '@/stores/adminAuth'
-import {
-  Odometer, Tickets, Goods, ShoppingCart, CreditCard, Box, Shop,
-  DocumentChecked, User, UserFilled, Document, List, Avatar,
-  ChatDotSquare, Location
-} from '@element-plus/icons-vue'
+import Sidebar from './components/Sidebar.vue'
+import Breadcrumb from './components/Breadcrumb.vue'
+import TagsView from './components/TagsView.vue'
+import AppMain from './components/AppMain.vue'
+import { Fold, Expand } from '@element-plus/icons-vue'
 
 const admin = useAdminAuthStore()
-
-const isSuper = computed(() => 
-  admin.hasPerm('audit_log:view') && 
-  admin.hasPerm('admin_user:view') && 
-  admin.hasPerm('role:view')
-)
-
-const hasPerm = (p) => admin.hasPerm(p)
+const isCollapse = ref(false)
 
 const logout = async () => {
   await admin.logout()
@@ -148,16 +66,16 @@ onMounted(() => {
 }
 
 .admin-topbar {
-  height: 64px;
-  background: linear-gradient(90deg, #0f172a 0%, #111827 100%);
+  height: 50px;
+  background: #304156;
   color: #fff;
   display: flex;
   align-items: center;
-  padding: 0 20px;
+  padding: 0 16px;
   position: sticky;
   top: 0;
   z-index: 120;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .admin-topbar .brand {
@@ -176,18 +94,18 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.5px;
 }
 
 .brand-main {
   font-weight: 800;
-  font-size: 18px;
+  font-size: 17px;
   letter-spacing: 0.2px;
 }
 
@@ -215,67 +133,37 @@ onMounted(() => {
   color: #fff;
 }
 
+.fold-btn {
+  color: #fff;
+  margin-right: 10px;
+}
+
 .admin-body {
   display: flex;
-  height: calc(100vh - 56px);
+  height: calc(100vh - 50px);
 }
 
 .admin-sidebar {
-  width: 240px;
-  background: #fff;
-  border-right: 1px solid var(--admin-border, #e5e7eb);
+  width: 210px;
+  background: #001529;
+  border-right: none;
   overflow-y: auto;
-  padding: 16px 0;
-  box-shadow: 6px 0 18px rgba(0, 0, 0, 0.04);
-}
-
-.menu-section {
-  margin-bottom: 18px;
-}
-
-.menu-title {
-  padding: 0 16px 8px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #9ca3af;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 16px;
-  color: #4b5563;
-  text-decoration: none;
-  transition: all 0.25s;
-  border-left: 3px solid transparent;
-  border-radius: 0 10px 10px 0;
-  margin-right: 8px;
-}
-
-.nav-item:hover {
-  background: #f8fafc;
-  color: var(--admin-primary, #ff6a00);
-}
-
-.nav-item.router-link-active {
-  background: #fff7ed;
-  color: var(--admin-primary, #ff6a00);
-  border-left-color: var(--admin-primary, #ff6a00);
-  font-weight: 600;
-  box-shadow: inset 0 1px 0 rgba(255, 106, 0, 0.08);
-}
-
-.nav-item .el-icon {
-  font-size: 16px;
+  padding: 12px 0;
+  box-shadow: none;
 }
 
 .admin-content {
   flex: 1;
-  padding: 20px;
+  padding: 14px 16px;
   overflow-y: auto;
-  background: var(--admin-bg, #f6f7f9);
+  background: #f0f2f5;
+}
+
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 4px 0;
 }
 </style>

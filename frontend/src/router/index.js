@@ -10,6 +10,12 @@ const routes = [
     meta: { theme: 'yellow', hideSearch: false }
   },
   {
+    path: '/redirect/:pathMatch(.*)',
+    name: 'Redirect',
+    component: () => import('@/admin/pages/Redirect.vue'),
+    meta: { hideSearch: true, admin: true }
+  },
+  {
     path: '/original',
     name: 'OriginalHome',
     component: () => import('@/pages/Home.vue')
@@ -133,33 +139,33 @@ const routes = [
     component: () => import('@/admin/layout/AdminLayout.vue'),
     meta: { hideSearch: true, admin: true },
     children: [
-      { path: '', redirect: { name: 'AdminLogin' }, meta: { hideSearch: true, admin: true } },
-      { path: 'dashboard', name: 'AdminDashboard', component: () => import('@/admin/pages/AdminDashboard.vue'), meta: { requiresAdminAuth: true, hideSearch: true } },
+      { path: '', redirect: { name: 'AdminLogin' }, meta: { hideSearch: true, admin: true, hidden: true } },
+      { path: 'dashboard', name: 'AdminDashboard', component: () => import('@/admin/pages/AdminDashboard.vue'), meta: { requiresAdminAuth: true, hideSearch: true, title: '数据总览', icon: 'Odometer', group: 'dashboard', affix: true } },
       // 回收业务
-      { path: 'recycle-orders', name: 'RecycleOrderManagement', component: () => import('@/admin/pages/RecycleOrderManagement.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'inspection-orders', name: 'InspectionOrders', component: () => import('@/admin/pages/InspectionOrders.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'inspection-orders/:id', name: 'InspectionOrderDetail', component: () => import('@/admin/pages/InspectionOrderDetail.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'recycle-orders', name: 'RecycleOrderManagement', component: () => import('@/admin/pages/RecycleOrderManagement.vue'), meta: { requiresAdminAuth: true, title: '回收订单', icon: 'Tickets', group: 'recycle' } },
+      { path: 'inspection-orders', name: 'InspectionOrders', component: () => import('@/admin/pages/InspectionOrders.vue'), meta: { requiresAdminAuth: true, title: '回收质检', icon: 'DocumentChecked', group: 'recycle' } },
+      { path: 'inspection-orders/:id', name: 'InspectionOrderDetail', component: () => import('@/admin/pages/InspectionOrderDetail.vue'), meta: { requiresAdminAuth: true, title: '质检详情', icon: 'DocumentChecked', group: 'recycle', hidden: true } },
       // 官方验业务
-      { path: 'verified-products', name: 'VerifiedProductManagement', component: () => import('@/admin/pages/VerifiedProductManagement.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'verified-orders', name: 'VerifiedOrderManagement', component: () => import('@/admin/pages/VerifiedOrderManagement.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'verified-products', name: 'VerifiedProductManagement', component: () => import('@/admin/pages/VerifiedProductManagement.vue'), meta: { requiresAdminAuth: true, title: '官方验商品', icon: 'Goods', group: 'verified' } },
+      { path: 'verified-orders', name: 'VerifiedOrderManagement', component: () => import('@/admin/pages/VerifiedOrderManagement.vue'), meta: { requiresAdminAuth: true, title: '官方验订单', icon: 'ShoppingCart', group: 'verified' } },
       // 兼容旧路由
-      { path: 'recycled-products', name: 'RecycledProductsAdmin', component: () => import('@/admin/pages/RecycledProducts.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'verified-listings', name: 'VerifiedListingsAdmin', component: () => import('@/admin/pages/VerifiedListings.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'audit-queue', name: 'AuditQueueAdmin', component: () => import('@/admin/pages/AuditQueue.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'audit-logs', name: 'AuditLogsAdmin', component: () => import('@/admin/pages/AuditLogs.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'users', name: 'AdminUsers', component: () => import('@/admin/pages/Users.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'roles', name: 'AdminRoles', component: () => import('@/admin/pages/Roles.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'recycled-products', name: 'RecycledProductsAdmin', component: () => import('@/admin/pages/RecycledProducts.vue'), meta: { requiresAdminAuth: true, title: '回收商品旧', icon: 'Box', group: 'legacy', hidden: true } },
+      { path: 'verified-listings', name: 'VerifiedListingsAdmin', component: () => import('@/admin/pages/VerifiedListings.vue'), meta: { requiresAdminAuth: true, title: '官方验商品旧', icon: 'Goods', group: 'legacy', hidden: true } },
+      { path: 'audit-queue', name: 'AuditQueueAdmin', component: () => import('@/admin/pages/AuditQueue.vue'), meta: { requiresAdminAuth: true, title: '内容审核', icon: 'DocumentChecked', group: 'content' } },
+      { path: 'audit-logs', name: 'AuditLogsAdmin', component: () => import('@/admin/pages/AuditLogs.vue'), meta: { requiresAdminAuth: true, title: '审计日志', icon: 'Document', group: 'system' } },
+      { path: 'users', name: 'AdminUsers', component: () => import('@/admin/pages/Users.vue'), meta: { requiresAdminAuth: true, title: '管理员', icon: 'User', group: 'system' } },
+      { path: 'roles', name: 'AdminRoles', component: () => import('@/admin/pages/Roles.vue'), meta: { requiresAdminAuth: true, title: '角色权限', icon: 'UserFilled', group: 'system' } },
       // 易淘业务
-      { path: 'secondhand-orders', name: 'SecondHandOrderManagement', component: () => import('@/admin/pages/SecondHandOrderManagement.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'secondhand-orders', name: 'SecondHandOrderManagement', component: () => import('@/admin/pages/SecondHandOrderManagement.vue'), meta: { requiresAdminAuth: true, title: '易淘订单', icon: 'CreditCard', group: 'secondhand', perm: 'payment:view' } },
       // 兼容旧路由
-      { path: 'payments', name: 'AdminPayments', component: () => import('@/admin/pages/Payments.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'verified-orders-old', name: 'AdminVerifiedOrders', component: () => import('@/admin/pages/VerifiedOrdersAdmin.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'shops', name: 'AdminShops', component: () => import('@/admin/pages/Shops.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'categories', name: 'AdminCategories', component: () => import('@/admin/pages/Categories.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'products', name: 'AdminProducts', component: () => import('@/admin/pages/Products.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'frontend-users', name: 'AdminFrontendUsers', component: () => import('@/admin/pages/FrontendUsers.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'messages', name: 'AdminMessages', component: () => import('@/admin/pages/Messages.vue'), meta: { requiresAdminAuth: true } },
-      { path: 'addresses', name: 'AdminAddresses', component: () => import('@/admin/pages/Addresses.vue'), meta: { requiresAdminAuth: true } },
+      { path: 'payments', name: 'AdminPayments', component: () => import('@/admin/pages/Payments.vue'), meta: { requiresAdminAuth: true, title: '支付/退款', icon: 'Money', group: 'legacy' } },
+      { path: 'verified-orders-old', name: 'AdminVerifiedOrders', component: () => import('@/admin/pages/VerifiedOrdersAdmin.vue'), meta: { requiresAdminAuth: true, title: '官方验订单旧', icon: 'ShoppingCart', group: 'legacy', hidden: true } },
+      { path: 'shops', name: 'AdminShops', component: () => import('@/admin/pages/Shops.vue'), meta: { requiresAdminAuth: true, title: '店铺管理', icon: 'Shop', group: 'secondhand', perm: 'shop:view' } },
+      { path: 'categories', name: 'AdminCategories', component: () => import('@/admin/pages/Categories.vue'), meta: { requiresAdminAuth: true, title: '分类管理', icon: 'List', group: 'system', perm: 'category:view' } },
+      { path: 'products', name: 'AdminProducts', component: () => import('@/admin/pages/Products.vue'), meta: { requiresAdminAuth: true, title: '商品管理', icon: 'Box', group: 'secondhand', perm: 'product:view' } },
+      { path: 'frontend-users', name: 'AdminFrontendUsers', component: () => import('@/admin/pages/FrontendUsers.vue'), meta: { requiresAdminAuth: true, title: '前端用户', icon: 'Avatar', group: 'system', perm: 'user:view' } },
+      { path: 'messages', name: 'AdminMessages', component: () => import('@/admin/pages/Messages.vue'), meta: { requiresAdminAuth: true, title: '消息管理', icon: 'ChatDotSquare', group: 'system', perm: 'message:view' } },
+      { path: 'addresses', name: 'AdminAddresses', component: () => import('@/admin/pages/Addresses.vue'), meta: { requiresAdminAuth: true, title: '地址管理', icon: 'Location', group: 'system', perm: 'address:view' } },
       { path: ':pathMatch(.*)*', redirect: { name: 'AdminLogin' }, meta: { hideSearch: true, admin: true } },
     ]
   },

@@ -12,6 +12,7 @@ import './index.css'
 import './styles/theme.css'
 import './styles/xianyu.css'
 import './styles/admin-theme.css'
+import './styles/admin-vea.css'
 
 const app = createApp(App)
 const pinia = createPinia()

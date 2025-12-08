@@ -17,26 +17,26 @@
     </div>
 
     <!-- 关键指标 -->
-    <el-row :gutter="16" class="metric-row">
-      <el-col :span="6" v-for="item in metricCards" :key="item.key">
-        <el-card shadow="hover" class="admin-card metric-card">
-          <div class="metric-top">
-            <div class="metric-title">{{ item.title }}</div>
-            <el-tag size="small" :type="item.tagType" effect="dark">{{ item.badge }}</el-tag>
-          </div>
-          <div class="metric-value">{{ item.display }}</div>
-          <div class="metric-hint">
-            <el-icon><Clock /></el-icon>
-            <span>{{ item.desc }}</span>
-          </div>
-          <div class="metric-icon" :style="{ background: item.bg }">
-            <el-icon :size="26">
-              <component :is="item.icon" />
-            </el-icon>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+<el-row :gutter="16" class="metric-row">
+  <el-col :span="6" v-for="item in metricCards" :key="item.key">
+    <el-card shadow="hover" class="admin-card metric-card">
+      <div class="metric-top">
+        <div class="metric-title">{{ item.title }}</div>
+        <el-tag size="small" :type="item.tagType" effect="dark">{{ item.badge }}</el-tag>
+      </div>
+      <div class="metric-value">{{ item.display }}</div>
+      <div class="metric-hint">
+        <el-icon><Clock /></el-icon>
+        <span>{{ item.desc }}</span>
+      </div>
+      <div class="metric-icon" :style="{ background: item.bg }">
+        <el-icon :size="26">
+          <component :is="item.icon" />
+        </el-icon>
+      </div>
+    </el-card>
+  </el-col>
+</el-row>
 
     <!-- 待办与风险 -->
     <el-row :gutter="16" class="section-row">
@@ -123,10 +123,10 @@
           <div class="quick-actions">
             <el-button type="primary" plain @click="go('/admin/recycle-orders')">回收订单</el-button>
             <el-button type="primary" plain @click="go('/admin/inspection-orders')">回收质检</el-button>
-            <el-button type="success" plain @click="go('/admin/verified-products')">官方验商品</el-button>
-            <el-button type="warning" plain @click="go('/admin/verified-orders')">官方验订单</el-button>
-            <el-button type="info" plain @click="go('/admin/secondhand-orders')">易淘订单</el-button>
-            <el-button type="danger" plain @click="go('/admin/payments')">支付/退款</el-button>
+            <el-button type="primary" plain @click="go('/admin/verified-products')">官方验商品</el-button>
+            <el-button type="primary" plain @click="go('/admin/verified-orders')">官方验订单</el-button>
+            <el-button type="primary" plain @click="go('/admin/secondhand-orders')">易淘订单</el-button>
+            <el-button type="primary" plain @click="go('/admin/payments')">支付/退款</el-button>
           </div>
         </el-card>
       </el-col>
@@ -273,7 +273,7 @@ const metricCards = computed(() => [
     desc: '含易淘、官方验已付款订单',
     badge: '交易',
     tagType: 'primary',
-    bg: 'rgba(255, 106, 0, 0.18)',
+    bg: 'rgba(64, 158, 255, 0.20)',
     icon: Money
   },
   {
@@ -283,7 +283,7 @@ const metricCards = computed(() => [
     desc: '买家已付款订单数',
     badge: '易淘',
     tagType: 'info',
-    bg: 'rgba(64, 158, 255, 0.18)',
+    bg: 'rgba(96, 165, 250, 0.18)',
     icon: CreditCard
   },
   {
@@ -293,7 +293,7 @@ const metricCards = computed(() => [
     desc: '已付款（含待发货）',
     badge: '官方验',
     tagType: 'success',
-    bg: 'rgba(103, 194, 58, 0.18)',
+    bg: 'rgba(56, 189, 248, 0.18)',
     icon: ShoppingCart
   },
   {
@@ -303,7 +303,7 @@ const metricCards = computed(() => [
     desc: '新创建回收/质检订单',
     badge: '回收',
     tagType: 'warning',
-    bg: 'rgba(255, 193, 7, 0.18)',
+    bg: 'rgba(129, 140, 248, 0.18)',
     icon: Tickets
   }
 ])
@@ -430,9 +430,9 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   align-items: center;
-  color: #4b5563;
-  background: #fdf2e9;
-  border: 1px solid #fde7d4;
+  color: #334155;
+  background: #ecf5ff;
+  border: 1px solid #d9ecff;
   border-radius: 10px;
   padding: 10px 12px;
 }

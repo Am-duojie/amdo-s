@@ -1,20 +1,18 @@
 <template>
   <div class="order-page admin-page">
-    <el-card shadow="never" class="block-card">
-      <template #header>
-        <div class="card-header">
-          <div class="title-block">
-            <div class="title-main">
-              <el-icon><List /></el-icon>
-              <span>易淘订单管理</span>
-            </div>
-            <div class="title-desc">按状态/分账快速筛选，一键发货、退款、分账重试</div>
+    <el-card shadow="hover" class="page-card">
+      <div class="page-header">
+        <div>
+          <div class="page-title">
+            <el-icon><List /></el-icon>
+            <span>易淘订单管理</span>
           </div>
-          <el-space>
-            <el-button text :icon="Refresh" @click="handleRefresh">刷新</el-button>
-          </el-space>
+          <div class="page-desc">按状态/分账快速筛选，一键发货、退款、分账重试</div>
         </div>
-      </template>
+        <el-space>
+          <el-button :loading="loading" text :icon="Refresh" @click="handleRefresh">刷新</el-button>
+        </el-space>
+      </div>
 
       <el-form
         :model="filters"
@@ -40,7 +38,7 @@
             v-model="filters.settlement"
             placeholder="全部"
             clearable
-            style="width: 150px"
+            style="width: 180px"
             @change="handleSearch"
           >
             <el-option label="全部" value="" />
@@ -55,8 +53,9 @@
             v-model="filters.keyword"
             placeholder="订单号 / 商品 / 买家"
             clearable
-            style="width: 240px"
+            style="width: 260px"
             @keyup.enter="handleSearch"
+            @clear="handleSearch"
           >
             <template #prefix>
               <el-icon><Search /></el-icon>
@@ -828,31 +827,24 @@ onMounted(() => {
 
 <style scoped>
 .order-page {
-  padding: 20px;
-  background-color: var(--admin-bg, var(--bg-page, #f6f8fa));
-  min-height: calc(100vh - 84px);
+  padding: 16px;
+  background-color: #f0f2f5;
+  min-height: calc(100vh - 64px);
 }
 
-.block-card {
-  border: 1px solid var(--xy-border-color, #ebeef5);
-  margin-bottom: 16px;
-  box-shadow: var(--xy-shadow, 0 2px 8px rgba(0, 0, 0, 0.04));
+.page-card {
+  border-radius: 10px;
 }
 
-.card-header {
+.page-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
+  margin-bottom: 10px;
 }
 
-.title-block {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.title-main {
+.page-title {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -861,8 +853,8 @@ onMounted(() => {
   color: #1f2937;
 }
 
-.title-desc {
-  color: #909399;
+.page-desc {
+  color: #6b7280;
   font-size: 13px;
 }
 
@@ -896,14 +888,15 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0 6px;
+  padding: 4px 0;
+  margin-bottom: 8px;
 }
 
 .table-note {
-  color: #606266;
+  color: #6b7280;
   font-size: 13px;
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
