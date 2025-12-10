@@ -2,6 +2,7 @@
 支付相关视图
 使用支付宝支付
 """
+import re
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -14,6 +15,30 @@ from .alipay_client import AlipayClient
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_subject(title: str, order_id: int) -> str:
+    """
+    清洗订单标题，避免支付宝因非法字符/格式报 INVALID_PARAMETER。
+    - 去除换行、制表符，压缩多余空格
+    - 移除非常用符号和表情等可能导致校验失败的字符
+    - 兜底使用订单号，确保非空
+    """
+    raw = str(title or '').strip()
+    if not raw:
+        return f"订单{order_id}"
+
+    # 去除控制字符并压缩空白
+    cleaned = re.sub(r'[\r\n\t]+', ' ', raw)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    # 移除非常用特殊字符与表情，保留常见中英文、数字及常用标点
+    cleaned = re.sub(r'[^\w\s\-\u4e00-\u9fff.,，。！？!?:：;；（）()【】《》<>———+*#/&%￥@·]', '', cleaned)
+
+    if not cleaned:
+        cleaned = f"订单{order_id}"
+
+    return cleaned[:120]  # 控制长度，远低于支付宝256限制
 
 
 @api_view(['POST'])
@@ -62,8 +87,8 @@ def create_payment(request):
             'error': error_msg
         }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     
-    # 获取商品标题
-    product_title = order.product.title[:256]
+    # 获取并清洗商品标题，避免非法字符导致 INVALID_PARAMETER
+    product_title = _sanitize_subject(getattr(order.product, 'title', ''), order.id)
     
     # 构建回调URL
     # 注意：支付宝沙箱环境可能不支持 localhost，需要使用公网地址
