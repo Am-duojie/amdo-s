@@ -141,12 +141,24 @@ class Order(models.Model):
 
 class Message(models.Model):
     """消息/聊天"""
+    MESSAGE_TYPES = [
+        ('text', '文本'),
+        ('product', '商品'),
+        ('recall', '撤回'),
+        ('system', '系统'),
+    ]
+
     sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_messages', verbose_name='发送者')
     receiver = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_messages', verbose_name='接收者')
     product = models.ForeignKey(Product, on_delete=models.CASCADE, null=True, blank=True, related_name='messages', verbose_name='关联商品')
-    content = models.TextField(verbose_name='消息内容')
+    content = models.TextField(verbose_name='消息内容', blank=True)
+    message_type = models.CharField(max_length=20, choices=MESSAGE_TYPES, default='text', verbose_name='消息类型')
+    payload = models.JSONField(blank=True, null=True, verbose_name='扩展数据')
     is_read = models.BooleanField(default=False, verbose_name='已读')
+    recalled = models.BooleanField(default=False, verbose_name='是否撤回')
+    recallable_until = models.DateTimeField(null=True, blank=True, verbose_name='可撤回截止时间')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='发送时间')
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True, verbose_name='更新时间')
 
     class Meta:
         verbose_name = '消息'

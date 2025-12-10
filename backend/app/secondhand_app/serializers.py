@@ -415,28 +415,50 @@ class MessageSerializer(serializers.ModelSerializer):
         model = Message
         fields = [
             'id', 'sender', 'receiver', 'receiver_id', 'product', 'product_id',
-            'content', 'is_read', 'created_at'
+            'content', 'is_read', 'created_at', 'updated_at', 'message_type', 'payload',
+            'recalled', 'recallable_until'
         ]
-        read_only_fields = ['sender', 'is_read', 'created_at']
+        read_only_fields = ['sender', 'is_read', 'created_at', 'updated_at', 'recalled', 'recallable_until']
 
     def create(self, validated_data):
+        from django.utils import timezone
+        from datetime import timedelta
+
         receiver_id = validated_data.pop('receiver_id')
         product_id = validated_data.pop('product_id', None)
-        
+        message_type = validated_data.get('message_type', 'text') or 'text'
+        payload = validated_data.get('payload') or {}
+
         try:
             receiver = User.objects.get(id=receiver_id)
         except User.DoesNotExist:
             raise serializers.ValidationError({"receiver_id": "接收者不存在"})
-        
+
         validated_data['receiver'] = receiver
         validated_data['sender'] = self.context['request'].user
-        
+
+        product = None
         if product_id:
             try:
-                validated_data['product'] = Product.objects.get(id=product_id)
+                product = Product.objects.get(id=product_id)
+                validated_data['product'] = product
             except Product.DoesNotExist:
-                pass
-        
+                raise serializers.ValidationError({"product_id": "商品不存在"})
+
+        # 如果是商品消息，补全快照
+        if message_type == 'product' and product:
+            payload = payload or {}
+            payload.update({
+                'product_id': product.id,
+                'title': product.title,
+                'price': str(product.price),
+                'cover': product.images.filter(is_primary=True).first().image.url if hasattr(product, 'images') else '',
+                'status': product.status,
+            })
+            validated_data['payload'] = payload
+
+        # 撤回窗口默认 2 分钟
+        validated_data['recallable_until'] = timezone.now() + timedelta(minutes=2)
         return super().create(validated_data)
 
 

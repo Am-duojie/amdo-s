@@ -1,26 +1,33 @@
-class WebSocketManager {
+const WS_BASE = import.meta.env.VITE_WS_BASE || `ws://127.0.0.1:8000`
+
+class WebSocketService {
   constructor() {
     this.ws = null
-    this.reconnectAttempts = 0
-    this.maxReconnectAttempts = 5
-    this.reconnectInterval = 5000
     this.listeners = new Map()
     this.isConnected = false
+    this.reconnectAttempts = 0
+    this.maxReconnectAttempts = 20
+    this.reconnectInterval = 2000
+    this.selfCheckTimer = null
   }
 
   connect(token) {
     if (!token) {
-      console.error('WebSocket需要token')
+      console.warn('WebSocket需要token')
       return
     }
 
-    const wsUrl = `ws://127.0.0.1:8000/ws/chat/?token=${token}`
-    
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return
+    }
+
+    const wsUrl = `${WS_BASE}/ws/chat/?token=${token}`
+    console.info('[WS] connect ->', wsUrl)
+
     try {
       this.ws = new WebSocket(wsUrl)
-      
+
       this.ws.onopen = () => {
-        console.log('WebSocket连接成功')
         this.isConnected = true
         this.reconnectAttempts = 0
         this.emit('connected')
@@ -35,27 +42,45 @@ class WebSocketManager {
         }
       }
 
-      this.ws.onclose = () => {
-        console.log('WebSocket连接关闭')
+      this.ws.onclose = (evt) => {
         this.isConnected = false
+        console.warn('[WS] close', evt?.code, evt?.reason)
         this.emit('disconnected')
         this.handleReconnect()
       }
 
       this.ws.onerror = (error) => {
-        console.error('WebSocket错误:', error)
+        console.error('[WS] error', error)
         this.emit('error', error)
       }
     } catch (error) {
       console.error('WebSocket连接失败:', error)
+    }
+
+    this.startSelfCheck()
+  }
+
+  startSelfCheck() {
+    if (this.selfCheckTimer) return
+    this.selfCheckTimer = setInterval(() => {
+      const token = localStorage.getItem('token')
+      if (!token) return
+      if (!this.isConnected) {
+        this.connect(token)
+      }
+    }, 5000)
+  }
+
+  stopSelfCheck() {
+    if (this.selfCheckTimer) {
+      clearInterval(this.selfCheckTimer)
+      this.selfCheckTimer = null
     }
   }
 
   handleReconnect() {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++
-      console.log(`尝试重连 ${this.reconnectAttempts}/${this.maxReconnectAttempts}`)
-      
       setTimeout(() => {
         const token = localStorage.getItem('token')
         if (token) {
@@ -66,15 +91,16 @@ class WebSocketManager {
   }
 
   send(data) {
-    if (this.isConnected && this.ws.readyState === WebSocket.OPEN) {
+    if (!data.type) data.type = 'chat_message'
+    if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data))
       return true
     }
-    console.error('WebSocket未连接，无法发送消息')
     return false
   }
 
   disconnect() {
+    this.stopSelfCheck()
     if (this.ws) {
       this.ws.close()
       this.ws = null
@@ -91,25 +117,22 @@ class WebSocketManager {
 
   off(event, callback) {
     if (this.listeners.has(event)) {
-      const callbacks = this.listeners.get(event)
-      const index = callbacks.indexOf(callback)
-      if (index > -1) {
-        callbacks.splice(index, 1)
-      }
+      const arr = this.listeners.get(event)
+      const idx = arr.indexOf(callback)
+      if (idx > -1) arr.splice(idx, 1)
     }
   }
 
   emit(event, data) {
-    if (this.listeners.has(event)) {
-      this.listeners.get(event).forEach(callback => {
-        try {
-          callback(data)
-        } catch (error) {
-          console.error('WebSocket事件处理错误:', error)
-        }
-      })
-    }
+    if (!this.listeners.has(event)) return
+    this.listeners.get(event).forEach((cb) => {
+      try {
+        cb(data)
+      } catch (e) {
+        console.error('WebSocket事件处理错误:', e)
+      }
+    })
   }
 }
 
-export default new WebSocketManager()
+export default new WebSocketService()

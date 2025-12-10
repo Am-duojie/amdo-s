@@ -29,7 +29,12 @@
           </el-col>
           <el-col :span="16" class="messages-col">
             <div v-if="selectedUser" class="messages-header">
-              <h3>与 {{ selectedUser.username }} 的对话</h3>
+              <div class="messages-header-row">
+                <h3>与 {{ selectedUser.username }} 的对话</h3>
+                <el-tag size="small" :type="wsConnected ? 'success' : 'danger'" class="ws-status-tag">
+                  {{ wsConnected ? '实时连接正常' : '实时未连接，已走HTTP' }}
+                </el-tag>
+              </div>
             </div>
             <el-empty v-if="!selectedUser" description="请选择一个对话" :image-size="100" />
             <div v-else class="messages-content">
@@ -41,8 +46,21 @@
                 >
                   <div class="message-bubble">
                     <div class="message-sender">{{ msg.sender.username }}</div>
-                    <div class="message-text">{{ msg.content }}</div>
-                    <div class="message-time">{{ formatTime(msg.created_at) }}</div>
+                    <div v-if="msg.recalled" class="message-text recalled">消息已撤回</div>
+                    <div v-else-if="msg.message_type === 'product'" class="message-product">
+                      <div class="product-title">[商品] {{ msg.payload?.title }}</div>
+                      <div class="product-price">¥{{ msg.payload?.price }}</div>
+                    </div>
+                    <div v-else class="message-text">{{ msg.content }}</div>
+                    <div class="message-time-row">
+                      <span class="message-time">{{ formatTime(msg.created_at) }}</span>
+                      <span v-if="msg.sender.id === authStore.user.id && !msg.recalled" class="read-status">
+                        {{ msg.is_read ? '已读' : '未读' }}
+                      </span>
+                    </div>
+                    <div v-if="showRecallButton(msg)" class="message-actions">
+                      <el-button link type="danger" size="small" @click="handleRecall(msg)">撤回</el-button>
+                    </div>
                   </div>
                 </div>
               </el-scrollbar>
@@ -57,6 +75,9 @@
                 class="input-textarea"
               />
               <div class="input-actions">
+                <el-button @click="openProductDialog" :loading="productsLoading" class="send-btn">
+                  发送商品
+                </el-button>
                 <el-button type="primary" :icon="Position" @click="handleSendMessage" :loading="loading" class="send-btn">
                   发送
                 </el-button>
@@ -66,6 +87,31 @@
         </el-row>
       </el-card>
     </div>
+
+    <el-dialog v-model="productDialogVisible" title="选择要发送的商品" width="50%">
+      <el-table :data="sellingProducts" style="width: 100%" height="320" v-loading="productsLoading">
+        <el-table-column prop="title" label="标题" min-width="160" />
+        <el-table-column prop="price" label="价格" width="120">
+          <template #default="{ row }">¥{{ row.price }}</template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag type="success" v-if="row.status === 'active'">在售</el-tag>
+            <el-tag type="info" v-else>下架</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="120">
+          <template #default="{ row }">
+            <el-button type="primary" size="small" @click="handleSendProduct(row)" :disabled="row.status !== 'active'">
+              发送
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="productDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -73,7 +119,7 @@
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { UserFilled, Position } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
 import { useAuthStore } from '@/stores/auth'
 import websocket from '@/utils/websocket'
@@ -87,8 +133,23 @@ const messages = ref([])
 const messageContent = ref('')
 const loading = ref(false)
 const scrollbarRef = ref(null)
+const wsConnected = ref(false)
+const isPageVisible = ref(typeof document !== 'undefined' ? document.visibilityState === 'visible' : true)
+const isWindowFocused = ref(typeof document !== 'undefined' ? document.hasFocus() : true)
+const isOnMessagesPage = () => route.path?.includes('/messages')
+const productDialogVisible = ref(false)
+const sellingProducts = ref([])
+const productsLoading = ref(false)
 
 onMounted(() => {
+  wsConnected.value = websocket.isConnected
+  websocket.on('connected', () => {
+    wsConnected.value = true
+  })
+  websocket.on('disconnected', () => {
+    wsConnected.value = false
+  })
+
   loadConversations()
   const userId = route.query.user_id
   const productId = route.query.product_id
@@ -104,13 +165,39 @@ onMounted(() => {
     websocket.on('message', (data) => {
       handleWebSocketMessage(data)
     })
+    websocket.on('connected', () => {
+      wsConnected.value = true
+    })
+    websocket.on('disconnected', () => {
+      wsConnected.value = false
+    })
+    websocket.on('error', () => {
+      wsConnected.value = false
+    })
   }
 })
 
 // 组件卸载时断开WebSocket
 onUnmounted(() => {
-  websocket.disconnect()
+  websocket.off('connected', () => {})
+  websocket.off('disconnected', () => {})
 })
+
+const handleVisibilityChange = () => {
+  isPageVisible.value = document.visibilityState === 'visible'
+}
+const handleFocus = () => {
+  isWindowFocused.value = true
+}
+const handleBlur = () => {
+  isWindowFocused.value = false
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener('focus', handleFocus)
+  window.addEventListener('blur', handleBlur)
+}
 
 watch(() => selectedUser.value?.id, (userId) => {
   if (userId) {
@@ -138,6 +225,8 @@ const loadMessages = async (userId) => {
   try {
     const res = await api.get('/messages/with_user/', { params: { user_id: userId } })
     messages.value = res.data
+    // 标记已读
+    api.post('/messages/read/', { user_id: userId }).catch(() => {})
     nextTick(() => {
       scrollToBottom()
     })
@@ -152,6 +241,7 @@ const handleSelectUser = async (userId, productId = null) => {
   const conversation = conversations.value.find((c) => c.user.id === userId)
   if (conversation) {
     selectedUser.value = conversation.user
+    setConversationUnread(userId, 0)
   } else {
     try {
       const res = await api.get(`/users/${userId}/`)
@@ -160,6 +250,11 @@ const handleSelectUser = async (userId, productId = null) => {
       ElMessage.error('获取用户信息失败')
     }
   }
+
+  // 进入对话时立即清空未读（后端已标记，前端主动刷新侧边栏角标）
+  markMessagesReadLocal(userId)
+  emitUnreadRefresh()
+  markAsRead(userId)
 }
 
 const handleSendMessage = async () => {
@@ -175,9 +270,10 @@ const handleSendMessage = async () => {
     }
     
     // 尝试通过WebSocket发送
-    if (!websocket.send(messageData)) {
+    if (!websocket.send({ ...messageData, type: 'chat_message', message_type: 'text' })) {
+      ElMessage.warning('实时连接不可用，已改为HTTP发送')
       // WebSocket失败时使用HTTP API
-      await api.post('/messages/', messageData)
+      await api.post('/messages/', { ...messageData, message_type: 'text' })
       loadMessages(selectedUser.value.id)
       loadConversations()
     }
@@ -192,23 +288,196 @@ const handleSendMessage = async () => {
 
 const handleWebSocketMessage = (data) => {
   console.log('收到WebSocket消息:', data)
-  
-  // 如果是当前对话的消息，直接添加到消息列表
-  if (selectedUser.value && 
+  if (data.type === 'new_message') {
+    const isCurrent =
+      selectedUser.value &&
       ((data.sender_id === selectedUser.value.id && data.receiver_id === authStore.user.id) ||
-       (data.sender_id === authStore.user.id && data.receiver_id === selectedUser.value.id))) {
-    messages.value.push({
-      id: data.id,
-      sender: { id: data.sender_id, username: data.sender_username },
-      receiver: { id: data.receiver_id, username: data.receiver_username },
-      content: data.content,
-      created_at: data.created_at,
-      is_read: data.is_read
+        (data.sender_id === authStore.user.id && data.receiver_id === selectedUser.value.id))
+
+    if (isCurrent) {
+      messages.value.push({
+        id: data.id,
+        sender: { id: data.sender_id, username: data.sender_username },
+        receiver: { id: data.receiver_id, username: data.receiver_username },
+        content: data.content,
+        created_at: data.created_at,
+        is_read: false, // 新消息统一视为未读，等阅读后再改
+        message_type: data.message_type,
+        payload: data.payload,
+        recalled: data.recalled
+      })
+      // 如果当前会话且本端是接收者，立即上报已读
+      // 仅在当前会话、我是接收方、WS已连、页面可见时自动已读（放宽：不再要求窗口聚焦）
+      if (
+        data.receiver_id === authStore.user.id &&
+        wsConnected.value &&
+        isPageVisible.value &&
+        isOnMessagesPage()
+      ) {
+        markAsRead(data.sender_id)
+        markMessagesReadLocal(data.sender_id)
+        setConversationUnread(data.sender_id, 0)
+      } else {
+        // 我是发送者，不动未读计数
+        if (data.sender_id === authStore.user.id) {
+          setConversationUnread(data.receiver_id, 0)
+        }
+      }
+    } else {
+      // 不在当前会话且本端是接收者，增加未读
+      if (data.receiver_id === authStore.user.id) {
+        incrementConversationUnread(data.sender_id)
+      }
+    }
+    if (data.receiver_id === authStore.user.id) {
+      emitUnreadRefresh()
+    }
+  }
+
+  if (data.type === 'message_recalled') {
+    const target = messages.value.find((m) => m.id === data.message_id)
+    if (target) {
+      target.recalled = true
+      target.message_type = 'recall'
+      target.content = '消息已撤回'
+    }
+    loadConversations()
+  }
+
+  if (data.type === 'read_ack') {
+    // 对方已读当前会话的消息，更新本端已发消息的已读状态
+    let changed = false
+    if (data.peer_id) {
+      messages.value.forEach((m) => {
+        if (m.sender.id === authStore.user.id && m.receiver.id === data.peer_id && !m.recalled && !m.is_read) {
+          m.is_read = true
+          changed = true
+        }
+      })
+      // 已读回执后，清除对应会话未读
+      setConversationUnread(data.peer_id, 0)
+    }
+    if (changed) {
+      messages.value = [...messages.value]
+    }
+    // 会话列表同步更新未读
+    loadConversations()
+    emitUnreadRefresh()
+  }
+}
+
+const markAsRead = async (peerId) => {
+  if (!peerId) return
+  if (!wsConnected.value) return
+  try {
+    await api.post('/messages/read/', { user_id: peerId })
+    markMessagesReadLocal(peerId)
+    setConversationUnread(peerId, 0)
+    emitUnreadRefresh()
+  } catch (error) {
+    // 静默失败，避免打扰用户
+  }
+}
+
+const emitUnreadRefresh = () => {
+  window.dispatchEvent(new CustomEvent('refresh-unread'))
+}
+
+const setConversationUnread = (peerId, count) => {
+  const conv = conversations.value.find((c) => c.user?.id === peerId)
+  if (conv) conv.unread_count = count
+}
+
+const incrementConversationUnread = (peerId) => {
+  const conv = conversations.value.find((c) => c.user?.id === peerId)
+  if (conv) {
+    conv.unread_count = (conv.unread_count || 0) + 1
+  } else {
+    // 若不存在会话，追加一个临时会话记录
+    conversations.value.unshift({
+      user: { id: peerId, username: `用户${peerId}` },
+      last_message: null,
+      unread_count: 1,
     })
   }
-  
-  // 更新对话列表
-  loadConversations()
+}
+
+const markMessagesReadLocal = (peerId) => {
+  let changed = false
+  messages.value.forEach((m) => {
+    if (m.sender.id === peerId && m.receiver.id === authStore.user.id && !m.is_read) {
+      m.is_read = true
+      changed = true
+    }
+  })
+  if (changed) {
+    // 触发视图更新
+    messages.value = [...messages.value]
+  }
+}
+
+const showRecallButton = (msg) => {
+  if (!msg || msg.recalled) return false
+  if (msg.sender.id !== authStore.user.id) return false
+  if (!msg.recallable_until) return false
+  return new Date(msg.recallable_until) > new Date()
+}
+
+const handleRecall = async (msg) => {
+  try {
+    await ElMessageBox.confirm('确定撤回这条消息？', '撤回', { type: 'warning' })
+    await api.post(`/messages/${msg.id}/recall/`)
+    msg.recalled = true
+    msg.message_type = 'recall'
+    msg.content = '消息已撤回'
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.response?.data?.detail || '撤回失败')
+    }
+  }
+}
+
+const openProductDialog = async () => {
+  if (!selectedUser.value) {
+    ElMessage.warning('请先选择对话')
+    return
+  }
+  productDialogVisible.value = true
+  if (sellingProducts.value.length === 0) {
+    await loadSellingProducts()
+  }
+}
+
+const loadSellingProducts = async () => {
+  productsLoading.value = true
+  try {
+    const res = await api.get('/products/my_products/')
+    sellingProducts.value = (res.data || []).filter((p) => p.status === 'active')
+  } catch (error) {
+    ElMessage.error('加载在售商品失败')
+  } finally {
+    productsLoading.value = false
+  }
+}
+
+const handleSendProduct = async (product) => {
+  if (!selectedUser.value) {
+    ElMessage.warning('请先选择对话')
+    return
+  }
+  try {
+    const payload = { receiver_id: selectedUser.value.id, product_id: product.id, message_type: 'product', content: '' }
+    if (!websocket.send({ ...payload, type: 'chat_message' })) {
+      await api.post('/messages/', payload)
+      await loadMessages(selectedUser.value.id)
+      await loadConversations()
+    }
+    productDialogVisible.value = false
+    ElMessage.success('商品已发送')
+    emitUnreadRefresh()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '发送商品失败')
+  }
 }
 
 const formatTime = (dateString) => {
@@ -330,6 +599,16 @@ const scrollToBottom = () => {
   margin-bottom: 12px;
 }
 
+.messages-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-status-tag {
+  transform: translateY(-2px);
+}
+
 .messages-header h3 {
   font-size: 16px;
   font-weight: 500;
@@ -379,10 +658,49 @@ const scrollToBottom = () => {
   word-wrap: break-word;
 }
 
+.message-text.recalled {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.message-product {
+  background: #f3f4f6;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  color: #333;
+}
+
+.message-product .product-title {
+  font-weight: 600;
+}
+
+.message-product .product-price {
+  color: #f59e0b;
+  margin-top: 4px;
+}
+
+.message-actions {
+  margin-top: 4px;
+  text-align: right;
+}
+
 .message-time {
   font-size: 10px;
   margin-top: 4px;
   opacity: 0.6;
+}
+
+.message-time-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.read-status {
+  font-size: 11px;
+  color: #6b7280;
 }
 
 .message-input {

@@ -699,24 +699,59 @@ class MessageViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def conversations(self, request):
         """获取对话列表（与当前用户有过消息交流的用户）"""
-        # 获取与当前用户有消息往来的用户
-        sent_messages = Message.objects.filter(sender=request.user).select_related('receiver')
-        received_messages = Message.objects.filter(receiver=request.user).select_related('sender')
-        
-        # 提取用户列表
-        user_ids = set()
-        for msg in sent_messages:
-            user_ids.add(msg.receiver.id)
-        for msg in received_messages:
-            user_ids.add(msg.sender.id)
-            
-        # 排除自己
-        user_ids.discard(request.user.id)
-        
-        # 获取用户信息
-        users = User.objects.filter(id__in=user_ids)
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data)
+        current_user = request.user
+        # 找到所有相关消息，按时间倒序用于截取最新一条
+        related_messages = Message.objects.filter(
+            Q(sender=current_user) | Q(receiver=current_user)
+        ).select_related('sender', 'receiver', 'product').order_by('-created_at')
+
+        conversations = {}
+
+        for msg in related_messages:
+            peer = msg.receiver if msg.sender == current_user else msg.sender
+            peer_id = peer.id
+            if peer_id not in conversations:
+                if msg.recalled:
+                    display_content = '已撤回'
+                elif msg.message_type == 'product':
+                    display_content = f"[商品]{(msg.payload or {}).get('title','')}"
+                else:
+                    display_content = msg.content
+
+                conversations[peer_id] = {
+                    'user': UserSerializer(peer, context={'request': request}).data,
+                    'last_message': {
+                        'id': msg.id,
+                        'content': display_content,
+                        'message_type': msg.message_type,
+                        'payload': msg.payload,
+                        'recalled': msg.recalled,
+                        'created_at': msg.created_at,
+                    },
+                    'unread_count': 0
+                }
+
+        # 统计未读数：对当前用户的未读
+        unread_qs = Message.objects.filter(
+            receiver=current_user, is_read=False
+        ).values('sender').annotate(total=Count('id'))
+        unread_map = {item['sender']: item['total'] for item in unread_qs}
+
+        for peer_id, count in unread_map.items():
+            if peer_id in conversations:
+                conversations[peer_id]['unread_count'] = count
+
+        # 结果按最后消息时间排序
+        result = sorted(
+            conversations.values(),
+            key=lambda x: x['last_message']['created_at'] if x['last_message'] else '',
+            reverse=True
+        )
+        # 序列化 datetime
+        for item in result:
+            if item['last_message']:
+                item['last_message']['created_at'] = item['last_message']['created_at'].isoformat()
+        return Response(result)
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def with_user(self, request):
@@ -737,6 +772,80 @@ class MessageViewSet(viewsets.ModelViewSet):
         
         serializer = MessageSerializer(messages, many=True, context={'request': request})
         return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def read(self, request):
+        """将与指定用户的消息标记为已读"""
+        user_id = request.data.get('user_id')
+        if not user_id:
+            return Response({'detail': '缺少用户ID参数'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            other_user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'detail': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        # 将当前用户收到的消息标记为已读
+        Message.objects.filter(
+            sender=other_user,
+            receiver=request.user,
+            is_read=False
+        ).update(is_read=True)
+
+        # 通知对方，已读回执
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                f'user_{other_user.id}',
+                {
+                    'type': 'chat_message',
+                    'message': {
+                        'type': 'read_ack',
+                        'peer_id': request.user.id
+                    }
+                }
+            )
+        except Exception:
+            # 忽略回执异常，避免影响接口返回
+            pass
+
+        return Response({'detail': '已标记为已读'})
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def recall(self, request, pk=None):
+        """撤回消息（仅限发送者且在可撤回时间内）"""
+        from django.utils import timezone
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+
+        try:
+            msg = Message.objects.get(id=pk, sender=request.user)
+        except Message.DoesNotExist:
+            return Response({'detail': '消息不存在或无权限'}, status=status.HTTP_404_NOT_FOUND)
+
+        if msg.recalled:
+            return Response({'detail': '消息已撤回'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if msg.recallable_until and timezone.now() > msg.recallable_until:
+            return Response({'detail': '超过可撤回时间'}, status=status.HTTP_400_BAD_REQUEST)
+
+        msg.recalled = True
+        msg.message_type = 'recall'
+        msg.content = '消息已撤回'
+        msg.save(update_fields=['recalled', 'message_type', 'content'])
+
+        channel_layer = get_channel_layer()
+        event_payload = {
+            'type': 'message_recalled',
+            'message_id': msg.id,
+            'sender_id': msg.sender_id,
+            'receiver_id': msg.receiver_id,
+        }
+        async_to_sync(channel_layer.group_send)(f'user_{msg.sender_id}', {'type': 'chat_message', 'message': event_payload})
+        async_to_sync(channel_layer.group_send)(f'user_{msg.receiver_id}', {'type': 'chat_message', 'message': event_payload})
+
+        return Response({'detail': '已撤回'})
 
 
 class FavoriteViewSet(viewsets.ModelViewSet):

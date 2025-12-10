@@ -76,16 +76,25 @@ api.interceptors.response.use(
     const url = error.response?.config?.url || ''
     // 登录/注册等接口返回401时不要强制登出，交由页面显示错误
     if (status === 401) {
-      const isAuthEndpoint = url.includes('/auth/login/') || url.includes('/users/register/') || url.includes('/users/check_username/') || url.includes('/users/check_email/')
-      if (!isAuthEndpoint) {
-        // 尝试刷新token
+      const isAuthEndpoint =
+        url.includes('/auth/login/') ||
+        url.includes('/users/register/') ||
+        url.includes('/users/check_username/') ||
+        url.includes('/users/check_email/')
+
+      // 拉取消息/未读等轮询接口，401 时不触发登出，直接让调用方处理
+      const isMessageEndpoint =
+        url.includes('/messages/conversations') ||
+        url.includes('/messages/with_user') ||
+        url.includes('/messages/read') ||
+        url.includes('/messages/query')
+
+      if (!isAuthEndpoint && !isMessageEndpoint) {
         const refreshToken = localStorage.getItem('refreshToken')
         if (refreshToken) {
-           // 这里可以添加自动刷新Token的逻辑
-           // 暂时先强制登出
-           ErrorHandler.handleLogout()
+          ErrorHandler.handleLogout()
         } else {
-           ErrorHandler.handleLogout()
+          ErrorHandler.handleLogout()
         }
       }
     }
