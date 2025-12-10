@@ -32,3 +32,4 @@ class Migration(migrations.Migration):
         migrations.RunPython(relax_updated_at, reverse_code=migrations.RunPython.noop),
     ]
 
+

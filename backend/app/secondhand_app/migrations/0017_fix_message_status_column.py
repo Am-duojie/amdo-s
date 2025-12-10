@@ -33,3 +33,4 @@ class Migration(migrations.Migration):
         migrations.RunPython(relax_message_status, reverse_code=migrations.RunPython.noop),
     ]
 
+
