@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAdminAuthStore } from '@/stores/adminAuth'
+import ProductDetail from '@/pages/ProductDetail.vue'
 
 const routes = [
   {
@@ -41,7 +42,13 @@ const routes = [
   {
     path: '/products/:id',
     name: 'ProductDetail',
-    component: () => import('@/pages/ProductDetail.vue'),
+    component: ProductDetail,
+    meta: { theme: 'yellow', hideSearch: false }
+  },
+  {
+    path: '/verified-products/:id',
+    name: 'VerifiedProductDetail',
+    component: () => import('@/pages/VerifiedProductDetail.vue'),
     meta: { theme: 'yellow', hideSearch: false }
   },
   {

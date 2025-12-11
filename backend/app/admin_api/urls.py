@@ -1,5 +1,17 @@
 from django.urls import path
-from .views import LoginView, RefreshTokenView, LogoutView, DashboardMetricsView, StatisticsView, InspectionOrdersView, InspectionOrderDetailView, InspectionOrderLogisticsView, InspectionOrderPriceView, InspectionOrderPaymentView, InspectionOrderPublishVerifiedView, InspectionOrdersBatchUpdateView, RecycledProductsView, VerifiedListingsView, AuditQueueView, UsersView, AuditLogsView, RolesView, PaymentOrdersView, PaymentOrderDetailView, PaymentOrderActionView, PaymentOrderSettlementView, SettlementSummaryView, VerifiedOrdersAdminView, ShopsAdminView, AuthMeView, ChangePasswordView, PermissionsView, MenusView, CategoriesAdminView, ProductsAdminView, UsersFrontendAdminView, MessagesAdminView, AddressesAdminView
+from .views import (
+    LoginView, RefreshTokenView, LogoutView, DashboardMetricsView, StatisticsView,
+    InspectionOrdersView, InspectionOrderDetailView, InspectionOrderLogisticsView, InspectionOrderPriceView,
+    InspectionOrderPaymentView, InspectionOrderPublishVerifiedView, InspectionOrdersBatchUpdateView,
+    RecycledProductsView, VerifiedListingsView, AuditQueueView, UsersView, AuditLogsView, RolesView,
+    PaymentOrdersView, PaymentOrderDetailView, PaymentOrderActionView, PaymentOrderSettlementView,
+    SettlementSummaryView, VerifiedOrdersAdminView, ShopsAdminView, AuthMeView, ChangePasswordView,
+    PermissionsView, MenusView, CategoriesAdminView, ProductsAdminView, UsersFrontendAdminView,
+    MessagesAdminView, AddressesAdminView,
+    AdminUploadImageView, AdminUploadReportView,
+    AdminVerifiedProductListView, AdminVerifiedProductDetailView,
+    AdminVerifiedProductPublishView, AdminVerifiedProductUnpublishView
+)
 
 urlpatterns = [
     path('auth/login', LoginView.as_view()),
@@ -24,6 +36,15 @@ urlpatterns = [
     path('recycled-products', RecycledProductsView.as_view()),
     path('recycled-products/<int:item_id>/publish', RecycledProductsView.as_view()),
     path('recycled-products/<int:item_id>/stock', RecycledProductsView.as_view()),
+    # 官方验上传
+    path('uploads/images/', AdminUploadImageView.as_view()),
+    path('uploads/reports/', AdminUploadReportView.as_view()),
+    # 新的官方验商品管理接口（前端使用）
+    path('verified-listings/', AdminVerifiedProductListView.as_view()),
+    path('verified-listings/<int:pk>/', AdminVerifiedProductDetailView.as_view()),
+    path('verified-listings/<int:pk>/publish/', AdminVerifiedProductPublishView.as_view()),
+    path('verified-listings/<int:pk>/unpublish/', AdminVerifiedProductUnpublishView.as_view()),
+    # 旧的回收产品接口
     path('verified-listings', VerifiedListingsView.as_view()),
     path('verified-listings/<int:item_id>', VerifiedListingsView.as_view()),
     path('verified-listings/<int:item_id>/<str:action>', VerifiedListingsView.as_view()),

@@ -671,7 +671,6 @@ const handleShare = () => {
 </script>
 
 <style scoped>
-.xianyu-style {}
 
 .product-detail-page {
   background: var(--bg-page);

@@ -20,7 +20,7 @@ class RecycleOrderListSerializer(serializers.ModelSerializer):
 class VerifiedProductListSerializer(serializers.ModelSerializer):
     class Meta:
         model = VerifiedProduct
-        fields = ['id','title','condition','price','status']
+        fields = ['id','title','condition','price','status','cover_image','sales_count','created_at']
 
 class AdminAuditQueueItemSerializer(serializers.ModelSerializer):
     class Meta:

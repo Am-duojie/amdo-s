@@ -58,7 +58,7 @@
               </div>
               <div class="box-products">
                 <div v-for="(p, idx) in verifiedProducts.slice(0, 3)" :key="p.id" class="mini-product" @click.stop="goToVerifiedDetail(p.id)">
-                  <img :src="p.images?.length ? getImageUrl(p.images[0].image) : 'https://via.placeholder.com/80'" />
+                  <img :src="resolveVerifiedThumb(p)" />
                   <span class="mini-price">¥{{ formatPriceInt(p.price) }}</span>
                 </div>
               </div>
@@ -293,6 +293,34 @@ const formatPriceDecimal = (price) => {
   return decimal ? `.${decimal}` : ''
 }
 
+const resolveVerifiedThumb = (p) => {
+  // 优先 detail_images / images / cover_image / image_url
+  const fallback = 'https://via.placeholder.com/80'
+  if (!p) return fallback
+  const pick = (img) => {
+    if (!img) return null
+    if (typeof img === 'string') return getImageUrl(img)
+    if (img.image) return getImageUrl(img.image)
+    if (img.url) return getImageUrl(img.url)
+    if (img.image_url) return getImageUrl(img.image_url)
+    if (img.imageUrl) return getImageUrl(img.imageUrl)
+    return null
+  }
+  if (Array.isArray(p.detail_images) && p.detail_images.length) {
+    const src = pick(p.detail_images[0])
+    if (src) return src
+  }
+  if (Array.isArray(p.images) && p.images.length) {
+    const src = pick(p.images[0])
+    if (src) return src
+  }
+  if (p.cover_image) {
+    const src = pick(p.cover_image)
+    if (src) return src
+  }
+  return fallback
+}
+
 
 const switchTab = (id) => {
   activeTab.value = id
@@ -304,10 +332,7 @@ const goToPublish = () => router.push('/publish')
 const goToDetail = (id) => router.push(`/products/${id}`)
 const goToProfile = () => router.push('/profile')
 const goToVerifiedProducts = () => router.push('/verified-products')
-const goToVerifiedDetail = (id) => {
-  // 跳转到官方验货商品详情页
-  router.push(`/verified-order/${id}`)
-}
+const goToVerifiedDetail = (id) => router.push(`/verified-products/${id}`)
 
 // 处理用户菜单命令
 const handleUserMenuCommand = async (command) => {

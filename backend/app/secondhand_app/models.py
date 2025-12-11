@@ -144,6 +144,7 @@ class Message(models.Model):
     MESSAGE_TYPES = [
         ('text', '文本'),
         ('product', '商品'),
+        ('image', '图片'),
         ('recall', '撤回'),
         ('system', '系统'),
     ]
@@ -153,6 +154,7 @@ class Message(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, null=True, blank=True, related_name='messages', verbose_name='关联商品')
     content = models.TextField(verbose_name='消息内容', blank=True)
     message_type = models.CharField(max_length=20, choices=MESSAGE_TYPES, default='text', verbose_name='消息类型')
+    image = models.ImageField(upload_to='messages/', null=True, blank=True, verbose_name='图片')
     payload = models.JSONField(blank=True, null=True, verbose_name='扩展数据')
     is_read = models.BooleanField(default=False, verbose_name='已读')
     recalled = models.BooleanField(default=False, verbose_name='是否撤回')
@@ -380,12 +382,15 @@ class VerifiedProduct(models.Model):
         ('active', '在售'),
         ('sold', '已售出'),
         ('removed', '已下架'),
+        ('draft', '草稿'),
     ]
 
     CONDITION_CHOICES = [
         ('new', '全新'),
         ('like_new', '99成新'),
         ('good', '95成新'),
+        ('fair', '9成新'),
+        ('poor', '8成新'),
     ]
 
     seller = models.ForeignKey(User, on_delete=models.CASCADE, related_name='verified_products', verbose_name='卖家')
@@ -396,7 +401,7 @@ class VerifiedProduct(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name='价格')
     original_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name='原价')
     condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='good', verbose_name='成色')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active', verbose_name='状态')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft', verbose_name='状态')
     location = models.CharField(max_length=100, verbose_name='所在地')
     contact_phone = models.CharField(max_length=20, blank=True, verbose_name='联系电话')
     contact_wechat = models.CharField(max_length=50, blank=True, verbose_name='微信')
@@ -410,6 +415,18 @@ class VerifiedProduct(models.Model):
     charging_type = models.CharField(max_length=50, blank=True, verbose_name='充电方式')
     verified_at = models.DateTimeField(null=True, blank=True, verbose_name='验货时间')
     verified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_products_verified', verbose_name='验货人')
+    # 新增媒体与质检字段
+    cover_image = models.CharField(max_length=500, blank=True, verbose_name='封面图')
+    detail_images = models.JSONField(default=list, verbose_name='详情图列表')
+    inspection_reports = models.JSONField(default=list, verbose_name='质检报告列表')
+    inspection_result = models.CharField(max_length=10, choices=[('pass', '合格'), ('warn', '警告'), ('fail', '不合格')], default='pass', verbose_name='质检结果')
+    inspection_date = models.DateField(null=True, blank=True, verbose_name='质检日期')
+    inspection_staff = models.CharField(max_length=100, blank=True, verbose_name='质检员')
+    inspection_note = models.TextField(blank=True, verbose_name='质检说明')
+    stock = models.IntegerField(default=1, verbose_name='库存')
+    tags = models.JSONField(default=list, verbose_name='标签')
+    published_at = models.DateTimeField(null=True, blank=True, verbose_name='上架时间')
+    removed_reason = models.CharField(max_length=200, blank=True, verbose_name='下架原因')
     
     view_count = models.IntegerField(default=0, verbose_name='浏览次数')
     sales_count = models.IntegerField(default=0, verbose_name='销量')

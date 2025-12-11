@@ -140,11 +140,11 @@
             >
               <div class="product-image-wrapper">
                 <img 
-                  :src="product.images?.length ? getImageUrl(product.images[0].image) : defaultImage"
+                  :src="resolveProductImage(product)"
                   :alt="product.title"
                   class="product-image"
                   loading="lazy"
-                  @error="handleImageError"
+                  @error="(e) => (e.target.src = defaultImage)"
                 />
                 <div class="condition-badge" :class="getConditionBadgeClass(product.condition)">
                   {{ getConditionText(product.condition) }}
@@ -224,7 +224,7 @@ const filters = ref({
   condition: '不限',
 })
 
-const defaultImage = 'https://via.placeholder.com/300x300?text=No+Image'
+const defaultImage = 'https://via.placeholder.com/300x300/EEF1F5/999?text=No+Image'
 
 // 设备分类
 const deviceCategories = [
@@ -351,6 +351,23 @@ const getProductTags = (product) => {
   return tags.slice(0, 2)
 }
 
+// 解析官方验商品的图片字段，兼容不同字段与空值
+const resolveProductImage = (product) => {
+  if (!product) return defaultImage
+  const candidate =
+    product.images?.[0]?.image ||
+    product.images?.[0]?.url ||
+    product.cover_image ||
+    product.cover ||
+    product.main_image ||
+    product.thumbnail ||
+    product.image_url ||
+    product.imageUrl ||
+    product.image
+  const url = candidate ? getImageUrl(candidate) : ''
+  return url || defaultImage
+}
+
 const formatPrice = (price) => {
   return Number(price).toFixed(0)
 }
@@ -475,9 +492,9 @@ const handlePageChange = (page) => {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-// 跳转详情
+// 跳转详情（官方验标记）
 const goToDetail = (id) => {
-  router.push(`/products/${id}`)
+  router.push(`/verified-products/${id}`)
 }
 
 // 跳转个人中心
@@ -487,11 +504,6 @@ const goToProfile = () => {
   } else {
     router.push('/verified-profile')
   }
-}
-
-// 图片处理
-const handleImageError = (e) => {
-  e.target.src = defaultImage
 }
 
 onMounted(() => {

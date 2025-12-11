@@ -11,7 +11,7 @@
           v-if="hasPerm('verified:write')"
           type="primary"
           :icon="Plus"
-          @click="showCreateDialog = true"
+          @click="openCreate"
         >
           新增商品
         </el-button>
@@ -103,10 +103,18 @@
           </template>
         </el-table-column>
         <el-table-column prop="created_at" label="创建时间" width="180" />
-        <el-table-column label="操作" width="300" fixed="right" align="center">
+        <el-table-column label="操作" width="360" fixed="right" align="center">
           <template #default="{ row }">
             <el-space wrap>
               <el-button size="small" @click="viewDetail(row)">详情</el-button>
+              <el-button
+                v-if="hasPerm('verified:write')"
+                size="small"
+                type="primary"
+                @click="openEdit(row)"
+              >
+                编辑
+              </el-button>
               <el-button
                 v-if="hasPerm('verified:write') && row.status === 'pending'"
                 size="small"
@@ -186,12 +194,15 @@
     <!-- 创建商品对话框 -->
     <el-dialog
       v-model="showCreateDialog"
-      title="新增官方验商品"
+      :title="editingProduct ? '编辑官方验商品' : '新增官方验商品'"
       width="800px"
       @close="resetCreateForm"
+      destroy-on-close
     >
       <VerifiedProductForm
+        :product="editingProduct"
         @created="handleProductCreated"
+        @updated="handleProductUpdated"
         @cancel="showCreateDialog = false"
       />
     </el-dialog>
@@ -220,6 +231,7 @@ const pagination = ref({ current: 1, pageSize: 20, total: 0 })
 const detailDialogVisible = ref(false)
 const currentProduct = ref(null)
 const showCreateDialog = ref(false)
+const editingProduct = ref(null)
 
 const statusMap = {
   pending: { text: '待审核', type: 'warning' },
@@ -238,6 +250,16 @@ const getStatusText = (status) => statusMap[status]?.text || status
 const getStatusType = (status) => statusMap[status]?.type || 'info'
 const getConditionText = (condition) => conditionMap[condition] || condition
 
+const openCreate = () => {
+  editingProduct.value = null
+  showCreateDialog.value = true
+}
+
+const openEdit = (row) => {
+  editingProduct.value = { ...row }
+  showCreateDialog.value = true
+}
+
 const loadProducts = async () => {
   loading.value = true
   try {
@@ -251,7 +273,7 @@ const loadProducts = async () => {
     if (search.value) {
       params.search = search.value
     }
-    const res = await adminApi.get('/verified-listings', { params })
+    const res = await adminApi.get('/verified-listings/', { params })
     products.value = res.data?.results || []
     pagination.value.total = res.data?.count || 0
   } catch (error) {
@@ -278,7 +300,7 @@ const viewDetail = (row) => {
 const updateStatus = async (row, newStatus) => {
   try {
     const action = newStatus === 'active' ? 'publish' : 'unpublish'
-    await adminApi.post(`/verified-listings/${row.id}/${action}`)
+    await adminApi.post(`/verified-listings/${row.id}/${action}/`)
     ElMessage.success('操作成功')
     await loadProducts()
   } catch (error) {
@@ -288,16 +310,19 @@ const updateStatus = async (row, newStatus) => {
 
 const handleProductUpdated = () => {
   detailDialogVisible.value = false
+  showCreateDialog.value = false
+  editingProduct.value = null
   loadProducts()
 }
 
 const handleProductCreated = () => {
   showCreateDialog.value = false
+  editingProduct.value = null
   loadProducts()
 }
 
 const resetCreateForm = () => {
-  // 表单重置由子组件处理
+  editingProduct.value = null
 }
 
 const handleSelectionChange = (selection) => {
@@ -313,7 +338,7 @@ const batchUpdateStatus = async (items, newStatus) => {
     )
     const promises = items.map(item => {
       const action = newStatus === 'active' ? 'publish' : 'unpublish'
-      return adminApi.post(`/verified-listings/${item.id}/${action}`)
+      return adminApi.post(`/verified-listings/${item.id}/${action}/`)
     })
     await Promise.all(promises)
     ElMessage.success('批量操作成功')

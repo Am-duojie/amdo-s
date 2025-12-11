@@ -415,7 +415,7 @@ class MessageSerializer(serializers.ModelSerializer):
         model = Message
         fields = [
             'id', 'sender', 'receiver', 'receiver_id', 'product', 'product_id',
-            'content', 'is_read', 'created_at', 'updated_at', 'message_type', 'payload',
+            'content', 'is_read', 'created_at', 'updated_at', 'message_type', 'image', 'payload',
             'recalled', 'recallable_until'
         ]
         read_only_fields = ['sender', 'is_read', 'created_at', 'updated_at', 'recalled', 'recallable_until']
@@ -598,6 +598,15 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
     shop_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     images = VerifiedProductImageSerializer(many=True, read_only=True)
     is_favorited = serializers.SerializerMethodField()
+    cover_image = serializers.CharField(required=False, allow_blank=True)
+    detail_images = serializers.ListField(child=serializers.CharField(), required=False)
+    inspection_reports = serializers.ListField(child=serializers.CharField(), required=False)
+    inspection_result = serializers.ChoiceField(choices=[('pass','pass'),('warn','warn'),('fail','fail')], required=False)
+    inspection_date = serializers.DateField(required=False, allow_null=True)
+    inspection_staff = serializers.CharField(required=False, allow_blank=True)
+    inspection_note = serializers.CharField(required=False, allow_blank=True)
+    stock = serializers.IntegerField(required=False)
+    tags = serializers.ListField(child=serializers.CharField(), required=False)
 
     class Meta:
         model = VerifiedProduct
@@ -607,7 +616,10 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
             'contact_phone', 'contact_wechat', 'brand', 'model', 'storage',
             'screen_size', 'battery_health', 'charging_type', 'verified_at',
             'verified_by', 'view_count', 'sales_count', 'images',
-            'is_favorited', 'created_at', 'updated_at'
+            'is_favorited', 'created_at', 'updated_at',
+            'cover_image', 'detail_images', 'inspection_reports',
+            'inspection_result', 'inspection_date', 'inspection_staff', 'inspection_note',
+            'stock', 'tags', 'published_at', 'removed_reason'
         ]
         read_only_fields = ['seller', 'view_count', 'sales_count', 'verified_at', 'verified_by', 'created_at', 'updated_at']
 
@@ -616,6 +628,35 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
         if request and request.user.is_authenticated:
             return VerifiedFavorite.objects.filter(user=request.user, product=obj).exists()
         return False
+
+    def validate(self, attrs):
+        # 基础必填校验
+        if self.instance is None:  # create
+            required_fields = ['title', 'brand', 'model', 'price', 'condition', 'location']
+            for f in required_fields:
+                if attrs.get(f) in [None, '', []]:
+                    raise serializers.ValidationError({f: '必填'})
+        # 分类校验（可选，但有值则必须是有效ID）
+        category_id = attrs.get('category_id')
+        if category_id:
+            try:
+                Category.objects.get(id=category_id)
+            except Category.DoesNotExist:
+                raise serializers.ValidationError({'category_id': '分类不存在'})
+        price = attrs.get('price') if 'price' in attrs else getattr(self.instance, 'price', None)
+        if price is not None and price <= 0:
+            raise serializers.ValidationError({'price': '价格必须大于0'})
+        stock = attrs.get('stock') if 'stock' in attrs else getattr(self.instance, 'stock', 1)
+        if stock is not None and stock < 1:
+            raise serializers.ValidationError({'stock': '库存至少为1'})
+        detail_images = attrs.get('detail_images')
+        # 放宽详情图限制，至少 1 张即可，避免阻塞保存
+        if detail_images is not None and len(detail_images) < 1:
+            raise serializers.ValidationError({'detail_images': '请至少上传1张详情图'})
+        inspection_reports = attrs.get('inspection_reports')
+        if inspection_reports is not None and len(inspection_reports) > 3:
+            raise serializers.ValidationError({'inspection_reports': '质检报告最多3个'})
+        return attrs
 
     def create(self, validated_data):
         category_id = validated_data.pop('category_id', None)
@@ -630,9 +671,29 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
                 validated_data['shop'] = Shop.objects.get(id=shop_id)
             except Shop.DoesNotExist:
                 pass
-        validated_data.setdefault('status', 'active')
+        validated_data.setdefault('status', 'draft')
         validated_data['seller'] = self.context['request'].user
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        category_id = validated_data.pop('category_id', None)
+        shop_id = validated_data.pop('shop_id', None)
+        # 允许前端传字符串/空列表，做清洗
+        if 'detail_images' in validated_data and validated_data['detail_images'] is None:
+            validated_data['detail_images'] = []
+        if 'inspection_reports' in validated_data and validated_data['inspection_reports'] is None:
+            validated_data['inspection_reports'] = []
+        if category_id:
+            try:
+                validated_data['category'] = Category.objects.get(id=category_id)
+            except Category.DoesNotExist:
+                pass
+        if shop_id:
+            try:
+                validated_data['shop'] = Shop.objects.get(id=shop_id)
+            except Shop.DoesNotExist:
+                pass
+        return super().update(instance, validated_data)
 
 
 class VerifiedOrderSerializer(serializers.ModelSerializer):

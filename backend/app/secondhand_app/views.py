@@ -715,6 +715,8 @@ class MessageViewSet(viewsets.ModelViewSet):
                     display_content = '已撤回'
                 elif msg.message_type == 'product':
                     display_content = f"[商品]{(msg.payload or {}).get('title','')}"
+                elif msg.message_type == 'image':
+                    display_content = '[图片]'
                 else:
                     display_content = msg.content
 
@@ -846,6 +848,62 @@ class MessageViewSet(viewsets.ModelViewSet):
         async_to_sync(channel_layer.group_send)(f'user_{msg.receiver_id}', {'type': 'chat_message', 'message': event_payload})
 
         return Response({'detail': '已撤回'})
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def upload_image(self, request):
+        """上传图片消息"""
+        receiver_id = request.data.get('receiver_id')
+        if not receiver_id:
+            return Response({'detail': '缺少接收者ID'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if 'image' not in request.FILES:
+            return Response({'detail': '未提供图片文件'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            receiver = User.objects.get(id=receiver_id)
+        except User.DoesNotExist:
+            return Response({'detail': '接收者不存在'}, status=status.HTTP_404_NOT_FOUND)
+        
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        message = Message.objects.create(
+            sender=request.user,
+            receiver=receiver,
+            message_type='image',
+            image=request.FILES['image'],
+            content='',
+            recallable_until=timezone.now() + timedelta(minutes=2)
+        )
+        
+        # 通过WebSocket通知发送者和接收者
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            event_payload = {
+                'type': 'new_message',
+                'id': message.id,
+                'sender_id': message.sender_id,
+                'sender_username': message.sender.username,
+                'receiver_id': message.receiver_id,
+                'receiver_username': message.receiver.username,
+                'content': message.content,
+                'message_type': message.message_type,
+                'image': request.build_absolute_uri(message.image.url) if message.image else None,
+                'payload': message.payload,
+                'created_at': message.created_at.isoformat(),
+                'recalled': message.recalled
+            }
+            # 同时发送给发送者和接收者
+            async_to_sync(channel_layer.group_send)(f'user_{request.user.id}', {'type': 'chat_message', 'message': event_payload})
+            async_to_sync(channel_layer.group_send)(f'user_{receiver_id}', {'type': 'chat_message', 'message': event_payload})
+        except Exception as e:
+            # WebSocket通知失败不影响消息创建
+            pass
+        
+        serializer = MessageSerializer(message, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class FavoriteViewSet(viewsets.ModelViewSet):

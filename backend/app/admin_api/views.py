@@ -12,11 +12,14 @@ from .models import AdminUser, AdminRole, AdminInspectionReport, AdminAuditQueue
 from app.secondhand_app.models import RecycleOrder, VerifiedProduct, VerifiedOrder, Order, Shop, Category, Product, Message, Address
 from app.secondhand_app.alipay_client import AlipayClient
 from .serializers import AdminUserSerializer, RecycleOrderListSerializer, VerifiedProductListSerializer, AdminAuditQueueItemSerializer, ShopAdminSerializer
-from app.secondhand_app.serializers import OrderSerializer
+from app.secondhand_app.serializers import OrderSerializer, VerifiedProductSerializer
 from .jwt import encode as jwt_encode, decode as jwt_decode
 from django.contrib.auth.hashers import check_password, make_password
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
+import os
 
 def get_admin_from_request(request):
     import logging
@@ -940,6 +943,145 @@ class InspectionOrdersBatchUpdateView(APIView):
         except Exception as e:
             return Response({'success': False, 'detail': str(e)}, status=500)
 
+# ---------------- 上传接口 ----------------
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminUploadImageView(APIView):
+    authentication_classes = []
+    permission_classes = []
+    def post(self, request):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        f = request.FILES.get('file')
+        if not f:
+            return Response({'detail': 'no file'}, status=400)
+        filename = default_storage.save(os.path.join('uploads', f.name), ContentFile(f.read()))
+        url = request.build_absolute_uri(settings.MEDIA_URL + filename) if not filename.startswith(settings.MEDIA_URL) else request.build_absolute_uri(filename)
+        return Response({'url': url})
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminUploadReportView(APIView):
+    authentication_classes = []
+    permission_classes = []
+    def post(self, request):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        f = request.FILES.get('file')
+        if not f:
+            return Response({'detail': 'no file'}, status=400)
+        filename = default_storage.save(os.path.join('uploads', f.name), ContentFile(f.read()))
+        url = request.build_absolute_uri(settings.MEDIA_URL + filename) if not filename.startswith(settings.MEDIA_URL) else request.build_absolute_uri(filename)
+        return Response({'url': url})
+
+# ---------------- 新版官方验商品管理（前端调用） ----------------
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminVerifiedProductListView(APIView):
+    authentication_classes = []
+    permission_classes = []
+    def get(self, request):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['verified:view', 'verified:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 20))
+        status_q = request.query_params.get('status')
+        search = request.query_params.get('search')
+        qs = VerifiedProduct.objects.all().order_by('-created_at')
+        if status_q:
+            qs = qs.filter(status=status_q)
+        if search:
+            qs = qs.filter(Q(title__icontains=search) | Q(brand__icontains=search) | Q(model__icontains=search))
+        total = qs.count()
+        items = qs[(page-1)*page_size: page*page_size]
+        return Response({'results': VerifiedProductListSerializer(items, many=True).data, 'count': total})
+
+    def post(self, request):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['verified:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        serializer = VerifiedProductSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            obj = serializer.save()
+            return Response(VerifiedProductSerializer(obj, context={'request': request}).data)
+        return Response(serializer.errors, status=400)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminVerifiedProductDetailView(APIView):
+    authentication_classes = []
+    permission_classes = []
+    def get_object(self, pk):
+        return VerifiedProduct.objects.get(id=pk)
+
+    def get(self, request, pk):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['verified:view', 'verified:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        try:
+            obj = self.get_object(pk)
+            return Response(VerifiedProductSerializer(obj, context={'request': request}).data)
+        except VerifiedProduct.DoesNotExist:
+            return Response({'detail': 'Not found'}, status=404)
+
+    def put(self, request, pk):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['verified:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        try:
+            obj = self.get_object(pk)
+        except VerifiedProduct.DoesNotExist:
+            return Response({'detail': 'Not found'}, status=404)
+        serializer = VerifiedProductSerializer(obj, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            obj = serializer.save()
+            return Response(VerifiedProductSerializer(obj, context={'request': request}).data)
+        return Response(serializer.errors, status=400)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminVerifiedProductPublishView(APIView):
+    authentication_classes = []
+    permission_classes = []
+    def post(self, request, pk):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['verified:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        try:
+            obj = VerifiedProduct.objects.get(id=pk)
+        except VerifiedProduct.DoesNotExist:
+            return Response({'detail': 'Not found'}, status=404)
+        obj.status = 'active'
+        obj.published_at = timezone.now()
+        obj.save()
+        return Response(VerifiedProductSerializer(obj, context={'request': request}).data)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminVerifiedProductUnpublishView(APIView):
+    authentication_classes = []
+    permission_classes = []
+    def post(self, request, pk):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['verified:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        try:
+            obj = VerifiedProduct.objects.get(id=pk)
+        except VerifiedProduct.DoesNotExist:
+            return Response({'detail': 'Not found'}, status=404)
+        obj.status = 'removed'
+        obj.removed_reason = request.data.get('reason', '')
+        obj.save()
+        return Response(VerifiedProductSerializer(obj, context={'request': request}).data)
 # 回收商品相关视图
 @method_decorator(csrf_exempt, name='dispatch')
 class RecycledProductsView(APIView):

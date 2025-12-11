@@ -1,137 +1,139 @@
 <template>
   <div class="login-page">
-    <!-- Logo区域 -->
-    <div class="logo-section">
-      <div class="logo-wrapper">
-        <div class="logo">🐟</div>
-        <h1 class="logo-text">咸鱼 - 二手交易平台</h1>
+    <div class="login-shell">
+      <!-- Logo区域 -->
+      <div class="logo-section">
+        <div class="logo-wrapper">
+          <div class="logo">🐟</div>
+          <h1 class="logo-text">咸鱼 - 二手交易平台</h1>
+        </div>
       </div>
-    </div>
-    
-    <!-- 表单区域 -->
-    <div class="form-section">
-      <!-- 错误提示 -->
-      <transition name="fade">
-        <div v-if="errorMessage" class="error-alert">
-          <el-icon class="error-icon"><CircleClose /></el-icon>
-          <span>{{ errorMessage }}</span>
-          <el-icon class="close-icon" @click="errorMessage = ''"><Close /></el-icon>
-        </div>
-      </transition>
       
-      <!-- 登录表单 -->
-      <el-form 
-        ref="formRef"
-        :model="form" 
-        :rules="rules"
-        class="login-form"
-        @submit.prevent="handleSubmit"
-      >
-        <el-form-item prop="username">
-          <div class="input-wrapper">
-            <el-input 
-              v-model="form.username" 
-              placeholder="请输入用户名或手机号"
-              prefix-icon="User"
-              clearable
-              @keyup.enter="handleSubmit"
-            />
+      <!-- 表单区域 -->
+      <div class="form-section">
+        <!-- 错误提示 -->
+        <transition name="fade">
+          <div v-if="errorMessage" class="error-alert">
+            <el-icon class="error-icon"><CircleClose /></el-icon>
+            <span>{{ errorMessage }}</span>
+            <el-icon class="close-icon" @click="errorMessage = ''"><Close /></el-icon>
           </div>
-        </el-form-item>
+        </transition>
         
-        <el-form-item prop="password">
-          <div class="input-wrapper">
-            <el-input 
-              v-model="form.password" 
-              :type="showPassword ? 'text' : 'password'"
-              placeholder="请输入密码"
-              prefix-icon="Lock"
-              clearable
-              @keyup.enter="handleSubmit"
+        <!-- 登录表单 -->
+        <el-form 
+          ref="formRef"
+          :model="form" 
+          :rules="rules"
+          class="login-form"
+          @submit.prevent="handleSubmit"
+        >
+          <el-form-item prop="username">
+            <div class="input-wrapper">
+              <el-input 
+                v-model="form.username" 
+                placeholder="请输入用户名或手机号"
+                prefix-icon="User"
+                clearable
+                @keyup.enter="handleSubmit"
+              />
+            </div>
+          </el-form-item>
+          
+          <el-form-item prop="password">
+            <div class="input-wrapper">
+              <el-input 
+                v-model="form.password" 
+                :type="showPassword ? 'text' : 'password'"
+                placeholder="请输入密码"
+                prefix-icon="Lock"
+                clearable
+                @keyup.enter="handleSubmit"
+              >
+                <template #suffix>
+                  <span @click="showPassword = !showPassword" class="password-toggle">
+                    <el-icon v-if="showPassword">
+                      <View />
+                    </el-icon>
+                    <el-icon v-else>
+                      <Hide />
+                    </el-icon>
+                  </span>
+                </template>
+              </el-input>
+            </div>
+          </el-form-item>
+          
+          <!-- 记住我和忘记密码 -->
+          <div class="form-options">
+            <el-checkbox v-model="rememberMe" class="remember-checkbox">
+              记住用户名
+            </el-checkbox>
+            <el-link 
+              type="primary" 
+              @click="showForgotPassword" 
+              class="forgot-link"
+              :underline="false"
             >
-              <template #suffix>
-                <span @click="showPassword = !showPassword" class="password-toggle">
-                  <el-icon v-if="showPassword">
-                    <View />
-                  </el-icon>
-                  <el-icon v-else>
-                    <Hide />
-                  </el-icon>
-                </span>
-              </template>
-            </el-input>
+              忘记密码？
+            </el-link>
           </div>
-        </el-form-item>
-        
-        <!-- 记住我和忘记密码 -->
-        <div class="form-options">
-          <el-checkbox v-model="rememberMe" class="remember-checkbox">
-            记住用户名
-          </el-checkbox>
-          <el-link 
-            type="primary" 
-            @click="showForgotPassword" 
-            class="forgot-link"
-            :underline="false"
-          >
-            忘记密码？
-          </el-link>
-        </div>
-        
-        <!-- 登录按钮 -->
-        <el-form-item>
-          <el-button 
-            type="primary"
-            native-type="submit"
-            class="submit-btn" 
-            :loading="loading"
-            block
-          >
-            登录
-          </el-button>
-        </el-form-item>
-        
-        <!-- 注册链接 -->
-        <div class="register-section">
-          <span class="register-text">还没有账号？</span>
-          <el-link 
-            type="primary" 
-            @click="$router.push('/register')" 
-            class="register-link"
-            :underline="false"
-          >
-            立即注册
-          </el-link>
-        </div>
-        
-        <!-- 其他登录方式 -->
-        <div class="other-login">
-          <div class="divider">
-            <span class="divider-text">其他登录方式</span>
+          
+          <!-- 登录按钮 -->
+          <el-form-item>
+            <el-button 
+              type="primary"
+              native-type="submit"
+              class="submit-btn" 
+              :loading="loading"
+              block
+            >
+              登录
+            </el-button>
+          </el-form-item>
+          
+          <!-- 注册链接 -->
+          <div class="register-section">
+            <span class="register-text">还没有账号？</span>
+            <el-link 
+              type="primary" 
+              @click="$router.push('/register')" 
+              class="register-link"
+              :underline="false"
+            >
+              立即注册
+            </el-link>
           </div>
-          <div class="other-login-methods">
-            <div class="login-method wechat">
-              <el-icon class="method-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="24" height="24">
-                  <path d="M921.6 256c-30.464 0-55.04 24.576-55.04 55.04v40.96c0 5.12 4.096 9.216 9.216 9.216h36.864c30.464 0 55.04 24.576 55.04 55.04v281.6c0 30.464-24.576 55.04-55.04 55.04h-36.864c-5.12 0-9.216 4.096-9.216 9.216v40.96c0 30.464-24.576 55.04-55.04 55.04h-368.64c-30.464 0-55.04-24.576-55.04-55.04v-40.96c0-5.12-4.096-9.216-9.216-9.216h-36.864c-30.464 0-55.04-24.576-55.04-55.04v-281.6c0-30.464 24.576-55.04 55.04-55.04h36.864c5.12 0 9.216-4.096 9.216-9.216v-40.96c0-30.464 24.576-55.04 55.04-55.04h368.64z m-194.56 512h204.8v-204.8h-204.8v204.8z m-102.4 0h102.4v-204.8h-102.4v204.8z m-102.4 0h102.4v-204.8h-102.4v204.8z" fill="currentColor" />
-                </svg>
-              </el-icon>
-              <span>微信登录</span>
+          
+          <!-- 其他登录方式 -->
+          <div class="other-login">
+            <div class="divider">
+              <span class="divider-text">其他登录方式</span>
             </div>
-            <div class="login-method qq">
-              <el-icon class="method-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-              </el-icon>
-              <span>QQ登录</span>
+            <div class="other-login-methods">
+              <div class="login-method wechat">
+                <el-icon class="method-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="24" height="24">
+                    <path d="M921.6 256c-30.464 0-55.04 24.576-55.04 55.04v40.96c0 5.12 4.096 9.216 9.216 9.216h36.864c30.464 0 55.04 24.576 55.04 55.04v281.6c0 30.464-24.576 55.04-55.04 55.04h-36.864c-5.12 0-9.216 4.096-9.216 9.216v40.96c0 30.464-24.576 55.04-55.04 55.04h-368.64c-30.464 0-55.04-24.576-55.04-55.04v-40.96c0-5.12-4.096-9.216-9.216-9.216h-36.864c-30.464 0-55.04-24.576-55.04-55.04v-281.6c0-30.464 24.576-55.04 55.04-55.04h36.864c5.12 0 9.216-4.096 9.216-9.216v-40.96c0-30.464 24.576-55.04 55.04-55.04h368.64z m-194.56 512h204.8v-204.8h-204.8v204.8z m-102.4 0h102.4v-204.8h-102.4v204.8z m-102.4 0h102.4v-204.8h-102.4v204.8z" fill="currentColor" />
+                  </svg>
+                </el-icon>
+                <span>微信登录</span>
+              </div>
+              <div class="login-method qq">
+                <el-icon class="method-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </el-icon>
+                <span>QQ登录</span>
+              </div>
             </div>
           </div>
-        </div>
-      </el-form>
-    </div>
-    
-    <!-- 底部信息 -->
-    <div class="footer">
-      <p>© 2024 咸鱼二手交易平台</p>
+        </el-form>
+      </div>
+      
+      <!-- 底部信息 -->
+      <div class="footer">
+        <p>© 2024 咸鱼二手交易平台</p>
+      </div>
     </div>
     
     <!-- 忘记密码对话框 -->
@@ -297,7 +299,7 @@ body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: #333;
-  background-color: #f5f5f5;
+  background-color: #f1f4fa;
 }
 
 /* 登录页面容器 */
@@ -306,8 +308,19 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 40px 20px;
-  background-color: #fff;
+  padding: 24px 20px 32px;
+  background-color: #f1f4fa;
+}
+
+.login-shell {
+  position: relative;
+  width: 1440px;
+  min-height: 1112px;
+  background: #f1f4fa;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin: 0 auto;
 }
 
 /* Logo区域 */
@@ -344,12 +357,12 @@ body {
 
 /* 表单区域 */
 .form-section {
-  width: 100%;
-  max-width: 400px;
+  width: 400px;
   background-color: #fff;
   border-radius: 12px;
   padding: 32px 24px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  margin: 0 auto;
 }
 
 /* 错误提示 */
@@ -619,6 +632,19 @@ body {
   text-align: center;
   font-size: 12px;
   color: #999;
+}
+
+@media (max-width: 1500px) {
+  .login-shell {
+    width: 100%;
+    min-height: 100vh;
+    padding: 0 12px;
+  }
+
+  .form-section {
+    width: 100%;
+    max-width: 420px;
+  }
 }
 
 /* 动画效果 */
