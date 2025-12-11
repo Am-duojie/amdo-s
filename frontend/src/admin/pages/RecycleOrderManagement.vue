@@ -187,6 +187,23 @@
       </div>
     </el-card>
   </div>
+
+  <!-- 详情/操作弹窗 -->
+  <el-dialog
+    v-model="detailDialogVisible"
+    width="1200px"
+    destroy-on-close
+    :close-on-click-modal="false"
+    :append-to-body="true"
+    :title="currentOrder ? `回收订单 #${currentOrder.id}` : '回收订单详情'"
+    @close="closeDetailDialog"
+  >
+    <RecycleOrderDetail
+      v-if="currentOrder"
+      :order-id="currentOrder.id"
+      @updated="handleOrderUpdated"
+    />
+  </el-dialog>
 </template>
 
 <script setup>
@@ -252,13 +269,19 @@ const getConditionText = (condition) => conditionMap[condition]?.text || conditi
 const getConditionType = (condition) => conditionMap[condition]?.type || 'info'
 
 const isStepCompleted = (row, stepValue) => {
+  // 支付完成单独判断
+  if (stepValue === 'paid') return row.payment_status === 'paid'
   const stepIndex = processSteps.findIndex(s => s.value === stepValue)
   const currentIndex = processSteps.findIndex(s => s.value === row.status)
-  return currentIndex > stepIndex || (row.payment_status === 'paid' && stepValue === 'paid')
+  // 当前状态所在及之前的步骤都视为完成，确保“已完成”节点变绿色
+  return currentIndex >= stepIndex
 }
 
 const isStepActive = (row, stepValue) => {
-  return row.status === stepValue || (row.payment_status === 'paid' && stepValue === 'paid')
+  // 如果已完成/已付款，保持绿色，不再突出为“进行中”
+  if (row.status === 'completed') return false
+  if (stepValue === 'paid') return row.payment_status === 'paid' && row.status !== 'completed'
+  return row.status === stepValue
 }
 
 const canOperate = (row) => {

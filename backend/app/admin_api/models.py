@@ -25,6 +25,12 @@ class AdminInspectionReport(models.Model):
     order = models.ForeignKey(RecycleOrder, on_delete=models.CASCADE, related_name='admin_reports')
     check_items = models.JSONField(default=dict)
     remarks = models.TextField(blank=True)
+    evidence = models.JSONField(default=list)
+    overall_result = models.CharField(max_length=32, default='passed')
+    recommend_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    template_name = models.CharField(max_length=64, default='default')
+    template_version = models.CharField(max_length=32, default='v1')
     created_at = models.DateTimeField(auto_now_add=True)
 
 class AdminAuditQueueItem(models.Model):

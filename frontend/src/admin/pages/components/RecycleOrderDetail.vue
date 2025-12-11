@@ -35,7 +35,17 @@
       <template #header>
         <div class="card-header">
           <span>订单信息</span>
-          <div>
+          <div class="card-actions">
+            <el-button
+              v-if="hasPerm('verified:write')"
+              size="small"
+              type="primary"
+              plain
+              :loading="creatingDevice"
+              @click="createVerifiedDevice"
+            >
+              生成官方验库存
+            </el-button>
             <el-tag :type="getStatusType(detail.status)" size="large">{{ getStatusText(detail.status) }}</el-tag>
             <el-tag v-if="detail.payment_status === 'paid'" type="success" size="large" style="margin-left: 8px">已打款</el-tag>
             <el-tag v-if="detail.price_dispute" type="warning" size="large" style="margin-left: 8px">价格异议</el-tag>
@@ -442,7 +452,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import adminApi from '@/utils/adminApi'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -472,6 +482,7 @@ const updatingStatus = ref(false)
 const completing = ref(false)
 const processingPayment = ref(false)
 const publishing = ref(false)
+const creatingDevice = ref(false)
 
 const showReportDialog = ref(false)
 const priceDialogVisible = ref(false)
@@ -595,6 +606,7 @@ const canManagePrice = computed(() => {
 const loadDetail = async () => {
   loading.value = true
   try {
+    detail.value = {}
     const res = await adminApi.get(`/inspection-orders/${props.orderId}`)
     if (res.data?.success) {
       detail.value = res.data.item || {}
@@ -617,6 +629,16 @@ const loadDetail = async () => {
     loading.value = false
   }
 }
+
+watch(
+  () => props.orderId,
+  (val) => {
+    if (val) {
+      loadDetail()
+    }
+  },
+  { immediate: true }
+)
 
 const markReceived = async () => {
   try {
@@ -830,6 +852,22 @@ const processPayment = async () => {
   }
 }
 
+const createVerifiedDevice = async () => {
+  try {
+    creatingDevice.value = true
+    const res = await adminApi.post(`/recycle-orders/${props.orderId}/create-verified-device/`)
+    const msg = res.data?.detail || '已生成官方验库存'
+    ElMessage.success(msg)
+    await loadDetail()
+    emit('updated')
+  } catch (error) {
+    const msg = error.response?.data?.detail || '生成失败，请稍后重试'
+    ElMessage.error(msg)
+  } finally {
+    creatingDevice.value = false
+  }
+}
+
 const publishToVerified = async () => {
   try {
     await ElMessageBox.confirm(
@@ -912,6 +950,11 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .check-items {

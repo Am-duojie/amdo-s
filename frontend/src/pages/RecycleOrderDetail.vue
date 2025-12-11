@@ -209,6 +209,7 @@
               <el-button type="warning" size="large" @click="showDisputeDialog = true">
                 对价格有异议
               </el-button>
+              <el-button type="danger" link @click="cancelOrder">取消订单</el-button>
             </template>
 
             <!-- 已确认状态：填写物流信息 -->
@@ -219,6 +220,7 @@
               <el-button type="primary" size="large" @click="showShippingDialog = true">
                 填写物流信息
               </el-button>
+              <el-button type="danger" link @click="cancelOrder">取消订单</el-button>
             </template>
 
             <!-- 已寄出状态：等待平台检测 -->
@@ -678,6 +680,27 @@ const submitFinalDispute = async () => {
 
 const goBack = () => {
   router.push('/my-recycle-orders')
+}
+
+const cancelOrder = async () => {
+  try {
+    await ElMessageBox.confirm('确认取消此订单吗？', '确认', {
+      confirmButtonText: '确认',
+      cancelButtonText: '再想想',
+      type: 'warning'
+    })
+    submitting.value = true
+    await api.patch(`/recycle-orders/${order.value.id}/`, { status: 'cancelled' })
+    ElMessage.success('订单已取消')
+    await loadOrderDetail()
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error('取消订单失败:', e)
+      ElMessage.error(e?.response?.data?.detail || '取消失败，请稍后重试')
+    }
+  } finally {
+    submitting.value = false
+  }
 }
 
 onMounted(() => {

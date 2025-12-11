@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
+import uuid
 
 
 class Category(models.Model):
@@ -330,6 +331,8 @@ class RecycleOrder(models.Model):
     estimated_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name='预估价格')
     final_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name='最终价格')
     bonus = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name='加价')
+    final_price_confirmed = models.BooleanField(default=False, verbose_name='最终价已确认')
+    payment_retry_count = models.IntegerField(default=0, verbose_name='打款重试次数')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name='状态')
     contact_name = models.CharField(max_length=50, verbose_name='联系人姓名')
     contact_phone = models.CharField(max_length=20, verbose_name='联系电话')
@@ -373,6 +376,73 @@ class RecycleOrder(models.Model):
 
     def __str__(self):
         return f"回收订单 #{self.id} - {self.brand} {self.model}"
+
+
+class VerifiedDevice(models.Model):
+    """
+    官方验库存单品（SN 级）
+    一台设备全生命周期：待处理 -> 维修/翻新中 -> 待上架 -> 在售/锁定 -> 已售出/下架
+    """
+    STATUS_CHOICES = [
+        ('pending', '待处理'),
+        ('repairing', '维修/翻新中'),
+        ('ready', '待上架'),
+        ('listed', '在售'),
+        ('locked', '已锁定'),
+        ('sold', '已售出'),
+        ('removed', '已下架'),
+    ]
+
+    CONDITION_CHOICES = [
+        ('new', '全新'),
+        ('like_new', '99成新'),
+        ('good', '95成新'),
+        ('fair', '9成新'),
+        ('poor', '8成新'),
+    ]
+
+    recycle_order = models.ForeignKey(RecycleOrder, on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_devices', verbose_name='来源回收单')
+    seller = models.ForeignKey(User, on_delete=models.CASCADE, related_name='verified_devices', verbose_name='卖家/库存持有人')
+    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='verified_devices', verbose_name='分类')
+
+    sn = models.CharField(max_length=100, unique=True, verbose_name='序列号/ SN')
+    imei = models.CharField(max_length=100, blank=True, verbose_name='IMEI/MEID')
+    brand = models.CharField(max_length=50, blank=True, verbose_name='品牌')
+    model = models.CharField(max_length=100, blank=True, verbose_name='型号')
+    storage = models.CharField(max_length=50, blank=True, verbose_name='存储容量')
+    condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='good', verbose_name='成色')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name='状态')
+    location = models.CharField(max_length=100, blank=True, verbose_name='仓位/存放位置')
+    barcode = models.CharField(max_length=200, blank=True, verbose_name='条码/二维码内容')
+
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name='入库成本')
+    suggested_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name='建议售价')
+
+    # 媒体与质检
+    cover_image = models.CharField(max_length=500, blank=True, verbose_name='封面图')
+    detail_images = models.JSONField(default=list, verbose_name='详情图列表')
+    inspection_reports = models.JSONField(default=list, verbose_name='质检报告列表')
+    inspection_result = models.CharField(max_length=10, choices=[('pass', '合格'), ('warn', '警告'), ('fail', '不合格')], default='pass', verbose_name='质检结果')
+    inspection_date = models.DateField(null=True, blank=True, verbose_name='质检日期')
+    inspection_staff = models.CharField(max_length=100, blank=True, verbose_name='质检员')
+    inspection_note = models.TextField(blank=True, verbose_name='质检说明')
+    battery_health = models.CharField(max_length=20, blank=True, verbose_name='电池健康度')
+    screen_condition = models.CharField(max_length=100, blank=True, verbose_name='屏幕情况')
+    repair_history = models.TextField(blank=True, verbose_name='维修/翻新记录')
+
+    # 与商品关联
+    linked_product = models.ForeignKey('VerifiedProduct', on_delete=models.SET_NULL, null=True, blank=True, related_name='devices', verbose_name='关联商品')
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        verbose_name = '官方验库存单品'
+        verbose_name_plural = '官方验库存单品'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.brand} {self.model} ({self.sn})"
 
 
 class VerifiedProduct(models.Model):
@@ -506,3 +576,37 @@ class VerifiedFavorite(models.Model):
 
     def __str__(self):
         return f"{self.user.username} 收藏了 {self.product.title}"
+
+
+def create_verified_device_from_recycle_order(order, status='ready', location='官方仓'):
+    """
+    根据回收订单生成一条官方验库存(VerifiedDevice)，用于自动/手动打通回收 -> 官方验。
+    如果已存在关联设备则直接返回，不重复创建。
+    """
+    if not order:
+        return None
+    existing = getattr(order, 'verified_devices', None)
+    if existing and existing.exists():
+        return existing.first()
+
+    # 自动生成占位 SN，避免唯一约束报错
+    sn = f"AUTO-{uuid.uuid4().hex[:8].upper()}"
+
+    suggested_price = order.final_price or order.estimated_price
+    cost_price = order.final_price or order.estimated_price
+
+    device = VerifiedDevice.objects.create(
+        recycle_order=order,
+        seller=getattr(order, 'user', None),
+        sn=sn,
+        brand=order.brand,
+        model=order.model,
+        storage=order.storage or '',
+        condition=order.condition or 'good',
+        status=status,
+        location=location,
+        suggested_price=suggested_price,
+        cost_price=cost_price,
+        inspection_note=order.note or ''
+    )
+    return device

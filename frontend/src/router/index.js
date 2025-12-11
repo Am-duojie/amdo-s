@@ -130,6 +130,12 @@ const routes = [
     meta: { theme: 'blue', hideSearch: false, verifiedMode: true }
   },
   {
+    path: '/admin/verified-devices',
+    name: 'VerifiedDeviceInventory',
+    component: () => import('@/admin/pages/VerifiedDeviceInventory.vue'),
+    meta: { requiresAdminAuth: true, title: '官方验库存', icon: 'Box', group: 'verified' }
+  },
+  {
     path: '/verified-profile',
     name: 'VerifiedProfile',
     component: () => import('@/pages/VerifiedProfile.vue'),

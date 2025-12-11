@@ -9,6 +9,22 @@
         <el-button :loading="loading" @click="handleRefresh" text :icon="Refresh">刷新</el-button>
         <el-button
           v-if="hasPerm('verified:write')"
+          type="success"
+          size="small"
+          @click="openQuickList"
+        >
+          一键上架（选设备）
+        </el-button>
+        <el-button
+          v-if="hasPerm('verified:write')"
+          type="primary"
+          size="small"
+          @click="openCreateDevice"
+        >
+          新增设备
+        </el-button>
+        <el-button
+          v-if="hasPerm('verified:write')"
           type="primary"
           :icon="Plus"
           @click="openCreate"
@@ -61,6 +77,7 @@
         </div>
         <el-space>
           <el-button text :icon="Refresh" @click="handleRefresh">刷新</el-button>
+          <el-button v-if="hasPerm('verified:write')" type="success" size="small" @click="openQuickList">一键上架（选设备）</el-button>
         </el-space>
       </div>
 
@@ -191,6 +208,52 @@
       />
     </el-dialog>
 
+    <!-- 新增设备（演示模式可自动生成SN） -->
+    <el-dialog
+      v-model="createDeviceDialogVisible"
+      title="新增官方验库存设备"
+      width="520px"
+      destroy-on-close
+    >
+      <el-form :model="deviceForm" label-width="100px" :inline="false">
+        <el-form-item label="演示模式">
+          <el-switch v-model="autoGenerateSn" active-text="自动生成SN/IMEI" inactive-text="手动填写" />
+        </el-form-item>
+        <el-form-item label="SN/序列号">
+          <el-input v-model="deviceForm.sn" placeholder="留空则自动生成" :disabled="autoGenerateSn" />
+        </el-form-item>
+        <el-form-item label="IMEI/MEID">
+          <el-input v-model="deviceForm.imei" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="品牌/型号">
+          <el-input v-model="deviceForm.brand" placeholder="品牌" style="width: 45%; margin-right: 10px;" />
+          <el-input v-model="deviceForm.model" placeholder="型号" style="width: 45%;" />
+        </el-form-item>
+        <el-form-item label="容量/成色">
+          <el-input v-model="deviceForm.storage" placeholder="如 128GB" style="width: 45%; margin-right: 10px;" />
+          <el-select v-model="deviceForm.condition" style="width: 45%;">
+            <el-option label="99成新" value="like_new" />
+            <el-option label="95成新" value="good" />
+            <el-option label="9成新" value="fair" />
+            <el-option label="8成新" value="poor" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="仓位">
+          <el-input v-model="deviceForm.location" placeholder="仓库/货架位" />
+        </el-form-item>
+        <el-form-item label="建议售价">
+          <el-input-number v-model="deviceForm.suggested_price" :min="0" :precision="2" style="width: 100%;" />
+        </el-form-item>
+        <el-form-item label="备注/质检">
+          <el-input v-model="deviceForm.inspection_note" type="textarea" :rows="3" placeholder="可填质检要点/备注" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createDeviceDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="createDeviceLoading" @click="submitCreateDevice">保存</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 创建商品对话框 -->
     <el-dialog
       v-model="showCreateDialog"
@@ -205,6 +268,54 @@
         @updated="handleProductUpdated"
         @cancel="showCreateDialog = false"
       />
+    </el-dialog>
+
+    <!-- 一键上架：选设备 -->
+    <el-dialog
+      v-model="quickListDialogVisible"
+      title="从库存设备一键上架"
+      width="720px"
+      destroy-on-close
+    >
+      <div class="quick-list-search">
+        <el-input
+          v-model="snSearch"
+          placeholder="输入 SN / 型号 / 品牌 关键字"
+          clearable
+          style="width: 320px"
+          @keyup.enter="searchDevices"
+        />
+        <el-button type="primary" :loading="quickLoading" @click="searchDevices">查询设备</el-button>
+      </div>
+      <el-table
+        :data="deviceList"
+        style="width: 100%; margin-top: 12px"
+        height="260"
+        v-loading="quickLoading"
+        @row-click="row => (selectedDeviceId = row.id)"
+        :row-class-name="({ row }) => (row.id === selectedDeviceId ? 'is-selected' : '')"
+      >
+        <el-table-column prop="sn" label="SN/序列号" width="180" />
+        <el-table-column prop="brand" label="品牌" width="120" />
+        <el-table-column prop="model" label="型号" />
+        <el-table-column prop="storage" label="容量" width="100" />
+        <el-table-column prop="condition" label="成色" width="100" />
+        <el-table-column prop="status" label="状态" width="100" />
+      </el-table>
+      <div class="quick-form" style="margin-top: 12px">
+        <el-form :inline="true">
+          <el-form-item label="售价">
+            <el-input-number v-model="quickPrice" :min="0.01" :precision="2" />
+          </el-form-item>
+          <el-form-item label="原价">
+            <el-input-number v-model="quickOriginalPrice" :min="0" :precision="2" />
+          </el-form-item>
+        </el-form>
+      </div>
+      <template #footer>
+        <el-button @click="quickListDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="quickLoading" @click="listSelectedDevice">一键上架</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -232,6 +343,27 @@ const detailDialogVisible = ref(false)
 const currentProduct = ref(null)
 const showCreateDialog = ref(false)
 const editingProduct = ref(null)
+const quickListDialogVisible = ref(false)
+const snSearch = ref('')
+const deviceList = ref([])
+const selectedDeviceId = ref(null)
+const quickPrice = ref(null)
+const quickOriginalPrice = ref(null)
+const quickLoading = ref(false)
+const createDeviceDialogVisible = ref(false)
+const createDeviceLoading = ref(false)
+const autoGenerateSn = ref(true)
+const deviceForm = reactive({
+  sn: '',
+  imei: '',
+  brand: '',
+  model: '',
+  storage: '',
+  condition: 'good',
+  location: '',
+  suggested_price: null,
+  inspection_note: ''
+})
 
 const statusMap = {
   pending: { text: '待审核', type: 'warning' },
@@ -327,6 +459,92 @@ const resetCreateForm = () => {
 
 const handleSelectionChange = (selection) => {
   selectedProducts.value = selection
+}
+
+// 一键上架（设备）
+const openQuickList = () => {
+  quickListDialogVisible.value = true
+  deviceList.value = []
+  selectedDeviceId.value = null
+  snSearch.value = ''
+  quickPrice.value = null
+  quickOriginalPrice.value = null
+}
+
+const searchDevices = async () => {
+  quickLoading.value = true
+  try {
+    const params = { page_size: 20 }
+    if (snSearch.value) params.search = snSearch.value
+    const res = await adminApi.get('/verified-devices/', { params })
+    deviceList.value = res.data?.results || []
+  } catch (e) {
+    ElMessage.error('查询设备失败')
+  } finally {
+    quickLoading.value = false
+  }
+}
+
+const listSelectedDevice = async () => {
+  if (!selectedDeviceId.value) {
+    ElMessage.warning('请先选择设备')
+    return
+  }
+  if (!quickPrice.value) {
+    ElMessage.warning('请输入售价')
+    return
+  }
+  quickLoading.value = true
+  try {
+    await adminApi.post(`/verified-devices/${selectedDeviceId.value}/list-product/`, {
+      price: quickPrice.value,
+      original_price: quickOriginalPrice.value
+    })
+    ElMessage.success('上架成功')
+    quickListDialogVisible.value = false
+    loadProducts()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '上架失败')
+  } finally {
+    quickLoading.value = false
+  }
+}
+
+const openCreateDevice = () => {
+  createDeviceDialogVisible.value = true
+  Object.assign(deviceForm, {
+    sn: '',
+    imei: '',
+    brand: '',
+    model: '',
+    storage: '',
+    condition: 'good',
+    location: '',
+    suggested_price: null,
+    inspection_note: ''
+  })
+  autoGenerateSn.value = true
+}
+
+const submitCreateDevice = async () => {
+  createDeviceLoading.value = true
+  try {
+    const payload = { ...deviceForm }
+    if (autoGenerateSn.value || !payload.sn) {
+      delete payload.sn
+    }
+    await adminApi.post('/verified-devices/', payload)
+    ElMessage.success('新增设备成功')
+    createDeviceDialogVisible.value = false
+    // 创建后刷新设备列表（若有）
+    if (quickListDialogVisible.value) {
+      searchDevices()
+    }
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '新增设备失败')
+  } finally {
+    createDeviceLoading.value = false
+  }
 }
 
 const batchUpdateStatus = async (items, newStatus) => {

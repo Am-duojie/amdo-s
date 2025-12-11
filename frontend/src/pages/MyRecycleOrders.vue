@@ -214,7 +214,7 @@ const loadOrders = async () => {
 }
 
 const goToDetail = (orderId) => {
-  router.push(`/recycle-order/${orderId}`)
+      router.push(`/recycle-order/${orderId}`)
 }
 
 const goToCreateOrder = () => {

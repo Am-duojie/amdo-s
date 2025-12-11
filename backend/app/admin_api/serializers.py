@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import AdminUser, AdminRole, AdminInspectionReport, AdminAuditQueueItem
-from app.secondhand_app.models import RecycleOrder, VerifiedProduct, Shop
+from app.secondhand_app.models import RecycleOrder, VerifiedProduct, Shop, VerifiedDevice
 
 class AdminUserSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source='role.name', allow_null=True)
@@ -21,6 +21,15 @@ class VerifiedProductListSerializer(serializers.ModelSerializer):
     class Meta:
         model = VerifiedProduct
         fields = ['id','title','condition','price','status','cover_image','sales_count','created_at']
+
+
+class VerifiedDeviceListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VerifiedDevice
+        fields = [
+            'id','sn','brand','model','storage','condition','status',
+            'cover_image','location','suggested_price','created_at','linked_product'
+        ]
 
 class AdminAuditQueueItemSerializer(serializers.ModelSerializer):
     class Meta:

@@ -1,9 +1,12 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
+import uuid
+
 from .models import (
     Category, Product, ProductImage, Order, Message, Favorite, Address, UserProfile, RecycleOrder,
-    VerifiedProduct, VerifiedProductImage, VerifiedOrder, VerifiedFavorite, Shop
+    VerifiedProduct, VerifiedProductImage, VerifiedOrder, VerifiedFavorite, Shop, VerifiedDevice,
+    create_verified_device_from_recycle_order
 )
 
 
@@ -534,7 +537,7 @@ class RecycleOrderSerializer(serializers.ModelSerializer):
             'note', 'shipping_carrier', 'tracking_number', 'shipped_at',
             'received_at', 'inspected_at', 'paid_at', 'payment_status',
             'payment_method', 'payment_account', 'payment_note',
-            'price_dispute', 'price_dispute_reason', 'reject_reason',
+            'price_dispute', 'price_dispute_reason', 'reject_reason', 'final_price_confirmed', 'payment_retry_count',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['user', 'estimated_price', 'final_price', 'received_at', 
@@ -555,6 +558,9 @@ class RecycleOrderSerializer(serializers.ModelSerializer):
             'quoted': ['confirmed', 'shipped'],  # 已估价 -> 已确认 或 已寄出（如果同时填写了物流信息）
             'confirmed': ['shipped'],  # 已确认 -> 已寄出
             'inspected': ['completed'],  # 已检测 -> 已完成
+            'pending': ['cancelled'],
+            'quoted': ['cancelled'],
+            'confirmed': ['cancelled']
         }
         
         # 如果状态发生变化，检查是否允许
@@ -578,8 +584,17 @@ class RecycleOrderSerializer(serializers.ModelSerializer):
         
         # 确保联系信息被正确保存
         # 这些字段已经在fields中定义，应该可以正常更新
-        
-        return super().update(instance, validated_data)
+        updated_order = super().update(instance, validated_data)
+
+        # 自动：质检/完成后，生成官方验库存（避免重复）
+        if updated_order.status in ['inspected', 'completed']:
+            try:
+                create_verified_device_from_recycle_order(updated_order)
+            except Exception:
+                # 避免影响主流程，失败可在后台查看日志后手动触发
+                pass
+
+        return updated_order
 
 
 class VerifiedProductImageSerializer(serializers.ModelSerializer):
@@ -587,6 +602,49 @@ class VerifiedProductImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = VerifiedProductImage
         fields = ['id', 'image', 'is_primary']
+
+
+class VerifiedDeviceSerializer(serializers.ModelSerializer):
+    """官方验库存单品序列化器"""
+    category = CategorySerializer(read_only=True)
+    category_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    seller = UserSerializer(read_only=True)
+
+    class Meta:
+        model = VerifiedDevice
+        fields = [
+            'id', 'sn', 'imei', 'brand', 'model', 'storage', 'condition', 'status',
+            'location', 'barcode', 'cost_price', 'suggested_price',
+            'cover_image', 'detail_images', 'inspection_reports',
+            'inspection_result', 'inspection_date', 'inspection_staff', 'inspection_note',
+            'battery_health', 'screen_condition', 'repair_history',
+            'recycle_order', 'category', 'category_id', 'seller',
+            'linked_product', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['seller', 'linked_product', 'created_at', 'updated_at']
+
+    def validate(self, attrs):
+        category_id = attrs.get('category_id')
+        if category_id:
+            try:
+                attrs['category'] = Category.objects.get(id=category_id)
+            except Category.DoesNotExist:
+                raise serializers.ValidationError({'category_id': '分类不存在'})
+        return attrs
+
+    def create(self, validated_data):
+        validated_data.pop('category_id', None)
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            validated_data.setdefault('seller', request.user)
+        # 如果前端未录入 SN/IMEI，允许在演示模式下自动生成占位 SN，避免强制输入
+        if not validated_data.get('sn'):
+            validated_data['sn'] = f"AUTO-{uuid.uuid4().hex[:8].upper()}"
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data.pop('category_id', None)
+        return super().update(instance, validated_data)
 
 
 class VerifiedProductSerializer(serializers.ModelSerializer):

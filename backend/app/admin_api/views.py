@@ -9,10 +9,10 @@ from rest_framework.permissions import AllowAny
 from rest_framework import status
 from django.conf import settings
 from .models import AdminUser, AdminRole, AdminInspectionReport, AdminAuditQueueItem, AdminAuditLog, AdminRefreshToken, AdminTokenBlacklist
-from app.secondhand_app.models import RecycleOrder, VerifiedProduct, VerifiedOrder, Order, Shop, Category, Product, Message, Address
+from app.secondhand_app.models import RecycleOrder, VerifiedProduct, VerifiedOrder, Order, Shop, Category, Product, Message, Address, VerifiedDevice, create_verified_device_from_recycle_order
 from app.secondhand_app.alipay_client import AlipayClient
-from .serializers import AdminUserSerializer, RecycleOrderListSerializer, VerifiedProductListSerializer, AdminAuditQueueItemSerializer, ShopAdminSerializer
-from app.secondhand_app.serializers import OrderSerializer, VerifiedProductSerializer
+from .serializers import AdminUserSerializer, RecycleOrderListSerializer, VerifiedProductListSerializer, AdminAuditQueueItemSerializer, ShopAdminSerializer, VerifiedDeviceListSerializer
+from app.secondhand_app.serializers import OrderSerializer, VerifiedProductSerializer, VerifiedDeviceSerializer
 from .jwt import encode as jwt_encode, decode as jwt_decode
 from django.contrib.auth.hashers import check_password, make_password
 from django.views.decorators.csrf import csrf_exempt
@@ -410,6 +410,30 @@ class InspectionOrderDetailView(APIView):
             return Response({'success': False})
         rep = o.admin_reports.order_by('-id').first()
         profile = getattr(o.user, 'profile', None)
+        if rep:
+            report_data = {
+                'check_items': rep.check_items or {},
+                'remarks': rep.remarks or '',
+                'evidence': rep.evidence or [],
+                'overall_result': rep.overall_result or '',
+                'recommend_price': float(rep.recommend_price) if rep.recommend_price is not None else None,
+                'score': float(rep.score) if rep.score is not None else None,
+                'template_name': rep.template_name or '',
+                'template_version': rep.template_version or '',
+                'created_at': rep.created_at.isoformat() if rep.created_at else None
+            }
+        else:
+            report_data = {
+                'check_items': {},
+                'remarks': '',
+                'evidence': [],
+                'overall_result': '',
+                'recommend_price': None,
+                'score': None,
+                'template_name': '',
+                'template_version': '',
+                'created_at': None
+            }
         return Response({'success': True, 'item': {
             'id': o.id,
             'user': {
@@ -454,7 +478,7 @@ class InspectionOrderDetailView(APIView):
             'created_at': o.created_at.isoformat(),
             'updated_at': o.updated_at.isoformat(),
             # 质检报告
-            'report': {'check_items': (rep.check_items if rep else {}), 'remarks': (rep.remarks if rep else ''), 'created_at': (rep.created_at.isoformat() if rep else None)}
+            'report': report_data
         }})
     def put(self, request, order_id):
         admin = get_admin_from_request(request)
@@ -501,6 +525,11 @@ class InspectionOrderDetailView(APIView):
                 action='status_change', 
                 snapshot_json={'old_status': old_status, 'new_status': status_val, 'reject_reason': reject_reason}
             )
+            if o.status in ['inspected', 'completed']:
+                try:
+                    create_verified_device_from_recycle_order(o)
+                except Exception:
+                    pass
             return Response({'success': True})
         except RecycleOrder.DoesNotExist:
             return Response({'success': False})
@@ -512,6 +541,12 @@ class InspectionOrderDetailView(APIView):
             return Response({'detail': 'Forbidden'}, status=403)
         items = request.data.get('check_items', {})
         remarks = request.data.get('remarks', '')
+        evidence = request.data.get('evidence', [])
+        overall_result = (request.data.get('overall_result') or 'passed').strip() or 'passed'
+        template_name = (request.data.get('template_name') or 'default').strip() or 'default'
+        template_version = (request.data.get('template_version') or 'v1').strip() or 'v1'
+        recommend_price = request.data.get('recommend_price')
+        score = request.data.get('score')
         if isinstance(items, str):
             try:
                 items = json.loads(items)
@@ -519,11 +554,38 @@ class InspectionOrderDetailView(APIView):
                 return Response({'success': False, 'detail': '检测项目JSON解析失败'}, status=400)
         if not isinstance(items, dict):
             return Response({'success': False, 'detail': '检测项目必须为对象'}, status=400)
+        if isinstance(evidence, str):
+            try:
+                evidence = json.loads(evidence)
+            except Exception:
+                return Response({'success': False, 'detail': '佐证JSON解析失败'}, status=400)
+        if evidence is None:
+            evidence = []
+        if not isinstance(evidence, (list, tuple)):
+            return Response({'success': False, 'detail': '佐证必须为数组/列表'}, status=400)
+        try:
+            recommend_price = float(recommend_price) if recommend_price not in [None, ''] else None
+        except (TypeError, ValueError):
+            return Response({'success': False, 'detail': '推荐价格格式错误'}, status=400)
+        try:
+            score = float(score) if score not in [None, ''] else None
+        except (TypeError, ValueError):
+            return Response({'success': False, 'detail': '评分格式错误'}, status=400)
         try:
             o = RecycleOrder.objects.get(id=order_id)
         except RecycleOrder.DoesNotExist:
             return Response({'success': False})
-        AdminInspectionReport.objects.create(order=o, check_items=items, remarks=remarks)
+        AdminInspectionReport.objects.create(
+            order=o,
+            check_items=items,
+            remarks=remarks,
+            evidence=evidence,
+            overall_result=overall_result,
+            recommend_price=recommend_price,
+            score=score,
+            template_name=template_name,
+            template_version=template_version
+        )
         # 更新状态和质检时间
         if o.status in ['shipped', 'confirmed']:
             o.status = 'inspected'
@@ -533,7 +595,26 @@ class InspectionOrderDetailView(APIView):
             if not o.received_at:
                 o.received_at = timezone.now()
             o.save()
-        AdminAuditLog.objects.create(actor=admin, target_type='RecycleOrder', target_id=o.id, action='inspection_report', snapshot_json={'status': o.status, 'check_items_count': len(items)})
+            try:
+                create_verified_device_from_recycle_order(o)
+            except Exception:
+                pass
+        AdminAuditLog.objects.create(
+            actor=admin,
+            target_type='RecycleOrder',
+            target_id=o.id,
+            action='inspection_report',
+            snapshot_json={
+                'status': o.status,
+                'check_items_count': len(items),
+                'overall_result': overall_result,
+                'recommend_price': recommend_price,
+                'score': score,
+                'template_name': template_name,
+                'template_version': template_version,
+                'evidence_count': len(evidence)
+            }
+        )
         return Response({'success': True})
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -1082,6 +1163,230 @@ class AdminVerifiedProductUnpublishView(APIView):
         obj.removed_reason = request.data.get('reason', '')
         obj.save()
         return Response(VerifiedProductSerializer(obj, context={'request': request}).data)
+
+
+# 官方验设备（SN级库存）
+@method_decorator(csrf_exempt, name='dispatch')
+class CreateVerifiedDeviceFromRecycleOrderView(APIView):
+    """
+    手动从回收订单生成官方验库存（与自动生成互补）
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request, order_id):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['verified:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        try:
+            order = RecycleOrder.objects.get(id=order_id)
+        except RecycleOrder.DoesNotExist:
+            return Response({'detail': '订单不存在'}, status=404)
+
+        pre_exists = order.verified_devices.exists()
+        try:
+            device = create_verified_device_from_recycle_order(order)
+            AdminAuditLog.objects.create(
+                actor=admin,
+                target_type='RecycleOrder',
+                target_id=order.id,
+                action='create_verified_device',
+                snapshot_json={'device_id': getattr(device, 'id', None)}
+            )
+            serializer = VerifiedDeviceSerializer(device)
+            return Response(
+                {
+                    'detail': '已存在官方验库存' if pre_exists else '生成成功',
+                    'device': serializer.data
+                },
+                status=200 if pre_exists else 201
+            )
+        except Exception as e:
+            return Response({'detail': f'生成失败: {str(e)}'}, status=500)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminVerifiedDeviceView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['verified:read', 'verified:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        qs = VerifiedDevice.objects.all().order_by('-created_at')
+        search = request.GET.get('search') or request.GET.get('sn')
+        status_filter = request.GET.get('status')
+        if search:
+            qs = qs.filter(
+                models.Q(sn__icontains=search) |
+                models.Q(brand__icontains=search) |
+                models.Q(model__icontains=search)
+            )
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 20))
+        start = (page - 1) * page_size
+        end = start + page_size
+        total = qs.count()
+        serializer = VerifiedDeviceListSerializer(qs[start:end], many=True)
+        return Response({'count': total, 'results': serializer.data})
+
+    def post(self, request):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['verified:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        serializer = VerifiedDeviceSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            obj = serializer.save()
+            return Response(VerifiedDeviceSerializer(obj).data, status=201)
+        return Response(serializer.errors, status=400)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminVerifiedDeviceDetailView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get_object(self, pk):
+        return VerifiedDevice.objects.get(pk=pk)
+
+    def get(self, request, pk):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['verified:read', 'verified:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        try:
+            obj = self.get_object(pk)
+        except VerifiedDevice.DoesNotExist:
+            return Response({'detail': 'Not found'}, status=404)
+        return Response(VerifiedDeviceSerializer(obj).data)
+
+    def patch(self, request, pk):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['verified:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        try:
+            obj = self.get_object(pk)
+        except VerifiedDevice.DoesNotExist:
+            return Response({'detail': 'Not found'}, status=404)
+        serializer = VerifiedDeviceSerializer(obj, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminVerifiedDeviceListProductView(APIView):
+    """
+    一键上架：从设备生成官方验商品
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request, pk):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['verified:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        try:
+            device = VerifiedDevice.objects.get(pk=pk)
+        except VerifiedDevice.DoesNotExist:
+            return Response({'detail': '设备不存在'}, status=404)
+
+        price = request.data.get('price') or device.suggested_price
+        if not price:
+            return Response({'detail': '缺少售价'}, status=400)
+
+        product_data = {
+            'title': f"{device.brand} {device.model} {device.storage}".strip(),
+            'description': device.inspection_note or '官方质检设备',
+            'price': price,
+            'original_price': request.data.get('original_price') or None,
+            'condition': device.condition or 'good',
+            'status': 'active',
+            'location': device.location or '官方仓',
+            'contact_phone': request.data.get('contact_phone', ''),
+            'contact_wechat': request.data.get('contact_wechat', ''),
+            'brand': device.brand,
+            'model': device.model,
+            'storage': device.storage,
+            'battery_health': device.battery_health,
+            'inspection_result': device.inspection_result,
+            'inspection_date': device.inspection_date,
+            'inspection_staff': device.inspection_staff,
+            'inspection_note': device.inspection_note,
+            'cover_image': device.cover_image,
+            'detail_images': device.detail_images,
+            'inspection_reports': device.inspection_reports,
+            'stock': 1,
+            'tags': ['官方质检', f'SN:{device.sn}'],
+            'category_id': device.category.id if device.category else None,
+        }
+        serializer = VerifiedProductSerializer(data=product_data, context={'request': request})
+        if serializer.is_valid():
+            seller = device.seller or admin
+            product = serializer.save(seller=seller)
+            device.status = 'listed'
+            device.linked_product = product
+            device.save()
+            return Response({
+                'detail': '上架成功',
+                'product': VerifiedProductSerializer(product).data
+            }, status=201)
+        return Response(serializer.errors, status=400)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminVerifiedDeviceActionView(APIView):
+    """
+    设备状态快捷操作：lock / unlock / sold / remove / ready / repair
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request, pk, action):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['verified:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+        try:
+            device = VerifiedDevice.objects.get(pk=pk)
+        except VerifiedDevice.DoesNotExist:
+            return Response({'detail': '设备不存在'}, status=404)
+
+        target_status = None
+        if action == 'lock':
+            target_status = 'locked'
+        elif action == 'unlock':
+            target_status = 'ready'
+        elif action == 'sold':
+            target_status = 'sold'
+        elif action == 'remove':
+            target_status = 'removed'
+        elif action == 'ready':
+            target_status = 'ready'
+        elif action == 'repair':
+            target_status = 'repairing'
+        else:
+            return Response({'detail': '不支持的操作'}, status=400)
+
+        device.status = target_status
+        device.save(update_fields=['status', 'updated_at'])
+        return Response({'detail': '操作成功', 'status': target_status})
 # 回收商品相关视图
 @method_decorator(csrf_exempt, name='dispatch')
 class RecycledProductsView(APIView):

@@ -10,7 +10,10 @@ from .views import (
     MessagesAdminView, AddressesAdminView,
     AdminUploadImageView, AdminUploadReportView,
     AdminVerifiedProductListView, AdminVerifiedProductDetailView,
-    AdminVerifiedProductPublishView, AdminVerifiedProductUnpublishView
+    AdminVerifiedProductPublishView, AdminVerifiedProductUnpublishView,
+    # 新增：官方验设备库存
+    AdminVerifiedDeviceView, AdminVerifiedDeviceDetailView, AdminVerifiedDeviceListProductView, AdminVerifiedDeviceActionView,
+    CreateVerifiedDeviceFromRecycleOrderView
 )
 
 urlpatterns = [
@@ -33,6 +36,7 @@ urlpatterns = [
     path('inspection-orders/<int:order_id>/payment', InspectionOrderPaymentView.as_view()),
     path('inspection-orders/<int:order_id>/publish-verified', InspectionOrderPublishVerifiedView.as_view()),
     path('inspection-orders/batch-update', InspectionOrdersBatchUpdateView.as_view()),
+    path('recycle-orders/<int:order_id>/create-verified-device/', CreateVerifiedDeviceFromRecycleOrderView.as_view()),
     path('recycled-products', RecycledProductsView.as_view()),
     path('recycled-products/<int:item_id>/publish', RecycledProductsView.as_view()),
     path('recycled-products/<int:item_id>/stock', RecycledProductsView.as_view()),
@@ -44,6 +48,11 @@ urlpatterns = [
     path('verified-listings/<int:pk>/', AdminVerifiedProductDetailView.as_view()),
     path('verified-listings/<int:pk>/publish/', AdminVerifiedProductPublishView.as_view()),
     path('verified-listings/<int:pk>/unpublish/', AdminVerifiedProductUnpublishView.as_view()),
+    # 官方验设备（SN级库存）
+    path('verified-devices/', AdminVerifiedDeviceView.as_view()),
+    path('verified-devices/<int:pk>/', AdminVerifiedDeviceDetailView.as_view()),
+    path('verified-devices/<int:pk>/list-product/', AdminVerifiedDeviceListProductView.as_view()),
+    path('verified-devices/<int:pk>/<str:action>/', AdminVerifiedDeviceActionView.as_view()),
     # 旧的回收产品接口
     path('verified-listings', VerifiedListingsView.as_view()),
     path('verified-listings/<int:item_id>', VerifiedListingsView.as_view()),
