@@ -4,15 +4,15 @@
       <!-- 基础信息 -->
       <el-card shadow="never" class="card-block">
         <template #header>基础信息</template>
-        <el-form-item label="商品标题" prop="title">
-          <el-input v-model="form.title" placeholder="请输入商品标题" />
-        </el-form-item>
-        <el-form-item label="品牌" prop="brand">
-          <el-input v-model="form.brand" placeholder="如：苹果、华为" />
-        </el-form-item>
-        <el-form-item label="型号" prop="model">
-          <el-input v-model="form.model" placeholder="如：iPhone 13" />
-        </el-form-item>
+      <el-form-item label="商品标题" prop="title">
+        <el-input v-model="form.title" placeholder="请输入商品标题" />
+      </el-form-item>
+      <el-form-item label="品牌" prop="brand">
+        <el-input v-model="form.brand" placeholder="如：苹果、华为" />
+      </el-form-item>
+      <el-form-item label="型号" prop="model">
+        <el-input v-model="form.model" placeholder="如：iPhone 13" />
+      </el-form-item>
         <el-form-item label="分类" prop="category">
           <el-select v-model="form.category" placeholder="请选择分类">
             <el-option label="手机数码" value="phone" />
@@ -22,33 +22,33 @@
             <el-option label="耳机音响" value="audio" />
           </el-select>
         </el-form-item>
-        <el-form-item label="存储容量">
-          <el-input v-model="form.storage" placeholder="如：128GB" />
-        </el-form-item>
-        <el-form-item label="成色" prop="condition">
-          <el-select v-model="form.condition" style="width: 100%">
-            <el-option label="全新" value="new" />
-            <el-option label="99成新" value="like_new" />
-            <el-option label="95成新" value="good" />
+      <el-form-item label="存储容量">
+        <el-input v-model="form.storage" placeholder="如：128GB" />
+      </el-form-item>
+      <el-form-item label="成色" prop="condition">
+        <el-select v-model="form.condition" style="width: 100%">
+          <el-option label="全新" value="new" />
+          <el-option label="99成新" value="like_new" />
+          <el-option label="95成新" value="good" />
             <el-option label="9成新" value="fair" />
             <el-option label="8成新" value="poor" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="价格" prop="price">
+        </el-select>
+      </el-form-item>
+      <el-form-item label="价格" prop="price">
           <el-input-number v-model="form.price" :precision="2" :min="0.01" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="原价">
-          <el-input-number v-model="form.original_price" :precision="2" :min="0" style="width: 100%" />
-        </el-form-item>
+      </el-form-item>
+      <el-form-item label="原价">
+        <el-input-number v-model="form.original_price" :precision="2" :min="0" style="width: 100%" />
+      </el-form-item>
         <el-form-item label="库存" prop="stock">
           <el-input-number v-model="form.stock" :min="1" :max="9999" />
         </el-form-item>
         <el-form-item label="所在地" prop="location">
           <el-input v-model="form.location" placeholder="如：广东 深圳" />
         </el-form-item>
-        <el-form-item label="商品描述" prop="description">
-          <el-input v-model="form.description" type="textarea" :rows="4" placeholder="请输入商品描述" />
-        </el-form-item>
+      <el-form-item label="商品描述" prop="description">
+        <el-input v-model="form.description" type="textarea" :rows="4" placeholder="请输入商品描述" />
+      </el-form-item>
         <el-form-item label="标签">
           <el-select v-model="form.tags" multiple filterable allow-create default-first-option placeholder="选择或输入标签">
             <el-option label="官方质检" value="官方质检" />
