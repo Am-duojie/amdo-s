@@ -107,8 +107,20 @@ const routes = [
   },
   {
     path: '/recycle',
-    name: 'Recycle',
+    name: 'RecycleHome',
     component: () => import('@/pages/Recycle.vue'),
+    meta: { theme: 'yellow', hideSearch: false }
+  },
+  {
+    path: '/recycle/estimate',
+    name: 'RecycleEstimateWizard',
+    component: () => import('@/pages/RecycleEstimateWizard.vue'),
+    meta: { theme: 'yellow', hideSearch: false }
+  },
+  {
+    path: '/recycle/checkout',
+    name: 'RecycleCheckout',
+    component: () => import('@/pages/RecycleCheckout.vue'),
     meta: { theme: 'yellow', hideSearch: false }
   },
   {
