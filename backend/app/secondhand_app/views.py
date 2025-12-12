@@ -3,8 +3,11 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
+from rest_framework.views import APIView
 from django.contrib.auth.models import User
 from django.db.models import Q, Count
+from django.core.cache import cache
+import re
 import logging
 
 logger = logging.getLogger(__name__)
@@ -12,6 +15,7 @@ from .models import (
     Category, Product, ProductImage, Order, Message, Favorite, Address, UserProfile, RecycleOrder,
     VerifiedProduct, VerifiedProductImage, VerifiedOrder, VerifiedFavorite, Wallet, WalletTransaction
 )
+from .price_service import price_service, LOCAL_PRICE_TABLE
 from .serializers import (
     UserSerializer, UserRegisterSerializer, UserUpdateSerializer,
     CategorySerializer, ProductSerializer, OrderSerializer,
@@ -964,6 +968,94 @@ class AddressViewSet(viewsets.ModelViewSet):
         return Address.objects.filter(user=self.request.user)
 
 
+class RecycleCatalogView(APIView):
+    """
+    回收机型目录（公开接口）
+    基于本地价目表/智能估价模型的数据源生成，确保可估价即能选中
+    """
+    permission_classes = []
+    authentication_classes = []
+
+    def get(self, request):
+        device_type = request.query_params.get('device_type')
+        brand = request.query_params.get('brand')
+        model = request.query_params.get('model')
+        q = (request.query_params.get('q') or '').strip().lower()
+
+        cache_key = f"recycle_catalog::{device_type or 'all'}::{brand or 'all'}::{model or 'all'}::{q}"
+        cached = cache.get(cache_key)
+        if cached:
+            return Response(cached)
+
+        payload = self._build_catalog(device_type, brand, model, q)
+        cache.set(cache_key, payload, 900)  # 15分钟缓存
+        return Response(payload)
+
+    def _build_catalog(self, device_type: str | None, brand: str | None, model: str | None, q: str):
+        device_types = list(LOCAL_PRICE_TABLE.keys())
+        if device_type:
+            device_types = [dt for dt in device_types if dt == device_type]
+
+        brands_payload = {}
+        models_payload = {}
+
+        for dt in device_types:
+            dt_data = LOCAL_PRICE_TABLE.get(dt, {}) or {}
+            brand_items = dt_data.items()
+
+            if brand:
+                brand_items = [(brand, dt_data.get(brand, {}))] if brand in dt_data else []
+
+            current_brands = []
+            for brand_name, model_dict in brand_items:
+                model_list = []
+                for model_name, storage_map in (model_dict or {}).items():
+                    if model and model_name != model:
+                        continue
+                    if q and q not in f"{brand_name} {model_name}".lower():
+                        continue
+
+                    storages = sorted(storage_map.keys(), key=self._storage_weight)
+                    model_list.append({
+                        "name": model_name,
+                        "storages": storages,
+                        "series": self._derive_series(model_name),
+                    })
+
+                if model_list:
+                    current_brands.append(brand_name)
+                    models_payload.setdefault(dt, {})[brand_name] = sorted(model_list, key=lambda x: x["name"])
+
+            if current_brands:
+                brands_payload[dt] = sorted(current_brands)
+
+        return {
+            "device_types": list(LOCAL_PRICE_TABLE.keys()),
+            "brands": brands_payload,
+            "models": models_payload,
+        }
+
+    @staticmethod
+    def _derive_series(model_name: str) -> str | None:
+        m = re.search(r'(\d{2})', model_name)
+        if m:
+            return f"{m.group(1)}系列"
+        return None
+
+    @staticmethod
+    def _storage_weight(s: str) -> float:
+        """
+        将容量字符串转为可比较的数字，便于排序
+        256GB -> 256, 1TB -> 1024
+        """
+        m = re.match(r'(\d+(?:\.\d+)?)(TB|GB)', s.upper())
+        if not m:
+            return 0
+        num = float(m.group(1))
+        unit = m.group(2)
+        return num * (1024 if unit == 'TB' else 1)
+
+
 class RecycleOrderViewSet(viewsets.ModelViewSet):
     """回收订单视图集"""
     queryset = RecycleOrder.objects.all()
@@ -1013,7 +1105,6 @@ class RecycleOrderViewSet(viewsets.ModelViewSet):
             return Response({'error': '缺少必要参数'}, status=status.HTTP_400_BAD_REQUEST)
 
         # 使用价格服务进行估价（支持第三方API和智能模型）
-        from .price_service import price_service
         estimated_price, from_api = price_service.estimate(device_type, brand, model, storage, condition)
         
         # 如果价格服务返回0，尝试使用智能估价模型

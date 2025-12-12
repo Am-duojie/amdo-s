@@ -1,5 +1,4 @@
 <!-- src/pages/Recycle.vue  (改造成：回收主页 / 选机型入口页) -->
-import { DEVICE_CATALOG, DEVICE_TYPES } from "@/data/deviceCatalog.js";
 <template>
   <div class="recycle-home">
     <div class="container">
@@ -55,7 +54,12 @@ import { DEVICE_CATALOG, DEVICE_TYPES } from "@/data/deviceCatalog.js";
 
         <!-- 右侧：机型选择器 -->
         <section class="right">
-          <el-card shadow="never" class="card picker">
+          <el-card
+            shadow="never"
+            class="card picker"
+            v-loading="loadingCatalog"
+            element-loading-text="正在加载机型..."
+          >
             <div class="picker-header">
               <div class="picker-title">机型选择</div>
 
@@ -72,6 +76,15 @@ import { DEVICE_CATALOG, DEVICE_TYPES } from "@/data/deviceCatalog.js";
                 </template>
               </el-input>
             </div>
+
+            <el-alert
+              v-if="loadError"
+              :title="loadError"
+              type="error"
+              :closable="false"
+              show-icon
+              style="margin-bottom: 8px"
+            />
 
             <el-tabs v-model="activeDeviceType" class="device-tabs" @tab-change="onDeviceTypeTabChange">
               <el-tab-pane v-for="t in primaryTabs" :key="t" :label="t" :name="t" />
@@ -94,7 +107,7 @@ import { DEVICE_CATALOG, DEVICE_TYPES } from "@/data/deviceCatalog.js";
                   </button>
 
                   <div v-if="brands.length === 0" class="empty">
-                    当前大类暂无品牌数据
+                    {{ loadError ? "品牌列表加载失败" : "当前大类暂无品牌数据" }}
                   </div>
                 </el-scrollbar>
               </div>
@@ -133,7 +146,7 @@ import { DEVICE_CATALOG, DEVICE_TYPES } from "@/data/deviceCatalog.js";
                   </button>
 
                   <div v-if="models.length === 0" class="empty models-empty">
-                    {{ keyword ? "没有匹配的机型" : "请选择品牌后查看机型" }}
+                    {{ loadError ? "机型数据加载失败" : keyword ? "没有匹配的机型" : "请选择品牌后查看机型" }}
                   </div>
                 </el-scrollbar>
 
@@ -153,24 +166,28 @@ import { DEVICE_CATALOG, DEVICE_TYPES } from "@/data/deviceCatalog.js";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Search } from "@element-plus/icons-vue";
-import { DEVICE_CATALOG, DEVICE_TYPES, type DeviceType } from "@/data/deviceCatalog";
+import { ElMessage } from "element-plus";
+import { getRecycleCatalog, type RecycleCatalogResponse } from "@/api/recycle";
 import { useRecycleDraftStore } from "@/stores/recycleDraft";
+
+type CatalogModel = { name: string; storages?: string[]; series?: string | null };
 
 const router = useRouter();
 const route = useRoute();
 const draft = useRecycleDraftStore();
 
-const deviceTypes = DEVICE_TYPES;
-const primaryTabs = computed(() => deviceTypes.slice(0, 5));
+const catalog = ref<RecycleCatalogResponse>({ device_types: [], brands: {}, models: {} });
+const loadingCatalog = ref(false);
+const loadError = ref<string>("");
 
 const selection = computed(() => draft.selection);
-
 const activeDeviceType = ref<string>(selection.value.device_type || "手机");
 const keyword = ref<string>(selection.value.q || "");
 
-const catalog = computed(() => DEVICE_CATALOG[activeDeviceType.value as DeviceType] || { brands: {} });
+const deviceTypes = computed(() => (catalog.value.device_types?.length ? catalog.value.device_types : ["手机"]));
+const primaryTabs = computed(() => deviceTypes.value.slice(0, 5));
 
-const brands = computed(() => Object.keys(catalog.value.brands || {}));
+const brands = computed(() => catalog.value.brands?.[activeDeviceType.value] || []);
 
 const selectedBrand = computed(() => {
   const b = selection.value.brand;
@@ -179,14 +196,16 @@ const selectedBrand = computed(() => {
 });
 
 const allModelsInType = computed(() => {
-  const out: Array<{ brand: string; model: string }> = [];
-  Object.entries(catalog.value.brands || {}).forEach(([b, ms]) => {
-    ms.forEach((m) => out.push({ brand: b, model: m }));
+  const out: Array<{ brand: string; model: string; series?: string | null }> = [];
+  const map = catalog.value.models?.[activeDeviceType.value] || {};
+  Object.entries(map).forEach(([b, ms]) => {
+    ms.forEach((m) => out.push({ brand: b, model: m.name, series: m.series }));
   });
   return out;
 });
 
-function toSeries(modelName: string): string | null {
+function toSeries(modelName: string, provided?: string | null): string | null {
+  if (provided) return provided;
   const m = modelName.match(/(\d{2})/);
   if (m?.[1]) return `${m[1]}系列`;
   return null;
@@ -194,10 +213,10 @@ function toSeries(modelName: string): string | null {
 
 const seriesOptions = computed(() => {
   if (!selectedBrand.value || keyword.value.trim()) return [];
-  const models = catalog.value.brands[selectedBrand.value] || [];
+  const models = catalog.value.models?.[activeDeviceType.value]?.[selectedBrand.value] || [];
   const set = new Set<string>();
   models.forEach((m) => {
-    const s = toSeries(m);
+    const s = toSeries(m.name, m.series);
     if (s) set.add(s);
   });
   const arr = Array.from(set);
@@ -217,13 +236,13 @@ const models = computed(() => {
 
   if (!selectedBrand.value) return [];
 
-  const list = catalog.value.brands[selectedBrand.value] || [];
+  const list: CatalogModel[] = catalog.value.models?.[activeDeviceType.value]?.[selectedBrand.value] || [];
   const s = selection.value.series;
 
-  if (!s || s === "全部") return list;
+  if (!s || s === "全部") return list.map((m) => m.name);
 
   const n = s.replace("系列", "");
-  return list.filter((m) => m.includes(n));
+  return list.filter((m) => (m.series && m.series.includes(n)) || m.name.includes(n)).map((m) => m.name);
 });
 
 const syncingFromRoute = ref(false);
@@ -243,7 +262,7 @@ function applyFromRoute() {
   syncingFromRoute.value = true;
   const q = route.query;
 
-  const device_type = typeof q.device_type === "string" ? q.device_type : "手机";
+  const device_type = typeof q.device_type === "string" ? q.device_type : activeDeviceType.value || "手机";
   const brand = typeof q.brand === "string" ? q.brand : undefined;
   const series = typeof q.series === "string" ? q.series : "全部";
   const kw = typeof q.q === "string" ? q.q : "";
@@ -253,6 +272,32 @@ function applyFromRoute() {
   draft.setSelection({ device_type, brand, series, q: kw });
 
   syncingFromRoute.value = false;
+}
+
+function ensureSelection() {
+  if (!deviceTypes.value.includes(activeDeviceType.value) && deviceTypes.value.length) {
+    activeDeviceType.value = deviceTypes.value[0];
+    draft.setSelection({ device_type: activeDeviceType.value });
+  }
+  if (brands.value.length && (!selection.value.brand || !brands.value.includes(selection.value.brand))) {
+    draft.setSelection({ brand: brands.value[0] });
+  }
+}
+
+async function fetchCatalog(params?: { device_type?: string; brand?: string; model?: string }) {
+  loadingCatalog.value = true;
+  loadError.value = "";
+  try {
+    const { data } = await getRecycleCatalog(params);
+    catalog.value = data || { device_types: [], brands: {}, models: {} };
+    ensureSelection();
+  } catch (error: any) {
+    loadError.value = error?.response?.data?.detail || error?.message || "获取机型数据失败";
+    catalog.value = { device_types: [], brands: {}, models: {} };
+    ElMessage.error(loadError.value);
+  } finally {
+    loadingCatalog.value = false;
+  }
 }
 
 watch(
@@ -266,18 +311,19 @@ watch(
 watch(activeDeviceType, (v) => {
   if (syncingFromRoute.value) return;
   draft.setSelection({ device_type: v });
-
-  if (brands.value.length) draft.setSelection({ brand: brands.value[0] });
+  ensureSelection();
   syncQuery();
 });
 
-onMounted(() => {
+onMounted(async () => {
   if (Object.keys(route.query || {}).length) {
     applyFromRoute();
-  } else {
-    if (brands.value.length) draft.setSelection({ brand: brands.value[0] });
-    syncQuery();
   }
+  await fetchCatalog();
+  if (!selection.value.brand && brands.value.length) {
+    draft.setSelection({ brand: brands.value[0] });
+  }
+  syncQuery();
 });
 
 function pickDeviceType(t: string) {

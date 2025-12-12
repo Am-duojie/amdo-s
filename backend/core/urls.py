@@ -38,6 +38,7 @@ def api_root(request):
 urlpatterns = [
     path('', api_root, name='api_root'),
     path('admin/', admin.site.urls),
+    path('api/recycle-catalog/', views.RecycleCatalogView.as_view(), name='recycle_catalog'),
     path('api/', include(router.urls)),
     path('admin-api/', include('app.admin_api.urls')),
     # 使用SimpleJWT进行认证

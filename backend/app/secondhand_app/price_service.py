@@ -10,6 +10,84 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
+# 尝试加载本地价格模型数据（手机价目表）
+try:
+    from .price_model import price_model  # type: ignore
+    PHONE_PRICE_DATABASE = getattr(price_model, 'price_database', {})
+except Exception as exc:  # pragma: no cover - 兜底
+    logger.warning(f"加载本地价格模型失败: {exc}")
+    price_model = None  # type: ignore
+    PHONE_PRICE_DATABASE: Dict = {}
+
+# 默认本地价格表（用于估价与目录下发）
+DEFAULT_LOCAL_PRICE_TABLE = {
+    '手机': {
+        '苹果': {
+            'iPhone 15 Pro Max': {'128GB': 6500, '256GB': 7200, '512GB': 8500, '1TB': 10000},
+            'iPhone 15 Pro': {'128GB': 5500, '256GB': 6200, '512GB': 7500},
+            'iPhone 15': {'128GB': 4500, '256GB': 5200, '512GB': 6500},
+            'iPhone 14 Pro Max': {'128GB': 5500, '256GB': 6200, '512GB': 7500, '1TB': 9000},
+            'iPhone 14 Pro': {'128GB': 4800, '256GB': 5500, '512GB': 6800},
+            'iPhone 14': {'128GB': 3800, '256GB': 4500, '512GB': 5800},
+            'iPhone 13 Pro Max': {'128GB': 4500, '256GB': 5200, '512GB': 6500, '1TB': 8000},
+            'iPhone 13 Pro': {'128GB': 4000, '256GB': 4700, '512GB': 6000},
+            'iPhone 13': {'128GB': 3200, '256GB': 3900, '512GB': 5200},
+        },
+        '华为': {
+            'Mate 60 Pro': {'256GB': 4500, '512GB': 5500, '1TB': 6500},
+            'Mate 60': {'256GB': 3800, '512GB': 4800},
+            'P60 Pro': {'256GB': 3500, '512GB': 4500},
+            'P60': {'128GB': 2800, '256GB': 3500},
+        },
+        '小米': {
+            '小米14 Pro': {'256GB': 2800, '512GB': 3500, '1TB': 4200},
+            '小米14': {'256GB': 2200, '512GB': 2800},
+            '小米13 Ultra': {'256GB': 3000, '512GB': 3800},
+            '小米13': {'128GB': 1800, '256GB': 2400, '512GB': 3000},
+        },
+        'vivo': {
+            'X100 Pro': {'256GB': 3200, '512GB': 4000},
+            'X100': {'256GB': 2500, '512GB': 3200},
+        },
+        'OPPO': {
+            'Find X6 Pro': {'256GB': 3000, '512GB': 3800},
+            'Find X6': {'256GB': 2400, '512GB': 3000},
+        },
+    },
+    '平板': {
+        '苹果': {
+            'iPad Pro 12.9': {'128GB': 4500, '256GB': 5500, '512GB': 7000, '1TB': 9000},
+            'iPad Pro 11': {'128GB': 3500, '256GB': 4500, '512GB': 6000, '1TB': 8000},
+            'iPad Air': {'64GB': 2500, '256GB': 3500},
+            'iPad': {'64GB': 1800, '256GB': 2800},
+        },
+        '华为': {
+            'MatePad Pro': {'128GB': 2500, '256GB': 3200},
+            'MatePad': {'64GB': 1200, '128GB': 1800},
+        },
+    },
+    '笔记本': {
+        '苹果': {
+            'MacBook Pro 16': {'512GB': 8000, '1TB': 10000, '2TB': 12000},
+            'MacBook Pro 14': {'512GB': 7000, '1TB': 9000, '2TB': 11000},
+            'MacBook Air': {'256GB': 5500, '512GB': 7000, '1TB': 9000},
+        },
+        '联想': {
+            'ThinkPad X1': {'512GB': 4500, '1TB': 5500},
+            '小新16': {'512GB': 3000, '1TB': 4000},
+        },
+    },
+}
+
+# 合并价格模型中的手机价目表，确保目录与估价数据源一致
+PHONE_PRICE_TABLE = {**DEFAULT_LOCAL_PRICE_TABLE.get('手机', {})}
+for _brand, _models in PHONE_PRICE_DATABASE.items():
+    merged_models = PHONE_PRICE_TABLE.get(_brand, {}).copy()
+    merged_models.update(_models)
+    PHONE_PRICE_TABLE[_brand] = merged_models
+
+LOCAL_PRICE_TABLE = {**DEFAULT_LOCAL_PRICE_TABLE, '手机': PHONE_PRICE_TABLE}
+
 # 可选：启用爬取服务（仅供学习研究，不推荐用于生产环境）
 ENABLE_SCRAPER = getattr(settings, 'ENABLE_PRICE_SCRAPER', False)
 if ENABLE_SCRAPER:
@@ -285,9 +363,8 @@ class PriceEstimateService:
         """从本地价格表获取价格"""
         # 优先使用智能估价模型
         try:
-            from .price_model import price_model
-            if device_type == '手机':
-                price = price_model.estimate(brand, model, storage, condition)
+            if price_model and device_type == '手机':  # type: ignore
+                price = price_model.estimate(brand, model, storage, condition)  # type: ignore
                 if price > 0:
                     logger.info(f"使用智能估价模型: {brand} {model} {storage} = {price}")
                     return price
@@ -295,64 +372,7 @@ class PriceEstimateService:
             logger.warning(f"智能估价模型失败: {e}，降级到基础价格表")
         
         # 降级到基础价格表
-        base_prices = {
-            '手机': {
-                '苹果': {
-                    'iPhone 15 Pro Max': {'128GB': 6500, '256GB': 7200, '512GB': 8500, '1TB': 10000},
-                    'iPhone 15 Pro': {'128GB': 5500, '256GB': 6200, '512GB': 7500},
-                    'iPhone 15': {'128GB': 4500, '256GB': 5200, '512GB': 6500},
-                    'iPhone 14 Pro Max': {'128GB': 5500, '256GB': 6200, '512GB': 7500, '1TB': 9000},
-                    'iPhone 14 Pro': {'128GB': 4800, '256GB': 5500, '512GB': 6800},
-                    'iPhone 14': {'128GB': 3800, '256GB': 4500, '512GB': 5800},
-                    'iPhone 13 Pro Max': {'128GB': 4500, '256GB': 5200, '512GB': 6500, '1TB': 8000},
-                    'iPhone 13 Pro': {'128GB': 4000, '256GB': 4700, '512GB': 6000},
-                    'iPhone 13': {'128GB': 3200, '256GB': 3900, '512GB': 5200},
-                },
-                '华为': {
-                    'Mate 60 Pro': {'256GB': 4500, '512GB': 5500, '1TB': 6500},
-                    'Mate 60': {'256GB': 3800, '512GB': 4800},
-                    'P60 Pro': {'256GB': 3500, '512GB': 4500},
-                    'P60': {'128GB': 2800, '256GB': 3500},
-                },
-                '小米': {
-                    '小米14 Pro': {'256GB': 2800, '512GB': 3500, '1TB': 4200},
-                    '小米14': {'256GB': 2200, '512GB': 2800},
-                    '小米13 Ultra': {'256GB': 3000, '512GB': 3800},
-                    '小米13': {'128GB': 1800, '256GB': 2400, '512GB': 3000},
-                },
-                'vivo': {
-                    'X100 Pro': {'256GB': 3200, '512GB': 4000},
-                    'X100': {'256GB': 2500, '512GB': 3200},
-                },
-                'OPPO': {
-                    'Find X6 Pro': {'256GB': 3000, '512GB': 3800},
-                    'Find X6': {'256GB': 2400, '512GB': 3000},
-                },
-            },
-            '平板': {
-                '苹果': {
-                    'iPad Pro 12.9': {'128GB': 4500, '256GB': 5500, '512GB': 7000, '1TB': 9000},
-                    'iPad Pro 11': {'128GB': 3500, '256GB': 4500, '512GB': 6000, '1TB': 8000},
-                    'iPad Air': {'64GB': 2500, '256GB': 3500},
-                    'iPad': {'64GB': 1800, '256GB': 2800},
-                },
-                '华为': {
-                    'MatePad Pro': {'128GB': 2500, '256GB': 3200},
-                    'MatePad': {'64GB': 1200, '128GB': 1800},
-                },
-            },
-            '笔记本': {
-                '苹果': {
-                    'MacBook Pro 16': {'512GB': 8000, '1TB': 10000, '2TB': 12000},
-                    'MacBook Pro 14': {'512GB': 7000, '1TB': 9000, '2TB': 11000},
-                    'MacBook Air': {'256GB': 5500, '512GB': 7000, '1TB': 9000},
-                },
-                '联想': {
-                    'ThinkPad X1': {'512GB': 4500, '1TB': 5500},
-                    '小新16': {'512GB': 3000, '1TB': 4000},
-                },
-            },
-        }
+        base_prices = LOCAL_PRICE_TABLE
         
         # 获取基础价格
         try:
