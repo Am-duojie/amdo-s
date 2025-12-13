@@ -9,7 +9,7 @@
             <div class="hero-main">
               <div class="hero-subtitle">回收估价</div>
               <div class="hero-title">选择设备，填写估价信息</div>
-              <div class="hero-desc">先选机型 → 进入 13 步“估价信息”问卷 → 再提交回收订单</div>
+              <div class="hero-desc">先选机型 → 进入 13 步"估价信息"问卷 → 再提交回收订单</div>
             </div>
 
             <div class="hero-pills">
@@ -17,25 +17,6 @@
               <el-tag round>极速打款</el-tag>
               <el-tag round>线上估价</el-tag>
               <el-tag round>透明复检</el-tag>
-            </div>
-          </el-card>
-
-          <el-card shadow="never" class="card">
-            <div class="card-title">选择你要回收的设备</div>
-            <div class="card-sub">从大类开始，按品牌与机型进一步选择</div>
-
-            <div class="category-grid">
-              <button
-                v-for="t in deviceTypes"
-                :key="t"
-                class="category-item"
-                :class="{ active: selection.device_type === t }"
-                type="button"
-                @click="pickDeviceType(t)"
-              >
-                <span class="dot" />
-                <span class="text">{{ t }}</span>
-              </button>
             </div>
           </el-card>
 
@@ -62,7 +43,19 @@
           >
             <div class="picker-header">
               <div class="picker-title">机型选择</div>
+              <div class="picker-subtitle">从大类开始，按品牌与机型进一步选择</div>
+            </div>
 
+            <el-alert
+              v-if="loadError"
+              :title="loadError"
+              type="error"
+              :closable="false"
+              show-icon
+              class="error-alert"
+            />
+
+            <div class="search-section">
               <el-input
                 v-model="keyword"
                 clearable
@@ -76,15 +69,6 @@
                 </template>
               </el-input>
             </div>
-
-            <el-alert
-              v-if="loadError"
-              :title="loadError"
-              type="error"
-              :closable="false"
-              show-icon
-              style="margin-bottom: 8px"
-            />
 
             <el-tabs v-model="activeDeviceType" class="device-tabs" @tab-change="onDeviceTypeTabChange">
               <el-tab-pane v-for="t in primaryTabs" :key="t" :label="t" :name="t" />
@@ -369,60 +353,338 @@ function quickToModel(device_type: string, brand: string, model: string) {
 </script>
 
 <style scoped>
-.recycle-home { background: #f6f7fb; min-height: 100vh; }
-.container { max-width: 1200px; margin: 0 auto; padding: 18px; }
-.grid { display: grid; grid-template-columns: 520px 1fr; gap: 16px; }
-.card { border-radius: 18px; border: 1px solid #e6e8ee; }
-.left .card + .card { margin-top: 14px; }
+.recycle-home { 
+  background: var(--bg-page, #f6f7fb); 
+  min-height: 100vh; 
+  padding-bottom: 24px;
+}
 
-.hero-main { padding: 8px 4px 10px; }
-.hero-subtitle { color: #6b7280; font-size: 12px; }
-.hero-title { font-size: 22px; font-weight: 800; margin-top: 6px; }
-.hero-desc { color: #6b7280; margin-top: 8px; font-size: 13px; line-height: 1.4; }
-.hero-pills { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 10px; }
+.container { 
+  max-width: 1200px; 
+  margin: 0 auto; 
+  padding: 24px 20px; 
+}
 
-.card-title { font-weight: 800; color: #111827; }
-.card-sub { color: #6b7280; margin-top: 6px; font-size: 12px; }
+.grid { 
+  display: grid; 
+  grid-template-columns: 400px 1fr; 
+  gap: 20px; 
+}
 
-.category-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
-.category-item { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 14px; background: #f7f8fb; border: 1px solid #eef0f4; cursor: pointer; }
-.category-item.active { background: #fff; border-color: #111827; box-shadow: 0 0 0 1px #111827 inset; }
-.dot { width: 10px; height: 10px; border-radius: 999px; background: #d1d5db; }
-.text { font-weight: 700; }
+.card { 
+  border-radius: var(--radius-lg, 18px); 
+  border: 1px solid #e6e8ee; 
+  background: var(--bg-white, #fff);
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(0,0,0,0.04));
+}
 
-.hot { display: flex; justify-content: space-between; align-items: center; }
-.hot-model { margin-top: 6px; font-weight: 700; }
-.hot-tip { margin-top: 6px; font-size: 12px; color: #6b7280; }
+.left .card + .card { 
+  margin-top: 16px; 
+}
 
-.picker { padding-bottom: 2px; }
-.picker-header { display: grid; grid-template-columns: 96px 1fr; gap: 12px; align-items: center; }
-.picker-title { font-weight: 900; font-size: 14px; }
-.device-tabs { margin-top: 12px; }
+/* Hero 卡片 */
+.hero-main { 
+  padding: 20px 20px 16px; 
+}
 
-.picker-body { display: grid; grid-template-columns: 180px 1fr; gap: 12px; margin-top: 12px; }
-.col-title { font-weight: 800; margin-bottom: 10px; color: #111827; }
+.hero-subtitle { 
+  color: var(--text-light, #6b7280); 
+  font-size: 12px; 
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 
-.brand-item { width: 100%; text-align: center; padding: 10px 12px; border-radius: 12px; border: 1px solid #e6e8ee; background: #fff; cursor: pointer; margin-bottom: 10px; }
-.brand-item:hover { background: #f7f8fb; }
-.brand-item.active { background: #111827; color: #fff; border-color: #111827; }
+.hero-title { 
+  font-size: 24px; 
+  font-weight: 800; 
+  margin-top: 8px; 
+  color: var(--text-primary, #111827);
+  line-height: 1.3;
+}
 
-.series-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-.series-label { color: #6b7280; font-size: 12px; }
-.series-chips { display: flex; gap: 8px; flex-wrap: wrap; }
-.chip { padding: 7px 12px; border-radius: 999px; background: #f3f4f6; border: 1px solid #e5e7eb; cursor: pointer; }
-.chip.active { background: #111827; color: #fff; border-color: #111827; }
+.hero-desc { 
+  color: var(--text-secondary, #6b7280); 
+  margin-top: 12px; 
+  font-size: 13px; 
+  line-height: 1.6; 
+}
 
-.model-hint { color: #6b7280; font-size: 12px; margin: 6px 0 8px; }
+.hero-pills { 
+  display: flex; 
+  gap: 8px; 
+  flex-wrap: wrap; 
+  padding-top: 16px; 
+  margin-top: 16px;
+  border-top: 1px solid #f0f0f0;
+}
 
-.model-item { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 14px; border: 1px solid #e6e8ee; background: #f9fafb; cursor: pointer; margin-bottom: 10px; }
-.model-item:hover { background: #f3f4f6; }
-.radio { width: 12px; height: 12px; border-radius: 999px; background: #d1d5db; }
-.model-name { flex: 1; font-weight: 700; text-align: left; }
-.arrow { color: #9ca3af; font-size: 18px; }
+/* 通用卡片标题 */
+.card-title { 
+  font-weight: 800; 
+  color: var(--text-primary, #111827); 
+  font-size: 16px;
+}
 
-.picker-foot { margin-top: 10px; padding: 12px; border-radius: 14px; background: #f7f8fb; color: #374151; font-size: 12px; border: 1px solid #eef0f4; }
-.empty { padding: 12px; color: #6b7280; font-size: 12px; text-align: center; }
-.models-empty { margin-top: 12px; }
+.card-sub { 
+  color: var(--text-secondary, #6b7280); 
+  margin-top: 6px; 
+  font-size: 12px; 
+}
 
-@media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+/* 热门估价卡片 */
+.hot { 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  padding: 20px;
+}
+
+.hot-left {
+  flex: 1;
+}
+
+.hot-model { 
+  margin-top: 8px; 
+  font-weight: 700; 
+  font-size: 16px;
+  color: var(--text-primary, #111827);
+}
+
+.hot-tip { 
+  margin-top: 6px; 
+  font-size: 12px; 
+  color: var(--text-light, #6b7280); 
+}
+
+/* 机型选择器 */
+.picker { 
+  padding: 20px; 
+}
+
+.picker-header {
+  margin-bottom: 16px;
+}
+
+.picker-title { 
+  font-weight: 800; 
+  font-size: 18px; 
+  color: var(--text-primary, #111827);
+  margin-bottom: 6px;
+}
+
+.picker-subtitle {
+  color: var(--text-secondary, #6b7280);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.error-alert {
+  margin-bottom: 16px;
+}
+
+.search-section {
+  margin-bottom: 16px;
+}
+
+.device-tabs { 
+  margin-bottom: 16px; 
+}
+
+.picker-body { 
+  display: grid; 
+  grid-template-columns: 180px 1fr; 
+  gap: 16px; 
+}
+
+.col-title { 
+  font-weight: 800; 
+  margin-bottom: 12px; 
+  color: var(--text-primary, #111827); 
+  font-size: 14px;
+}
+
+/* 品牌列表 */
+.brand-item { 
+  width: 100%; 
+  text-align: center; 
+  padding: 12px 16px; 
+  border-radius: var(--radius-md, 12px); 
+  border: 1px solid #e6e8ee; 
+  background: var(--bg-white, #fff); 
+  cursor: pointer; 
+  margin-bottom: 8px; 
+  transition: all 0.2s ease;
+  font-size: 14px;
+  color: var(--text-primary, #111827);
+}
+
+.brand-item:hover { 
+  background: #f7f8fb; 
+  border-color: var(--el-color-primary, #ff6a00);
+}
+
+.brand-item.active { 
+  background: var(--el-color-primary, #ff6a00); 
+  color: #fff; 
+  border-color: var(--el-color-primary, #ff6a00);
+  font-weight: 600;
+}
+
+/* 系列筛选 */
+.series-row { 
+  display: flex; 
+  align-items: center; 
+  gap: 10px; 
+  margin-bottom: 12px; 
+  flex-wrap: wrap; 
+}
+
+.series-label { 
+  color: var(--text-secondary, #6b7280); 
+  font-size: 13px; 
+  font-weight: 500;
+}
+
+.series-chips { 
+  display: flex; 
+  gap: 8px; 
+  flex-wrap: wrap; 
+}
+
+.chip { 
+  padding: 6px 14px; 
+  border-radius: var(--radius-full, 999px); 
+  background: #f3f4f6; 
+  border: 1px solid #e5e7eb; 
+  cursor: pointer; 
+  transition: all 0.2s ease;
+  font-size: 12px;
+  color: var(--text-primary, #111827);
+}
+
+.chip:hover {
+  background: #e5e7eb;
+}
+
+.chip.active { 
+  background: var(--el-color-primary, #ff6a00); 
+  color: #fff; 
+  border-color: var(--el-color-primary, #ff6a00);
+  font-weight: 500;
+}
+
+.model-hint { 
+  color: var(--text-light, #6b7280); 
+  font-size: 12px; 
+  margin: 0 0 12px; 
+}
+
+/* 机型列表 */
+.model-item { 
+  width: 100%; 
+  display: flex; 
+  align-items: center; 
+  gap: 12px; 
+  padding: 14px 16px; 
+  border-radius: var(--radius-md, 12px); 
+  border: 1px solid #e6e8ee; 
+  background: var(--bg-white, #fff); 
+  cursor: pointer; 
+  margin-bottom: 8px; 
+  transition: all 0.2s ease;
+}
+
+.model-item:hover { 
+  background: #f7f8fb; 
+  border-color: var(--el-color-primary, #ff6a00);
+  transform: translateX(2px);
+}
+
+.radio { 
+  width: 14px; 
+  height: 14px; 
+  border-radius: 50%; 
+  background: #d1d5db; 
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.model-item:hover .radio {
+  background: var(--el-color-primary, #ff6a00);
+}
+
+.model-name { 
+  flex: 1; 
+  font-weight: 600; 
+  text-align: left; 
+  color: var(--text-primary, #111827);
+  font-size: 14px;
+}
+
+.arrow { 
+  color: #9ca3af; 
+  font-size: 18px; 
+  flex-shrink: 0;
+}
+
+.model-item:hover .arrow {
+  color: var(--el-color-primary, #ff6a00);
+}
+
+/* 底部提示 */
+.picker-foot { 
+  margin-top: 16px; 
+  padding: 14px 16px; 
+  border-radius: var(--radius-md, 12px); 
+  background: #f7f8fb; 
+  color: var(--text-secondary, #374151); 
+  font-size: 12px; 
+  border: 1px solid #eef0f4; 
+  line-height: 1.6;
+}
+
+.empty { 
+  padding: 24px 12px; 
+  color: var(--text-light, #6b7280); 
+  font-size: 13px; 
+  text-align: center; 
+}
+
+.models-empty { 
+  margin-top: 12px; 
+}
+
+/* 响应式 */
+@media (max-width: 1100px) { 
+  .grid { 
+    grid-template-columns: 1fr; 
+  } 
+  
+  .left .card + .card {
+    margin-top: 16px;
+  }
+  
+  .picker-body {
+    grid-template-columns: 160px 1fr;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 16px 12px;
+  }
+  
+  .hero-title {
+    font-size: 20px;
+  }
+  
+  .picker-body {
+    grid-template-columns: 1fr;
+  }
+  
+  .brand-col {
+    display: none;
+  }
+}
 </style>

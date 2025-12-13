@@ -22,50 +22,78 @@
 
     <el-row :gutter="16" class="wizard-body">
       <el-col :span="16" :xs="24">
-        <el-card shadow="never" class="card">
-          <div class="step-head">
-            <div>
-              <div class="step-title">{{ currentStep }}. {{ activeStep.title }}</div>
-              <div class="step-hint" v-if="activeStep.helper">{{ activeStep.helper }}</div>
+        <div class="questions-container">
+          <!-- 已回答的问题（收起状态） -->
+          <el-card
+            v-for="(step, idx) in answeredSteps"
+            :key="step.key"
+            shadow="never"
+            class="card question-card collapsed"
+          >
+            <div class="collapsed-question">
+              <div class="collapsed-content">
+                <div class="collapsed-title">{{ idx + 1 }}. {{ step.title }}</div>
+                <div class="collapsed-answer">{{ getAnswerText(step.key) }}</div>
+              </div>
+              <el-button
+                text
+                type="primary"
+                size="small"
+                class="edit-btn"
+                @click="expandQuestion(idx + 1)"
+              >
+                <el-icon><Edit /></el-icon>
+                修改
+              </el-button>
             </div>
-            <el-tag size="small" v-if="activeStep.key === 'functional'">可多选</el-tag>
-          </div>
+          </el-card>
 
-          <el-alert
-            v-if="loadError"
-            :title="loadError"
-            type="error"
-            :closable="false"
-            show-icon
-            style="margin-bottom: 10px"
-          />
-
-          <div class="options-grid">
-            <div
-              v-for="opt in activeStep.options"
-              :key="opt.value"
-              class="option-card"
-              :class="{ active: isSelected(activeStep.key, opt) }"
-              @click="selectOption(activeStep, opt)"
-            >
-              <div class="option-label">{{ opt.label }}</div>
-              <div class="option-desc" v-if="opt.desc">{{ opt.desc }}</div>
+          <!-- 当前问题（展开状态） -->
+          <el-card shadow="never" class="card question-card expanded">
+            <div class="step-head">
+              <div>
+                <div class="step-title">{{ currentStep }}. {{ activeStep.title }}</div>
+                <div class="step-hint" v-if="activeStep.helper">{{ activeStep.helper }}</div>
+              </div>
+              <el-tag size="small" v-if="activeStep.key === 'functional'">可多选</el-tag>
             </div>
-          </div>
 
-          <div v-if="activeStep.key === 'storage' && !storageOptions.length && !loadingCatalog" class="empty-tip">
-            该机型暂未提供容量信息，请返回重新选择机型。
-          </div>
-          <div v-if="loadingCatalog" class="empty-tip">容量数据加载中...</div>
+            <el-alert
+              v-if="loadError"
+              :title="loadError"
+              type="error"
+              :closable="false"
+              show-icon
+              style="margin-bottom: 10px"
+            />
 
-          <div class="nav">
-            <el-button round :disabled="currentStep === 1" @click="goPrev">上一题</el-button>
-            <div class="nav-right">
-              <el-button v-if="currentStep < totalSteps" type="primary" round @click="goNext">下一题</el-button>
-              <el-button v-else type="primary" round :disabled="!canCheckout" @click="goCheckout">去提交订单</el-button>
+            <div class="options-grid">
+              <div
+                v-for="opt in activeStep.options"
+                :key="opt.value"
+                class="option-card"
+                :class="{ active: isSelected(activeStep.key, opt) }"
+                @click="selectOption(activeStep, opt)"
+              >
+                <div class="option-label">{{ opt.label }}</div>
+                <div class="option-desc" v-if="opt.desc">{{ opt.desc }}</div>
+              </div>
             </div>
-          </div>
-        </el-card>
+
+            <div v-if="activeStep.key === 'storage' && !storageOptions.length && !loadingCatalog" class="empty-tip">
+              该机型暂未提供容量信息，请返回重新选择机型。
+            </div>
+            <div v-if="loadingCatalog" class="empty-tip">容量数据加载中...</div>
+
+            <div class="nav">
+              <el-button round :disabled="currentStep === 1" @click="goPrev">上一题</el-button>
+              <div class="nav-right">
+                <el-button v-if="currentStep < totalSteps" type="primary" round @click="goNext">下一题</el-button>
+                <el-button v-else type="primary" round :disabled="!canCheckout" @click="goCheckout">去提交订单</el-button>
+              </div>
+            </div>
+          </el-card>
+        </div>
       </el-col>
       <el-col :span="8" :xs="24">
         <el-card shadow="never" class="card summary-card">
@@ -109,6 +137,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
+import { Edit } from "@element-plus/icons-vue";
 import { getRecycleCatalog, estimateRecyclePrice } from "@/api/recycle";
 import { useRecycleDraftStore, type ConditionLevel } from "@/stores/recycleDraft";
 
@@ -294,6 +323,16 @@ const currentStep = computed(() => Math.min(Math.max(draft.currentStep || 1, 1),
 const activeStep = computed(() => baseSteps.value[currentStep.value - 1] || baseSteps.value[0]);
 const answers = computed(() => draft.answers as Record<StepKey, StepOption | StepOption[]>);
 
+// 已回答的问题列表（收起状态）
+const answeredSteps = computed(() => {
+  return baseSteps.value
+    .slice(0, currentStep.value - 1)
+    .filter((step) => {
+      const ans = answers.value[step.key];
+      return ans !== undefined && ans !== null && (Array.isArray(ans) ? ans.length > 0 : true);
+    });
+});
+
 const selectedStorage = computed(() => {
   const a = answers.value["storage"] as StepOption | undefined;
   if (!a) return undefined;
@@ -366,10 +405,31 @@ function selectOption(step: StepItem, option: StepOption) {
     if (step.key === "storage") {
       draft.setStorage(option.value);
     }
-    if (currentStep.value < totalSteps.value) goNext();
+    // 单选问题：选择后自动跳转到下一个问题
+    if (currentStep.value < totalSteps.value) {
+      // 延迟跳转，让用户看到选择效果
+      setTimeout(() => {
+        goNext();
+      }, 200);
+    }
   }
   draft.setQuote(null, null);
   updateCondition();
+}
+
+// 获取答案文本
+function getAnswerText(stepKey: StepKey): string {
+  const ans = answers.value[stepKey];
+  if (!ans) return "未填写";
+  if (Array.isArray(ans)) {
+    return ans.length > 0 ? ans.map((x: StepOption) => x.label).join("、") : "未填写";
+  }
+  return (ans as StepOption).label;
+}
+
+// 展开指定问题
+function expandQuestion(step: number) {
+  draft.setCurrentStep(step);
 }
 
 function deriveCondition(ans: Record<string, any>): ConditionLevel {
@@ -516,13 +576,72 @@ onMounted(async () => {
 .price-value.large { font-size: 26px; }
 .condition-tip { color: #6b7280; margin-top: 4px; }
 .wizard-body { margin-top: 4px; }
-.step-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.step-title { font-size: 16px; font-weight: 800; }
-.step-hint { color: #6b7280; margin-top: 4px; }
+
+/* 问题容器 */
+.questions-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 收起状态的问题卡片 */
+.question-card.collapsed {
+  padding: 16px 20px;
+}
+
+.collapsed-question {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.collapsed-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.collapsed-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #111827);
+  min-width: 100px;
+}
+
+.collapsed-answer {
+  font-size: 14px;
+  color: var(--text-secondary, #6b7280);
+  background: #f3f4f6;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.edit-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.edit-btn .el-icon {
+  font-size: 14px;
+}
+
+/* 展开状态的问题卡片 */
+.question-card.expanded {
+  padding: 20px;
+}
+
+.step-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 16px; }
+.step-title { font-size: 18px; font-weight: 800; color: var(--text-primary, #111827); }
+.step-hint { color: #6b7280; margin-top: 6px; font-size: 13px; }
 .options-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 12px; }
 .option-card { border: 1px solid #e6e8ee; border-radius: 12px; padding: 12px; background: #fff; cursor: pointer; transition: all 0.2s; }
-.option-card:hover { border-color: #cfd4df; }
-.option-card.active { border-color: #111827; box-shadow: 0 0 0 1px #111827 inset; background: #f7f8fb; }
+.option-card:hover { border-color: #cfd4df; transform: translateY(-1px); }
+.option-card.active { border-color: var(--el-color-primary, #ff6a00); box-shadow: 0 0 0 1px var(--el-color-primary, #ff6a00) inset; background: #fff5e6; }
 .option-label { font-weight: 700; }
 .option-desc { color: #6b7280; font-size: 12px; margin-top: 4px; }
 .nav { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; }
@@ -543,5 +662,6 @@ onMounted(async () => {
 @media (max-width: 1024px) {
   .top-bar { flex-direction: column; }
   .price-preview { width: 100%; }
+  .options-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 }
 </style>

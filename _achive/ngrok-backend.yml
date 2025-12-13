@@ -1,7 +1,0 @@
-﻿version: 3
-agent:
-  authtoken: 36TUDwWpJTqmuqX6TwUidfFZ8aL_3hNcLMa3t4T4dJgbrtcDq
-tunnels:
-  backend:
-    addr: 8000
-    proto: http

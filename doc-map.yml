@@ -1,0 +1,32 @@
+# doc-map.yml
+# 用于“变更影响分析 → 自动定位要更新的文档”。
+
+domains:
+  recycle:
+    docs:
+      - docs/10-product/core-flows.md
+      - docs/30-api/api-guide.md
+      - docs/70-ui/ui-guidelines.md
+      - docs/50-testing/test-plan.md
+    frontend_pages:
+      - frontend/src/pages/Recycle.vue
+      - frontend/src/pages/RecycleEstimateWizard.vue
+      - frontend/src/pages/RecycleCheckout.vue
+      - frontend/src/pages/MyRecycleOrders.vue
+      - frontend/src/pages/RecycleOrderDetail.vue
+    admin_pages:
+      - frontend/src/admin/pages/RecycleOrderManagement.vue
+    backend_sources:
+      - backend/app/secondhand_app/models.py
+      - backend/app/secondhand_app/views.py
+      - backend/app/admin_api/views.py
+      - backend/app/admin_api/urls.py
+
+  payment:
+    docs:
+      - docs/30-api/api-guide.md
+      - docs/60-ops/ops-notes.md
+      - docs/50-testing/test-plan.md
+    backend_sources:
+      - backend/app/secondhand_app/payment_views.py
+      - backend/app/secondhand_app/alipay_client.py
