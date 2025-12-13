@@ -1,7 +1,21 @@
 # 变更记录（Changelog）
 
 ## 2025-12-13
-- **UI优化：统一修复后台管理页面操作按钮布局**
+
+> 📋 **变更单**: [2025-12-13-admin-ui-fixes.md](../maintenance/changes/2025-12-13-admin-ui-fixes.md)
+
+- **修复：管理端多标签页空白页面问题**
+  - 添加 ErrorBoundary 组件，捕获组件渲染错误并显示友好的错误提示
+  - 在 AppMain 中添加 Suspense 处理异步组件加载，显示加载骨架屏
+  - 优化 keep-alive 配置，默认不缓存页面，避免多标签页切换时的状态混乱
+  - 添加错误重试机制和返回首页功能
+  - 文件：
+    - `frontend/src/admin/layout/components/ErrorBoundary.vue` - 新增错误边界组件
+    - `frontend/src/admin/layout/components/AppMain.vue` - 添加错误处理和加载状态
+  - 验证方式：打开多个管理页面，切换标签页，应该不再出现空白页面；如果组件加载失败，会显示错误提示和重试按钮
+
+- **UI优化：统一修复后台管理页面操作按钮布局**  
+  > 详见变更单：影响13个管理页面
   - 所有表格的"操作"列按钮统一使用 `el-space wrap` 组件包装，确保按钮正确排列和自动换行
   - 修复了按钮重叠、挤压、布局混乱的问题
   - 调整了部分操作列的宽度以适应新的布局
