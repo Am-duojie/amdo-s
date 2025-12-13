@@ -1,0 +1,7 @@
+﻿version: 3
+agent:
+  authtoken: 36WAP5OoDEykLUcZ4ENBqx9XHos_3gEc2P4eXSSSP9RYMEhB2
+tunnels:
+  frontend:
+    addr: 5173
+    proto: http
