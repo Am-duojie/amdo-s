@@ -1,14 +1,14 @@
 <template>
   <div class="xy-home">
 
-    <!-- 2) 首屏区域 - 分类和推荐统一大框 -->
-    <div class="hero-section">
-      <div class="hero-wrapper">
-        <div class="hero-container">
-          <!-- 左：分类 -->
-          <div class="category-sidebar">
+    <!-- 1) 促销网格区域 -->
+    <div class="promo-section">
+      <div class="promo-wrapper">
+        <div class="promo-container">
+          <!-- 左侧：分类侧栏 -->
+          <div class="category-sidebar-promo">
             <div class="cat-header">全部分类</div>
-            <ul class="cat-list">
+            <ul class="cat-list-promo">
               <li 
                 v-for="(cat, idx) in categories" 
                 :key="cat.id"
@@ -18,89 +18,63 @@
               >
                 <span class="cat-icon">{{ catIcons[idx % catIcons.length] }}</span>
                 <span class="cat-name">{{ cat.name }}</span>
-                <el-icon><ArrowRight /></el-icon>
               </li>
             </ul>
           </div>
 
-          <!-- 右侧：4个分类推荐大框 -->
-          <div class="category-boxes">
-            <!-- 手机专区 -->
-            <div class="category-box phone-box" @click="goToCategoryByName('手机')">
-              <div class="box-header">
-                <div class="box-title">
-                  <span class="title-text">手机专区</span>
-                  <span class="play-icon">▶</span>
-                </div>
-                <span class="box-subtitle">热门机型低价淘</span>
-              </div>
-              <div class="box-products">
-                <div v-for="(p, idx) in phoneProducts.slice(0, 3)" :key="p.id" class="mini-product" @click.stop="goToDetail(p.id)">
-                  <img :src="p.images?.length ? getImageUrl(p.images[0].image) : 'https://via.placeholder.com/80'" />
-                  <span class="mini-price">¥{{ formatPriceInt(p.price) }}</span>
-                </div>
-              </div>
+          <!-- 右侧：促销网格 -->
+          <div class="promo-grid">
+          <!-- 旧机换钱 - 大卡片 -->
+          <div class="grid-item recycle-card" @click="goToRecycle">
+            <div class="card-content">
+              <div class="badge">官方自营</div>
+              <h2>旧机换钱</h2>
+              <p>比回收站高 20%</p>
+              <button class="action-btn">免费估价</button>
             </div>
+            <div class="card-img">📱</div>
+          </div>
 
-            <!-- 官方验专区 -->
-            <div class="category-box verified-box" @click="goToVerifiedProducts">
-              <div class="box-header">
-                <div class="box-title">
-                  <span class="title-text">官方验专区</span>
-                  <span class="play-icon">▶</span>
-                </div>
-                <span class="box-subtitle">官方质检放心购</span>
-                <div class="promo-tags">
-                  <span class="promo-tag">✓ 官方质检</span>
-                  <span class="promo-tag">✓ 正品保障</span>
-                  <span class="promo-tag">✓ 7天无理由</span>
-                </div>
-              </div>
-              <div class="box-products">
-                <div v-for="(p, idx) in verifiedProducts.slice(0, 3)" :key="p.id" class="mini-product" @click.stop="goToVerifiedDetail(p.id)">
-                  <img :src="resolveVerifiedThumb(p)" />
-                  <span class="mini-price">¥{{ formatPriceInt(p.price) }}</span>
-                </div>
-              </div>
+          <!-- 官方验专区 -->
+          <div class="grid-item medium-card verified-promo" @click="goToVerifiedProducts">
+            <div class="card-content">
+              <div class="badge">官方质检</div>
+              <h3>官方验专区</h3>
+              <p>正品保障，7天无理由</p>
             </div>
+          </div>
 
-            <!-- 电脑专区 -->
-            <div class="category-box computer-box" @click="goToCategoryByName('电脑')">
-              <div class="box-header">
-                <div class="box-title">
-                  <span class="title-text">电脑专区</span>
-                  <span class="play-icon">▶</span>
-                </div>
-                <span class="box-subtitle">笔记本台式机省心购</span>
-              </div>
-              <div class="box-products">
-                <div v-for="(p, idx) in computerProducts.slice(0, 3)" :key="p.id" class="mini-product" @click.stop="goToDetail(p.id)">
-                  <img :src="p.images?.length ? getImageUrl(p.images[0].image) : 'https://via.placeholder.com/80'" />
-                  <span class="mini-price">¥{{ formatPriceInt(p.price) }}</span>
-                </div>
-              </div>
+          <!-- 热门推荐 -->
+          <div class="grid-item medium-card hot-promo" @click="goToCategoryByName('手机')">
+            <div class="card-content">
+              <div class="badge">热门</div>
+              <h3>手机专区</h3>
+              <p>热门机型低价淘</p>
             </div>
+          </div>
 
-            <!-- 平板专区 -->
-            <div class="category-box tablet-box" @click="goToCategoryByName('平板')">
-              <div class="box-header">
-                <div class="box-title">
-                  <span class="title-text">平板专区</span>
-                  <span class="play-icon">▶</span>
-                </div>
-                <span class="box-subtitle">iPad/安卓平板热卖</span>
-              </div>
-              <div class="box-products">
-                <div v-for="(p, idx) in tabletProducts.slice(0, 3)" :key="p.id" class="mini-product" @click.stop="goToDetail(p.id)">
-                  <img :src="p.images?.length ? getImageUrl(p.images[0].image) : 'https://via.placeholder.com/80'" />
-                  <span class="mini-price">¥{{ formatPriceInt(p.price) }}</span>
-                </div>
-              </div>
+          <!-- 电脑专区 -->
+          <div class="grid-item medium-card computer-promo" @click="goToCategoryByName('电脑')">
+            <div class="card-content">
+              <div class="badge">省心购</div>
+              <h3>电脑专区</h3>
+              <p>笔记本台式机一站式</p>
             </div>
+          </div>
+
+          <!-- 平板专区 -->
+          <div class="grid-item medium-card tablet-promo" @click="goToCategoryByName('平板')">
+            <div class="card-content">
+              <div class="badge">热卖</div>
+              <h3>平板专区</h3>
+              <p>iPad/安卓平板精选</p>
+            </div>
+          </div>
           </div>
         </div>
       </div>
     </div>
+
 
     <!-- 3) 商品流列表 - 标签和商品统一大框 -->
     <main class="main-flow">
@@ -333,6 +307,7 @@ const goToDetail = (id) => router.push(`/products/${id}`)
 const goToProfile = () => router.push('/profile')
 const goToVerifiedProducts = () => router.push('/verified-products')
 const goToVerifiedDetail = (id) => router.push(`/verified-products/${id}`)
+const goToRecycle = () => router.push('/recycle')
 
 // 处理用户菜单命令
 const handleUserMenuCommand = async (command) => {
@@ -880,6 +855,246 @@ onMounted(async () => {
   transform: translateY(-1px);
 }
 
+/* ==================== 促销网格区域 ==================== */
+.promo-section {
+  padding: 20px 0;
+  background: var(--bg-page);
+}
+
+.promo-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.promo-container {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+/* 分类侧栏 - 在促销区域左侧 */
+.category-sidebar-promo {
+  width: 200px;
+  flex-shrink: 0;
+  background: var(--bg-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 16px;
+  height: 315px; /* 与回收卡片高度一致：150px * 2 + 15px gap = 315px */
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.category-sidebar-promo .cat-header {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--brand-orange);
+}
+
+.category-sidebar-promo .cat-list-promo {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.category-sidebar-promo .cat-list-promo li {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: var(--text-primary);
+  font-size: 13px;
+  border-radius: var(--radius-md);
+  background: var(--bg-page);
+  text-align: center;
+}
+
+.category-sidebar-promo .cat-list-promo li:hover {
+  background: linear-gradient(135deg, #fff7e6, #ffe8cc);
+  color: var(--brand-orange);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.category-sidebar-promo .cat-list-promo li.active {
+  background: linear-gradient(135deg, #fff7e6, #ffe8cc);
+  color: var(--brand-orange);
+  font-weight: 600;
+}
+
+.category-sidebar-promo .cat-list-promo li .cat-icon {
+  font-size: 20px;
+  margin-bottom: 4px;
+}
+
+.category-sidebar-promo .cat-list-promo li .cat-name {
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.promo-grid {
+  flex: 1;
+  display: grid;
+  /* 左侧占 1.2 份宽，右侧两列各占 1 份 */
+  grid-template-columns: 1.2fr 1fr 1fr;
+  grid-template-rows: 150px 150px;
+  gap: 15px;
+}
+
+/* 旧机换钱大卡片 */
+.recycle-card {
+  /* 占据左侧第1列，跨越2行 -> 形成垂直长条 */
+  grid-column: 1 / 2;
+  grid-row: 1 / 3;
+  
+  /* 视觉样式：红橙渐变，模仿闲鱼 */
+  background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);
+  color: white;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 24px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 16px rgba(255, 107, 107, 0.3);
+}
+
+.recycle-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(255, 107, 107, 0.4);
+}
+
+.recycle-card .card-content {
+  position: relative;
+  z-index: 2;
+}
+
+.recycle-card .badge {
+  background: rgba(255, 255, 255, 0.2);
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  margin-bottom: 10px;
+  backdrop-filter: blur(10px);
+}
+
+.recycle-card h2 {
+  font-size: 28px;
+  margin: 0 0 8px 0;
+  font-weight: 800;
+}
+
+.recycle-card p {
+  font-size: 14px;
+  opacity: 0.9;
+  margin: 5px 0 0 0;
+}
+
+.recycle-card .action-btn {
+  background: white;
+  color: #ff6b6b;
+  border: none;
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-weight: bold;
+  width: fit-content;
+  margin-top: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+}
+
+.recycle-card .action-btn:hover {
+  background: #fff8f0;
+  transform: scale(1.05);
+}
+
+.recycle-card .card-img {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  font-size: 80px;
+  transform: rotate(-15deg);
+  opacity: 0.3;
+  z-index: 1;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* 中等卡片 */
+.medium-card {
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: var(--shadow-sm);
+}
+
+.medium-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+.verified-promo {
+  background: linear-gradient(145deg, #e6f7ff 0%, #bae7ff 100%);
+}
+
+.hot-promo {
+  background: linear-gradient(145deg, #fffef5 0%, #fff3cd 100%);
+}
+
+.medium-card .badge {
+  background: rgba(255, 255, 255, 0.8);
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.medium-card h3 {
+  font-size: 18px;
+  margin: 0 0 6px 0;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.medium-card p {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.computer-promo {
+  background: linear-gradient(145deg, #f0fffe 0%, #b5f5ec 100%);
+}
+
+.tablet-promo {
+  background: linear-gradient(145deg, #fff8f5 0%, #ffd8c2 100%);
+}
+
 /* ==================== 首屏区域 ==================== */
 .hero-section { 
   padding: 20px 0;
@@ -1311,6 +1526,31 @@ onMounted(async () => {
   .logo-icon { font-size: 24px; }
   .logo-text { font-size: 28px; }
   .search-section { display: none; }
+  .promo-wrapper { padding: 0 12px; }
+  .promo-container {
+    flex-direction: column;
+  }
+  .category-sidebar-promo {
+    width: 100%;
+    margin-bottom: 12px;
+  }
+  .category-sidebar-promo .cat-list-promo {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .promo-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    gap: 12px;
+  }
+  .recycle-card {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 200px;
+  }
+  .medium-card {
+    grid-column: 1;
+    min-height: 120px;
+  }
   .hero-container { flex-direction: column; }
   .hero-wrapper { padding: 0 12px; }
   .products-wrapper { padding: 16px; margin-top: 16px; }

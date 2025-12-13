@@ -28,12 +28,14 @@
           <el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status === 'active' ? '活跃' : '已下架' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="320" fixed="right">
+      <el-table-column label="操作" width="360" fixed="right">
         <template #default="{row}">
-          <el-button v-if="hasPerm('verified:write')" size="small" type="primary" @click="update(row, 'publish')">发布</el-button>
-          <el-button v-if="hasPerm('verified:write')" size="small" @click="update(row, 'unpublish')">下架</el-button>
-          <el-button v-if="hasPerm('verified:write')" size="small" type="success" @click="update(row, 'audit-approve')">审核通过</el-button>
-          <el-button v-if="hasPerm('verified:write')" size="small" type="danger" @click="update(row, 'audit-reject')">审核驳回</el-button>
+          <el-space wrap>
+            <el-button v-if="hasPerm('verified:write')" size="small" type="primary" @click="update(row, 'publish')">发布</el-button>
+            <el-button v-if="hasPerm('verified:write')" size="small" @click="update(row, 'unpublish')">下架</el-button>
+            <el-button v-if="hasPerm('verified:write')" size="small" type="success" @click="update(row, 'audit-approve')">审核通过</el-button>
+            <el-button v-if="hasPerm('verified:write')" size="small" type="danger" @click="update(row, 'audit-reject')">审核驳回</el-button>
+          </el-space>
         </template>
       </el-table-column>
     </el-table>

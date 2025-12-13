@@ -40,4 +40,34 @@ export const estimateRecyclePrice = (payload: EstimatePayload) => {
   return api.post('/recycle-orders/estimate/', payload)
 }
 
+// 获取机型模板的问卷内容
+export type RecycleQuestionTemplateResponse = {
+  id: number
+  device_type: string
+  brand: string
+  model: string
+  storages?: string[]  // 存储容量列表
+  questions: Array<{
+    id: number
+    step_order: number
+    key: string
+    title: string
+    helper?: string
+    question_type: 'single' | 'multi'
+    is_required: boolean
+    options: Array<{
+      id: number
+      value: string
+      label: string
+      desc?: string
+      impact?: 'positive' | 'minor' | 'major' | 'critical'
+      option_order: number
+    }>
+  }>
+}
+
+export const getRecycleQuestionTemplate = (params: { device_type: string; brand: string; model: string }) => {
+  return api.get<RecycleQuestionTemplateResponse>('/recycle-templates/question-template/', { params })
+}
+
 

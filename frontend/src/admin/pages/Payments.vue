@@ -46,13 +46,15 @@
         </template>
       </el-table-column>
       <el-table-column prop="created_at" label="创建时间" width="180" />
-      <el-table-column label="操作" width="350">
+      <el-table-column label="操作" width="400">
         <template #default="{row}">
-          <el-button v-if="hasPerm('payment:view')" size="small" @click="query(row)">查询支付</el-button>
-          <el-button v-if="hasPerm('payment:write') && row.status === 'paid'" size="small" type="danger" @click="refund(row)">退款</el-button>
-          <el-button v-if="hasPerm('order:ship') && row.status === 'paid'" size="small" type="primary" @click="openShipDialog(row)">发货</el-button>
-          <el-button v-if="hasPerm('payment:view')" size="small" type="success" @click="openSettlement(row)">分账详情</el-button>
-          <el-button v-if="hasPerm('payment:write')" size="small" @click="retrySettlement(row)">重试分账</el-button>
+          <el-space wrap>
+            <el-button v-if="hasPerm('payment:view')" size="small" @click="query(row)">查询支付</el-button>
+            <el-button v-if="hasPerm('payment:write') && row.status === 'paid'" size="small" type="danger" @click="refund(row)">退款</el-button>
+            <el-button v-if="hasPerm('order:ship') && row.status === 'paid'" size="small" type="primary" @click="openShipDialog(row)">发货</el-button>
+            <el-button v-if="hasPerm('payment:view')" size="small" type="success" @click="openSettlement(row)">分账详情</el-button>
+            <el-button v-if="hasPerm('payment:write')" size="small" @click="retrySettlement(row)">重试分账</el-button>
+          </el-space>
         </template>
       </el-table-column>
     </el-table>

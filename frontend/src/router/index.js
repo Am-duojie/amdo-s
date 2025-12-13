@@ -168,6 +168,7 @@ const routes = [
       { path: 'dashboard', name: 'AdminDashboard', component: () => import('@/admin/pages/AdminDashboard.vue'), meta: { requiresAdminAuth: true, hideSearch: true, title: '数据总览', icon: 'Odometer', group: 'dashboard', affix: true } },
       // 回收业务
       { path: 'recycle-orders', name: 'RecycleOrderManagement', component: () => import('@/admin/pages/RecycleOrderManagement.vue'), meta: { requiresAdminAuth: true, title: '回收订单', icon: 'Tickets', group: 'recycle' } },
+      { path: 'recycle-templates', name: 'RecycleTemplates', component: () => import('@/admin/pages/RecycleTemplates.vue'), meta: { requiresAdminAuth: true, title: '机型模板', icon: 'List', group: 'recycle', perm: 'recycle_template:view' } },
       { path: 'inspection-orders', name: 'InspectionOrders', component: () => import('@/admin/pages/InspectionOrders.vue'), meta: { requiresAdminAuth: true, title: '回收质检', icon: 'DocumentChecked', group: 'recycle' } },
       { path: 'inspection-orders/:id', name: 'InspectionOrderDetail', component: () => import('@/admin/pages/InspectionOrderDetail.vue'), meta: { requiresAdminAuth: true, title: '质检详情', icon: 'DocumentChecked', group: 'recycle', hidden: true } },
       // 官方验业务

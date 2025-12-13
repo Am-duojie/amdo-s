@@ -33,10 +33,12 @@
       <el-table-column prop="created_at" label="创建时间" width="180" />
       <el-table-column label="操作" width="400" fixed="right">
         <template #default="{row}">
-          <el-button v-if="hasPerm('verified:write') && row.status === 'pending'" size="small" type="primary" @click="doAction(row,'mark-paid')">标记已付款</el-button>
-          <el-button v-if="hasPerm('verified:write') && row.status === 'paid'" size="small" @click="openShipDialog(row)">发货</el-button>
-          <el-button v-if="hasPerm('verified:write') && row.status === 'shipped'" size="small" type="success" @click="doAction(row,'complete')">完成</el-button>
-          <el-button v-if="hasPerm('verified:write') && ['pending', 'paid'].includes(row.status)" size="small" type="danger" @click="doAction(row,'cancel')">取消</el-button>
+          <el-space wrap>
+            <el-button v-if="hasPerm('verified:write') && row.status === 'pending'" size="small" type="primary" @click="doAction(row,'mark-paid')">标记已付款</el-button>
+            <el-button v-if="hasPerm('verified:write') && row.status === 'paid'" size="small" @click="openShipDialog(row)">发货</el-button>
+            <el-button v-if="hasPerm('verified:write') && row.status === 'shipped'" size="small" type="success" @click="doAction(row,'complete')">完成</el-button>
+            <el-button v-if="hasPerm('verified:write') && ['pending', 'paid'].includes(row.status)" size="small" type="danger" @click="doAction(row,'cancel')">取消</el-button>
+          </el-space>
         </template>
       </el-table-column>
     </el-table>

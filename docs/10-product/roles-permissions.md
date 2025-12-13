@@ -64,6 +64,12 @@
 ### 审计日志（audit_log）
 - `audit_log:view`：查看操作审计日志
 
+### 回收机型模板（recycle_template）
+- `recycle_template:view`：查看机型模板、问卷步骤、选项列表
+- `recycle_template:create`：创建机型模板、问卷步骤、选项
+- `recycle_template:update`：更新机型模板、问卷步骤、选项
+- `recycle_template:delete`：删除机型模板、问卷步骤、选项
+
 ### 管理员/角色（admin_user, role）
 - `admin_user:view`：查看管理员列表
 - `admin_user:write`：创建/编辑管理员

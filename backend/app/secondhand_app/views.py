@@ -15,6 +15,13 @@ from .models import (
     Category, Product, ProductImage, Order, Message, Favorite, Address, UserProfile, RecycleOrder,
     VerifiedProduct, VerifiedProductImage, VerifiedOrder, VerifiedFavorite, Wallet, WalletTransaction
 )
+try:
+    from app.admin_api.models import RecycleDeviceTemplate, RecycleQuestionTemplate, RecycleQuestionOption
+except ImportError:
+    # 如果admin_api未安装，定义空类避免导入错误
+    RecycleDeviceTemplate = None
+    RecycleQuestionTemplate = None
+    RecycleQuestionOption = None
 from .price_service import price_service, LOCAL_PRICE_TABLE
 from .serializers import (
     UserSerializer, UserRegisterSerializer, UserUpdateSerializer,
@@ -971,7 +978,7 @@ class AddressViewSet(viewsets.ModelViewSet):
 class RecycleCatalogView(APIView):
     """
     回收机型目录（公开接口）
-    基于本地价目表/智能估价模型的数据源生成，确保可估价即能选中
+    优先从模板系统加载，如果没有模板则从本地价目表加载（向后兼容）
     """
     permission_classes = []
     authentication_classes = []
@@ -987,9 +994,92 @@ class RecycleCatalogView(APIView):
         if cached:
             return Response(cached)
 
-        payload = self._build_catalog(device_type, brand, model, q)
+        # 优先从模板系统加载
+        payload = self._build_catalog_from_templates(device_type, brand, model, q)
+        
+        # 如果模板系统没有数据，从本地价目表加载（向后兼容）
+        if not payload.get('brands') and not payload.get('models'):
+            payload = self._build_catalog_from_price_table(device_type, brand, model, q)
+        
         cache.set(cache_key, payload, 900)  # 15分钟缓存
         return Response(payload)
+    
+    def _build_catalog_from_templates(self, device_type: str | None, brand: str | None, model: str | None, q: str):
+        """从模板系统构建目录"""
+        try:
+            from app.admin_api.models import RecycleDeviceTemplate
+        except ImportError:
+            return {'device_types': [], 'brands': {}, 'models': {}}
+        
+        if not RecycleDeviceTemplate:
+            return {'device_types': [], 'brands': {}, 'models': {}}
+        
+        # 获取所有启用的模板
+        templates = RecycleDeviceTemplate.objects.filter(is_active=True)
+        
+        if device_type:
+            templates = templates.filter(device_type=device_type)
+        if brand:
+            templates = templates.filter(brand=brand)
+        if model:
+            templates = templates.filter(model=model)
+        if q:
+            templates = templates.filter(
+                Q(device_type__icontains=q) |
+                Q(brand__icontains=q) |
+                Q(model__icontains=q)
+            )
+        
+        # 构建返回数据
+        device_types = set()
+        brands_payload = {}
+        models_payload = {}
+        
+        for template in templates:
+            dt = template.device_type
+            br = template.brand
+            md = template.model
+            
+            device_types.add(dt)
+            
+            # 构建品牌列表
+            if dt not in brands_payload:
+                brands_payload[dt] = []
+            if br not in brands_payload[dt]:
+                brands_payload[dt].append(br)
+            
+            # 构建机型列表
+            if dt not in models_payload:
+                models_payload[dt] = {}
+            if br not in models_payload[dt]:
+                models_payload[dt][br] = []
+            
+            # 检查是否已存在该机型
+            existing = next((m for m in models_payload[dt][br] if m['name'] == md), None)
+            if not existing:
+                models_payload[dt][br].append({
+                    'name': md,
+                    'storages': template.storages or [],
+                    'series': template.series or None,
+                })
+        
+        # 排序
+        device_types = sorted(list(device_types))
+        for dt in brands_payload:
+            brands_payload[dt] = sorted(brands_payload[dt])
+        for dt in models_payload:
+            for br in models_payload[dt]:
+                models_payload[dt][br] = sorted(models_payload[dt][br], key=lambda x: x['name'])
+        
+        return {
+            'device_types': device_types,
+            'brands': brands_payload,
+            'models': models_payload,
+        }
+    
+    def _build_catalog_from_price_table(self, device_type: str | None, brand: str | None, model: str | None, q: str):
+        """从本地价目表构建目录（向后兼容）"""
+        return self._build_catalog(device_type, brand, model, q)
 
     def _build_catalog(self, device_type: str | None, brand: str | None, model: str | None, q: str):
         device_types = list(LOCAL_PRICE_TABLE.keys())
@@ -1054,6 +1144,78 @@ class RecycleCatalogView(APIView):
         num = float(m.group(1))
         unit = m.group(2)
         return num * (1024 if unit == 'TB' else 1)
+
+
+class RecycleQuestionTemplateView(APIView):
+    """
+    获取机型模板的问卷内容（公开接口）
+    根据设备类型、品牌、型号获取对应的问卷步骤和选项
+    """
+    permission_classes = []
+    authentication_classes = []
+
+    def get(self, request):
+        if not RecycleDeviceTemplate or not RecycleQuestionTemplate or not RecycleQuestionOption:
+            return Response({'detail': '机型模板功能未启用'}, status=503)
+            
+        device_type = request.query_params.get('device_type', '').strip()
+        brand = request.query_params.get('brand', '').strip()
+        model = request.query_params.get('model', '').strip()
+
+        if not device_type or not brand or not model:
+            return Response({'detail': '缺少必要参数：device_type, brand, model'}, status=400)
+
+        try:
+            template = RecycleDeviceTemplate.objects.get(
+                device_type=device_type,
+                brand=brand,
+                model=model,
+                is_active=True
+            )
+        except RecycleDeviceTemplate.DoesNotExist:
+            return Response({'detail': '未找到对应的机型模板'}, status=404)
+
+        questions = RecycleQuestionTemplate.objects.filter(
+            device_template=template,
+            is_active=True
+        ).order_by('step_order')
+
+        questions_data = []
+        for q in questions:
+            options = RecycleQuestionOption.objects.filter(
+                question_template=q,
+                is_active=True
+            ).order_by('option_order', 'id')
+
+            questions_data.append({
+                'id': q.id,
+                'step_order': q.step_order,
+                'key': q.key,
+                'title': q.title,
+                'helper': q.helper or '',
+                'question_type': q.question_type,
+                'is_required': q.is_required,
+                'options': [
+                    {
+                        'id': opt.id,
+                        'value': opt.value,
+                        'label': opt.label,
+                        'desc': opt.desc or '',
+                        'impact': opt.impact or '',
+                        'option_order': opt.option_order,
+                    }
+                    for opt in options
+                ]
+            })
+
+        return Response({
+            'id': template.id,
+            'device_type': template.device_type,
+            'brand': template.brand,
+            'model': template.model,
+            'storages': template.storages,
+            'questions': questions_data
+        })
 
 
 class RecycleOrderViewSet(viewsets.ModelViewSet):

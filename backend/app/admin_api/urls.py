@@ -13,7 +13,10 @@ from .views import (
     AdminVerifiedProductPublishView, AdminVerifiedProductUnpublishView,
     # 新增：官方验设备库存
     AdminVerifiedDeviceView, AdminVerifiedDeviceDetailView, AdminVerifiedDeviceListProductView, AdminVerifiedDeviceActionView,
-    CreateVerifiedDeviceFromRecycleOrderView
+    CreateVerifiedDeviceFromRecycleOrderView,
+    # 新增：回收机型模板管理
+    RecycleDeviceTemplateView, RecycleQuestionTemplateView, RecycleQuestionOptionView, 
+    RecycleTemplateImportView, RecycleTemplateDownloadView
 )
 
 urlpatterns = [
@@ -86,4 +89,13 @@ urlpatterns = [
     path('messages/<int:mid>', MessagesAdminView.as_view()),
     path('addresses', AddressesAdminView.as_view()),
     path('addresses/<int:aid>', AddressesAdminView.as_view()),
+    # 回收机型模板管理
+    path('recycle-templates', RecycleDeviceTemplateView.as_view()),
+    path('recycle-templates/<int:template_id>', RecycleDeviceTemplateView.as_view()),
+    path('recycle-templates/download-template', RecycleTemplateDownloadView.as_view()),
+    path('recycle-templates/import', RecycleTemplateImportView.as_view()),
+    path('recycle-templates/<int:template_id>/questions', RecycleQuestionTemplateView.as_view()),
+    path('recycle-templates/<int:template_id>/questions/<int:question_id>', RecycleQuestionTemplateView.as_view()),
+    path('recycle-templates/<int:template_id>/questions/<int:question_id>/options', RecycleQuestionOptionView.as_view()),
+    path('recycle-templates/<int:template_id>/questions/<int:question_id>/options/<int:option_id>', RecycleQuestionOptionView.as_view()),
 ]

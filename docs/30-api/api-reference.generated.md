@@ -167,6 +167,7 @@
 
 ## 用户端 API（/api）— 显式接口（非 Router）
 - `GET` `/api/recycle-catalog/`  (target: `views.RecycleCatalogView.as_view`)
+- `(METHODS UNKNOWN)` `/api/recycle-templates/question-template/`  (target: `views.RecycleQuestionTemplateView.as_view`)
 - `POST` `/api/auth/login/`  (target: `CustomTokenObtainPairView.as_view`)
 - `POST` `/api/auth/refresh/`  (target: `TokenRefreshView.as_view`)
 - `POST` `/api/payment/create/`  (target: `payment_views.create_payment`)
@@ -241,6 +242,15 @@
 
 ### `recycle-orders`
 - `POST` `/admin-api/recycle-orders/<int:order_id>/create-verified-device/`
+
+### `recycle-templates`
+- `DELETE,GET,POST,PUT` `/admin-api/recycle-templates/<int:template_id>/questions/<int:question_id>/options/<int:option_id>`
+- `DELETE,GET,POST,PUT` `/admin-api/recycle-templates/<int:template_id>/questions/<int:question_id>/options`
+- `DELETE,GET,POST,PUT` `/admin-api/recycle-templates/<int:template_id>/questions/<int:question_id>`
+- `DELETE,GET,POST,PUT` `/admin-api/recycle-templates/<int:template_id>/questions`
+- `DELETE,GET,POST,PUT` `/admin-api/recycle-templates/<int:template_id>`
+- `DELETE,GET,POST,PUT` `/admin-api/recycle-templates`
+- `POST` `/admin-api/recycle-templates/import`
 
 ### `recycled-products`
 - `GET,POST,PUT` `/admin-api/recycled-products/<int:item_id>/publish`

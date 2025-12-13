@@ -13,110 +13,90 @@
           <el-tag v-if="selectedStorage" round size="small" class="storage-tag">{{ selectedStorage }}</el-tag>
         </div>
       </div>
-      <div class="price-preview">
-        <div class="price-label">预计到手价</div>
-        <div class="price-value">{{ estimatedPriceText }}</div>
-        <div class="condition-tip" v-if="draft.condition">按成色：{{ conditionText }}</div>
-      </div>
     </div>
 
+    <!-- 估价信息卡片 -->
+    <el-card shadow="never" class="card price-info-card" v-if="estimatedPriceText !== '--'">
+      <div class="price-info-content">
+        <div class="price-info-label">预计到手价</div>
+        <div class="price-info-value">{{ estimatedPriceText }}</div>
+        <div class="price-info-condition" v-if="draft.condition">按成色：{{ conditionText }}</div>
+        <div class="price-info-status" v-if="estimateError">{{ estimateError }}</div>
+        <div class="price-info-status" v-else-if="estimating">正在根据所选信息估价...</div>
+        <div class="price-info-status" v-else-if="!shouldEstimate">选择容量与成色后自动估价</div>
+      </div>
+    </el-card>
+
     <el-row :gutter="16" class="wizard-body">
-      <el-col :span="16" :xs="24">
-        <div class="questions-container">
-          <!-- 已回答的问题（收起状态） -->
-          <el-card
-            v-for="(step, idx) in answeredSteps"
-            :key="step.key"
-            shadow="never"
-            class="card question-card collapsed"
-          >
-            <div class="collapsed-question">
-              <div class="collapsed-content">
-                <div class="collapsed-title">{{ idx + 1 }}. {{ step.title }}</div>
-                <div class="collapsed-answer">{{ getAnswerText(step.key) }}</div>
+      <el-col :span="24">
+        <el-card shadow="never" class="card questions-card">
+          <el-collapse v-model="activeCollapseStep" accordion>
+            <el-collapse-item
+              v-for="(step, idx) in allSteps"
+              :key="step.key"
+              :name="String(idx + 1)"
+            >
+              <template #title>
+                <div class="step-title">
+                  <span class="step-num">
+                    {{ idx + 1 }}. {{ step.title }}
+                    <el-tag v-if="step.is_required !== false" size="small" type="danger" style="margin-left: 8px">必填</el-tag>
+                    <el-tag v-else size="small" type="info" style="margin-left: 8px">选填</el-tag>
+                  </span>
+                  <span v-if="hasAnswer(step.key)" class="selected-val">
+                    已选: {{ getAnswerText(step.key) }} <el-icon><Check /></el-icon>
+                  </span>
+                  <span v-else-if="step.is_required === false" class="optional-hint">
+                    可选
+                  </span>
+                </div>
+              </template>
+
+              <div class="question-content">
+                <div class="step-hint" v-if="step.helper">{{ step.helper }}</div>
+                <el-tag v-if="step.type === 'multi'" size="small" style="margin-bottom: 12px">可多选</el-tag>
+
+                <el-alert
+                  v-if="loadError && step.key === 'storage'"
+                  :title="loadError"
+                  type="error"
+                  :closable="false"
+                  show-icon
+                  style="margin-bottom: 12px"
+                />
+
+                <div class="options-grid">
+                  <div
+                    v-for="opt in step.options"
+                    :key="opt.value"
+                    class="option-item"
+                    :class="{ active: isSelected(step.key, opt) }"
+                    @click="handleSelectOption(step, opt, idx + 1)"
+                  >
+                    <div class="option-label">{{ opt.label }}</div>
+                    <div class="option-desc" v-if="opt.desc">{{ opt.desc }}</div>
+                  </div>
+                </div>
+
+                <div v-if="step.key === 'storage' && !storageOptions.length && !loadingCatalog" class="empty-tip">
+                  该机型暂未提供容量信息，请返回重新选择机型。
+                </div>
+                <div v-if="loadingCatalog && step.key === 'storage'" class="empty-tip">容量数据加载中...</div>
+
+                <!-- 最后一步显示提交按钮 -->
+                <div v-if="idx + 1 === totalSteps" class="submit-area">
+                  <el-button
+                    type="primary"
+                    size="large"
+                    :disabled="!canCheckout"
+                    @click="goCheckout"
+                  >
+                    立即查看报价
+                  </el-button>
+                </div>
               </div>
-              <el-button
-                text
-                type="primary"
-                size="small"
-                class="edit-btn"
-                @click="expandQuestion(idx + 1)"
-              >
-                <el-icon><Edit /></el-icon>
-                修改
-              </el-button>
-            </div>
-          </el-card>
-
-          <!-- 当前问题（展开状态） -->
-          <el-card shadow="never" class="card question-card expanded">
-            <div class="step-head">
-              <div>
-                <div class="step-title">{{ currentStep }}. {{ activeStep.title }}</div>
-                <div class="step-hint" v-if="activeStep.helper">{{ activeStep.helper }}</div>
-              </div>
-              <el-tag size="small" v-if="activeStep.key === 'functional'">可多选</el-tag>
-            </div>
-
-            <el-alert
-              v-if="loadError"
-              :title="loadError"
-              type="error"
-              :closable="false"
-              show-icon
-              style="margin-bottom: 10px"
-            />
-
-            <div class="options-grid">
-              <div
-                v-for="opt in activeStep.options"
-                :key="opt.value"
-                class="option-card"
-                :class="{ active: isSelected(activeStep.key, opt) }"
-                @click="selectOption(activeStep, opt)"
-              >
-                <div class="option-label">{{ opt.label }}</div>
-                <div class="option-desc" v-if="opt.desc">{{ opt.desc }}</div>
-              </div>
-            </div>
-
-            <div v-if="activeStep.key === 'storage' && !storageOptions.length && !loadingCatalog" class="empty-tip">
-              该机型暂未提供容量信息，请返回重新选择机型。
-            </div>
-            <div v-if="loadingCatalog" class="empty-tip">容量数据加载中...</div>
-
-            <div class="nav">
-              <el-button round :disabled="currentStep === 1" @click="goPrev">上一题</el-button>
-              <div class="nav-right">
-                <el-button v-if="currentStep < totalSteps" type="primary" round @click="goNext">下一题</el-button>
-                <el-button v-else type="primary" round :disabled="!canCheckout" @click="goCheckout">去提交订单</el-button>
-              </div>
-            </div>
-          </el-card>
-        </div>
-      </el-col>
-      <el-col :span="8" :xs="24">
-        <el-card shadow="never" class="card summary-card">
-          <div class="summary-title">已选答案</div>
-          <div class="summary-list">
-            <div v-for="item in summaryList" :key="item.key" class="summary-item" @click="jumpTo(item.step)">
-              <div class="summary-step">#{{ item.step }}</div>
-              <div class="summary-content">
-                <div class="summary-label">{{ item.title }}</div>
-                <div class="summary-answer">{{ item.answer || "未填写" }}</div>
-              </div>
-              <el-button text type="primary" size="small">编辑</el-button>
-            </div>
-          </div>
-        </el-card>
-
-        <el-card shadow="never" class="card price-card">
-          <div class="summary-title">预计到手价</div>
-          <div class="price-value large">{{ estimatedPriceText }}</div>
-          <div class="condition-tip" v-if="draft.condition">按成色：{{ conditionText }}</div>
-          <div class="estimate-status" v-if="estimateError">{{ estimateError }}</div>
-          <div class="estimate-status" v-else-if="estimating">正在根据所选信息估价...</div>
-          <div class="estimate-status" v-else-if="!shouldEstimate">选择容量与成色后自动估价</div>
+            </el-collapse-item>
+          </el-collapse>
         </el-card>
       </el-col>
     </el-row>
@@ -137,8 +117,8 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
-import { Edit } from "@element-plus/icons-vue";
-import { getRecycleCatalog, estimateRecyclePrice } from "@/api/recycle";
+import { Edit, Check } from "@element-plus/icons-vue";
+import { getRecycleCatalog, estimateRecyclePrice, getRecycleQuestionTemplate, type RecycleQuestionTemplateResponse } from "@/api/recycle";
 import { useRecycleDraftStore, type ConditionLevel } from "@/stores/recycleDraft";
 
 type Impact = "positive" | "minor" | "major" | "critical";
@@ -157,7 +137,7 @@ type StepKey =
   | "screen_repair"
   | "functional";
 type StepOption = { value: string; label: string; desc?: string; impact?: Impact };
-type StepItem = { key: StepKey; title: string; helper?: string; type?: "multi" | "single"; options: StepOption[] };
+type StepItem = { key: StepKey; title: string; helper?: string; type?: "multi" | "single"; is_required?: boolean; options: StepOption[] };
 
 const route = useRoute();
 const router = useRouter();
@@ -170,6 +150,9 @@ const loadError = ref("");
 const estimating = ref(false);
 const estimateError = ref("");
 
+const loadingTemplate = ref(false);
+const templateFromBackend = ref<RecycleQuestionTemplateResponse | null>(null);
+
 const deviceType = computed(() => (route.query.device_type as string) || draft.selection.device_type || "");
 const brand = computed(() => (route.query.brand as string) || draft.selection.brand || "");
 const model = computed(() => (route.query.model as string) || draft.selection.model || "");
@@ -179,11 +162,44 @@ const isApple = computed(() => brand.value?.includes("苹果") || brand.value?.t
 
 const storageOptions = computed<StepOption[]>(() => storages.value.map((s) => ({ value: s, label: s })));
 
-const baseSteps = computed<StepItem[]>(() => [
+// 从后端模板转换为前端格式
+function convertTemplateToSteps(template: RecycleQuestionTemplateResponse | null): StepItem[] {
+  if (!template || !template.questions || template.questions.length === 0) {
+    return getDefaultSteps();
+  }
+
+  return template.questions.map((q) => {
+    const step: StepItem = {
+      key: q.key as StepKey,
+      title: q.title,
+      helper: q.helper || undefined,
+      type: q.question_type === 'multi' ? 'multi' : 'single',
+      is_required: q.is_required !== undefined ? q.is_required : true, // 默认必填
+      options: q.options.map((opt) => ({
+        value: opt.value,
+        label: opt.label,
+        desc: opt.desc || undefined,
+        impact: (opt.impact as Impact) || undefined,
+      })),
+    };
+
+    // 如果是存储容量问题，使用动态加载的storages
+    if (q.key === 'storage') {
+      step.options = storageOptions.value.length ? storageOptions.value : [];
+    }
+
+    return step;
+  });
+}
+
+// 默认步骤（前端固定，作为fallback）
+function getDefaultSteps(): StepItem[] {
+  return [
   {
     key: "channel",
     title: "购买渠道",
     helper: "官方直营/运营商/第三方等",
+    is_required: true,
     options: [
       { value: "official", label: "官方/直营", desc: "官网/直营店" },
       { value: "operator", label: "运营商/合约" },
@@ -194,6 +210,7 @@ const baseSteps = computed<StepItem[]>(() => [
   {
     key: "color",
     title: "颜色",
+    is_required: true,
     options: [
       { value: "black", label: "黑/深色" },
       { value: "white", label: "白/浅色" },
@@ -206,11 +223,13 @@ const baseSteps = computed<StepItem[]>(() => [
     key: "storage",
     title: "内存 / 存储",
     helper: "选容量以便精准估价",
+    is_required: true,
     options: storageOptions.value.length ? storageOptions.value : [],
   },
   {
     key: "usage",
     title: "使用情况",
+    is_required: true,
     options: [
       { value: "unopened", label: "全新未拆封", impact: "positive" },
       { value: "light", label: "几乎全新，使用很少", impact: "positive" },
@@ -221,6 +240,7 @@ const baseSteps = computed<StepItem[]>(() => [
   {
     key: "accessories",
     title: "有无配件",
+    is_required: true,
     options: [
       { value: "full", label: "配件齐全（盒/充/线）", impact: "positive" },
       { value: "partial", label: "有部分配件", impact: "minor" },
@@ -230,6 +250,7 @@ const baseSteps = computed<StepItem[]>(() => [
   {
     key: "screen_appearance",
     title: "屏幕外观",
+    is_required: true,
     options: [
       { value: "perfect", label: "完美无瑕", impact: "positive" },
       { value: "micro-scratch", label: "细微划痕", impact: "minor" },
@@ -241,6 +262,7 @@ const baseSteps = computed<StepItem[]>(() => [
   {
     key: "body",
     title: "机身外壳",
+    is_required: true,
     options: [
       { value: "body-perfect", label: "完美无瑕", impact: "positive" },
       { value: "body-micro", label: "细微划痕", impact: "minor" },
@@ -252,6 +274,7 @@ const baseSteps = computed<StepItem[]>(() => [
   {
     key: "display",
     title: "屏幕显示",
+    is_required: true,
     options: [
       { value: "display-ok", label: "显示正常", impact: "positive" },
       { value: "display-spot", label: "色差/亮斑/坏点", impact: "minor" },
@@ -262,6 +285,7 @@ const baseSteps = computed<StepItem[]>(() => [
   {
     key: "front_camera",
     title: "前摄拍照",
+    is_required: true,
     options: [
       { value: "front-ok", label: "正常", impact: "positive" },
       { value: "front-spot", label: "有斑/坏点", impact: "major" },
@@ -271,6 +295,7 @@ const baseSteps = computed<StepItem[]>(() => [
   {
     key: "rear_camera",
     title: "后摄拍照",
+    is_required: true,
     options: [
       { value: "rear-ok", label: "正常", impact: "positive" },
       { value: "rear-spot", label: "有斑/坏点", impact: "major" },
@@ -280,6 +305,7 @@ const baseSteps = computed<StepItem[]>(() => [
   {
     key: "repair",
     title: isApple.value ? "苹果维修情况" : "维修情况（机身）",
+    is_required: true,
     options: [
       { value: "no-repair", label: "无拆修/无改", impact: "positive" },
       { value: "minor-repair", label: "后壳贴标/轻微溢胶", impact: "minor" },
@@ -290,6 +316,7 @@ const baseSteps = computed<StepItem[]>(() => [
   {
     key: "screen_repair",
     title: "屏幕维修情况",
+    is_required: true,
     options: [
       { value: "screen-none", label: "无拆修", impact: "positive" },
       { value: "glass", label: "更换外层玻璃", impact: "minor" },
@@ -302,6 +329,7 @@ const baseSteps = computed<StepItem[]>(() => [
     title: "功能性问题（可多选）",
     helper: "不勾选则视为全部正常",
     type: "multi",
+    is_required: false, // 功能检测是非必选的
     options: [
       { value: "none", label: "都没有问题", impact: "positive" },
       { value: "touch", label: "触控异常", impact: "major" },
@@ -316,21 +344,36 @@ const baseSteps = computed<StepItem[]>(() => [
       { value: "nfc", label: "NFC异常", impact: "minor" },
     ],
   },
-]);
+];
+}
+
+const baseSteps = computed<StepItem[]>(() => {
+  // 优先使用后端模板，如果没有则使用默认步骤
+  const steps = convertTemplateToSteps(templateFromBackend.value);
+  console.log('[问卷步骤] 当前使用的步骤数量:', steps.length, '来源:', templateFromBackend.value ? '后端模板' : '前端默认');
+  return steps;
+});
 
 const totalSteps = computed(() => baseSteps.value.length);
 const currentStep = computed(() => Math.min(Math.max(draft.currentStep || 1, 1), totalSteps.value));
 const activeStep = computed(() => baseSteps.value[currentStep.value - 1] || baseSteps.value[0]);
 const answers = computed(() => draft.answers as Record<StepKey, StepOption | StepOption[]>);
 
-// 已回答的问题列表（收起状态）
-const answeredSteps = computed(() => {
-  return baseSteps.value
-    .slice(0, currentStep.value - 1)
-    .filter((step) => {
-      const ans = answers.value[step.key];
-      return ans !== undefined && ans !== null && (Array.isArray(ans) ? ans.length > 0 : true);
-    });
+// collapse 当前展开的步骤（字符串格式，因为 el-collapse 的 v-model 需要字符串）
+const activeCollapseStep = ref<string>('1');
+
+// 所有步骤（用于渲染）
+const allSteps = computed(() => baseSteps.value);
+
+// 检查问题是否有答案
+function hasAnswer(stepKey: StepKey): boolean {
+  const ans = answers.value[stepKey];
+  return ans !== undefined && ans !== null && (Array.isArray(ans) ? ans.length > 0 : true);
+}
+
+// 检查当前问题是否有答案
+const hasCurrentAnswer = computed(() => {
+  return hasAnswer(activeStep.value.key);
 });
 
 const selectedStorage = computed(() => {
@@ -361,7 +404,19 @@ const shouldEstimate = computed(
   () => deviceReady.value && !!selectedStorage.value && !!draft.condition && !!model.value && !!brand.value
 );
 
-const canCheckout = computed(() => !!selectedStorage.value && !!draft.condition);
+// 检查所有必填问题是否都已填写
+const allRequiredAnswered = computed(() => {
+  return baseSteps.value.every((step) => {
+    const isRequired = step.is_required !== false; // 默认必填
+    if (!isRequired) return true; // 非必填问题跳过检查
+    return hasAnswer(step.key);
+  });
+});
+
+const canCheckout = computed(() => {
+  // 必须选择存储容量和成色，且所有必填问题都已填写
+  return !!selectedStorage.value && !!draft.condition && allRequiredAnswered.value;
+});
 
 function isSelected(stepKey: StepKey, option: StepOption) {
   const ans = answers.value[stepKey];
@@ -373,6 +428,11 @@ function isSelected(stepKey: StepKey, option: StepOption) {
 }
 
 function goNext() {
+  // 检查当前问题是否有答案
+  if (!hasCurrentAnswer.value) {
+    ElMessage.warning("请先回答当前问题");
+    return;
+  }
   if (currentStep.value < totalSteps.value) {
     draft.setCurrentStep(currentStep.value + 1);
   }
@@ -405,16 +465,31 @@ function selectOption(step: StepItem, option: StepOption) {
     if (step.key === "storage") {
       draft.setStorage(option.value);
     }
-    // 单选问题：选择后自动跳转到下一个问题
-    if (currentStep.value < totalSteps.value) {
-      // 延迟跳转，让用户看到选择效果
-      setTimeout(() => {
-        goNext();
-      }, 200);
-    }
   }
   draft.setQuote(null, null);
   updateCondition();
+}
+
+// 处理选项选择（带自动跳转）
+function handleSelectOption(step: StepItem, option: StepOption, currentIdx: number) {
+  selectOption(step, option);
+  
+  // 单选问题：选择后自动跳转到下一个问题（必填问题必须填写后才能跳转）
+  if (step.type !== "multi" && currentIdx < totalSteps.value) {
+    const isRequired = step.is_required !== false; // 默认必填
+    const hasAnswerForStep = hasAnswer(step.key);
+    
+    // 如果是必填问题，必须填写后才能跳转
+    // 如果是非必填问题，选择后可以跳转，也可以不选择就跳过
+    if (hasAnswerForStep || !isRequired) {
+      // 延迟跳转，让用户看到选择效果
+      setTimeout(() => {
+        const nextStep = String(currentIdx + 1);
+        activeCollapseStep.value = nextStep;
+        draft.setCurrentStep(currentIdx + 1);
+      }, 200);
+    }
+  }
 }
 
 // 获取答案文本
@@ -429,8 +504,17 @@ function getAnswerText(stepKey: StepKey): string {
 
 // 展开指定问题
 function expandQuestion(step: number) {
+  activeCollapseStep.value = String(step);
   draft.setCurrentStep(step);
 }
+
+// 监听 activeCollapseStep 变化，同步到 draft.currentStep
+watch(activeCollapseStep, (newVal) => {
+  const stepNum = parseInt(newVal);
+  if (stepNum && stepNum !== currentStep.value) {
+    draft.setCurrentStep(stepNum);
+  }
+});
 
 function deriveCondition(ans: Record<string, any>): ConditionLevel {
   const options: StepOption[] = [];
@@ -484,6 +568,39 @@ async function loadStorages() {
   }
 }
 
+async function loadQuestionTemplate() {
+  if (!deviceReady.value) return;
+  loadingTemplate.value = true;
+  try {
+    const { data } = await getRecycleQuestionTemplate({
+      device_type: deviceType.value,
+      brand: brand.value,
+      model: model.value,
+    });
+    
+    console.log('[问卷加载] 从后端获取到模板:', data);
+    templateFromBackend.value = data;
+    
+    // 如果后端模板有storages，更新storages
+    if (data.storages && data.storages.length > 0) {
+      storages.value = data.storages;
+    }
+    
+    // 检查是否有问题数据
+    if (data.questions && data.questions.length > 0) {
+      console.log(`[问卷加载] 成功加载 ${data.questions.length} 个问题`);
+    } else {
+      console.warn('[问卷加载] 后端返回的模板没有问题数据');
+    }
+  } catch (error) {
+    // 如果后端没有模板，使用前端默认步骤（不显示错误）
+    templateFromBackend.value = null;
+    console.log('[问卷加载] 未找到后端问卷模板，使用默认步骤', error);
+  } finally {
+    loadingTemplate.value = false;
+  }
+}
+
 let estimateTimer: number | undefined;
 
 async function runEstimate() {
@@ -529,22 +646,22 @@ watch(
   }
 );
 
-const summaryList = computed(() =>
-  baseSteps.value.map((s, idx) => {
-    const ans = answers.value[s.key];
-    let text = "";
-    if (Array.isArray(ans)) {
-      text = ans.map((x: StepOption) => x.label).join("、");
-    } else if (ans) {
-      text = (ans as StepOption).label;
-    }
-    return { key: s.key, step: idx + 1, title: s.title, answer: text };
-  })
-);
 
 function goCheckout() {
   if (!canCheckout.value) {
-    ElMessage.warning("请选择容量并完成必要步骤");
+    if (!selectedStorage.value) {
+      ElMessage.warning("请先选择存储容量");
+      return;
+    }
+    if (!draft.condition) {
+      ElMessage.warning("请完成所有必填问题");
+      return;
+    }
+    if (!allRequiredAnswered.value) {
+      ElMessage.warning("请完成所有必填问题后再提交");
+      return;
+    }
+    ElMessage.warning("请完成所有必填问题后再提交");
     return;
   }
   draft.setSelection({ device_type: deviceType.value, brand: brand.value, model: model.value });
@@ -557,7 +674,19 @@ onMounted(async () => {
     return;
   }
   draft.setSelection({ device_type: deviceType.value, brand: brand.value, model: model.value });
-  await loadStorages();
+  
+  // 先尝试从后端加载问卷模板
+  await loadQuestionTemplate();
+  
+  // 如果后端没有模板，再加载storages（用于默认步骤）
+  if (!templateFromBackend.value) {
+    await loadStorages();
+  }
+  
+  // 第一个问题默认展开
+  activeCollapseStep.value = '1';
+  draft.setCurrentStep(1);
+  
   updateCondition();
 });
 </script>
@@ -570,98 +699,149 @@ onMounted(async () => {
 .subtitle { color: #6b7280; margin-top: 4px; }
 .device-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; color: #111827; }
 .device-chip { font-weight: 700; }
-.price-preview { background: #111827; color: #fff; padding: 12px 16px; border-radius: 12px; min-width: 200px; }
-.price-label { font-size: 12px; opacity: 0.8; }
-.price-value { font-size: 22px; font-weight: 900; margin-top: 2px; }
 .price-value.large { font-size: 26px; }
 .condition-tip { color: #6b7280; margin-top: 4px; }
 .wizard-body { margin-top: 4px; }
 
-/* 问题容器 */
-.questions-container {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+/* 问题卡片 */
+.questions-card {
+  padding: 20px;
 }
 
-/* 收起状态的问题卡片 */
-.question-card.collapsed {
-  padding: 16px 20px;
-}
-
-.collapsed-question {
+/* 步骤标题 */
+.step-title {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  width: 100%;
+  padding-right: 20px;
+  font-weight: bold;
+  font-size: 16px;
 }
 
-.collapsed-content {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.step-num {
+  font-weight: 700;
 }
 
-.collapsed-title {
+.selected-val {
+  color: #409EFF;
+  font-weight: normal;
   font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary, #111827);
-  min-width: 100px;
-}
-
-.collapsed-answer {
-  font-size: 14px;
-  color: var(--text-secondary, #6b7280);
-  background: #f3f4f6;
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
-}
-
-.edit-btn {
-  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.edit-btn .el-icon {
+.selected-val .el-icon {
   font-size: 14px;
 }
 
-/* 展开状态的问题卡片 */
-.question-card.expanded {
-  padding: 20px;
+.optional-hint {
+  color: #909399;
+  font-size: 12px;
+  font-weight: normal;
 }
 
-.step-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 16px; }
-.step-title { font-size: 18px; font-weight: 800; color: var(--text-primary, #111827); }
-.step-hint { color: #6b7280; margin-top: 6px; font-size: 13px; }
-.options-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 12px; }
-.option-card { border: 1px solid #e6e8ee; border-radius: 12px; padding: 12px; background: #fff; cursor: pointer; transition: all 0.2s; }
-.option-card:hover { border-color: #cfd4df; transform: translateY(-1px); }
-.option-card.active { border-color: var(--el-color-primary, #ff6a00); box-shadow: 0 0 0 1px var(--el-color-primary, #ff6a00) inset; background: #fff5e6; }
-.option-label { font-weight: 700; }
-.option-desc { color: #6b7280; font-size: 12px; margin-top: 4px; }
-.nav { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; }
-.nav-right { display: flex; gap: 10px; }
-.summary-card { margin-top: 12px; }
-.summary-title { font-weight: 800; margin-bottom: 8px; }
-.summary-list { display: flex; flex-direction: column; gap: 8px; }
-.summary-item { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px dashed #e6e8ee; border-radius: 12px; cursor: pointer; background: #fff; }
-.summary-step { width: 28px; height: 28px; border-radius: 50%; background: #f3f4f6; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #111827; }
-.summary-label { font-weight: 700; }
-.summary-answer { color: #6b7280; font-size: 12px; margin-top: 2px; }
-.summary-content { flex: 1; }
-.price-card { margin-top: 12px; }
-.estimate-status { color: #6b7280; font-size: 12px; margin-top: 6px; }
+/* 问题内容 */
+.question-content {
+  padding: 10px 0;
+}
+
+.step-hint {
+  color: #6b7280;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+/* 网格布局：PC端核心样式 */
+.options-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  padding: 10px 0;
+}
+
+.option-item {
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  padding: 30px 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: #fff;
+}
+
+.option-item:hover {
+  border-color: #409EFF;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+}
+
+.option-item.active {
+  background-color: #ecf5ff;
+  border-color: #409EFF;
+  color: #409EFF;
+  font-weight: bold;
+}
+
+.option-label {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+
+.option-desc {
+  font-size: 12px;
+  color: #999;
+  font-weight: normal;
+  margin-top: 5px;
+}
+
+.submit-area {
+  text-align: center;
+  padding: 20px 0;
+  margin-top: 20px;
+}
+/* 估价信息卡片 */
+.price-info-card {
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+}
+
+.price-info-content {
+  padding: 20px;
+  color: #fff;
+  text-align: center;
+}
+
+.price-info-label {
+  font-size: 14px;
+  opacity: 0.9;
+  margin-bottom: 8px;
+}
+
+.price-info-value {
+  font-size: 32px;
+  font-weight: 900;
+  margin-bottom: 8px;
+}
+
+.price-info-condition {
+  font-size: 13px;
+  opacity: 0.85;
+  margin-top: 4px;
+}
+
+.price-info-status {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 8px;
+}
 .empty-tip { margin-top: 12px; padding: 12px; background: #f9fafb; border: 1px dashed #e6e8ee; border-radius: 12px; color: #6b7280; }
 .storage-tag { margin-left: 6px; }
 .device-line .sep { color: #9ca3af; }
 @media (max-width: 1024px) {
   .top-bar { flex-direction: column; }
-  .price-preview { width: 100%; }
-  .options-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .options-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .option-item { padding: 20px 10px; }
 }
 </style>

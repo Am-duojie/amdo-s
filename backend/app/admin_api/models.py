@@ -60,3 +60,97 @@ class AdminRefreshToken(models.Model):
 class AdminTokenBlacklist(models.Model):
     jti = models.CharField(max_length=64, unique=True)
     blacklisted_at = models.DateTimeField(auto_now_add=True)
+
+
+# ==================== 回收机型模板管理 ====================
+
+class RecycleDeviceTemplate(models.Model):
+    """回收机型模板"""
+    device_type = models.CharField(max_length=32, verbose_name='设备类型', help_text='如：手机、平板、笔记本')
+    brand = models.CharField(max_length=64, verbose_name='品牌')
+    model = models.CharField(max_length=128, verbose_name='型号')
+    storages = models.JSONField(default=list, verbose_name='存储容量列表', help_text='如：["128GB", "256GB", "512GB"]')
+    series = models.CharField(max_length=64, blank=True, verbose_name='系列', help_text='如：iPhone 13系列')
+    is_active = models.BooleanField(default=True, verbose_name='是否启用')
+    created_by = models.ForeignKey(AdminUser, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='创建人')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        verbose_name = '回收机型模板'
+        verbose_name_plural = '回收机型模板'
+        unique_together = [['device_type', 'brand', 'model']]
+        ordering = ['device_type', 'brand', 'model']
+
+    def __str__(self):
+        return f"{self.device_type} / {self.brand} / {self.model}"
+
+
+class RecycleQuestionTemplate(models.Model):
+    """回收问卷步骤模板"""
+    device_template = models.ForeignKey(
+        RecycleDeviceTemplate,
+        on_delete=models.CASCADE,
+        related_name='questions',
+        verbose_name='机型模板'
+    )
+    step_order = models.IntegerField(verbose_name='步骤顺序', help_text='从1开始')
+    key = models.CharField(max_length=64, verbose_name='问题标识', help_text='如：channel, color, storage')
+    title = models.CharField(max_length=128, verbose_name='问题标题')
+    helper = models.CharField(max_length=256, blank=True, verbose_name='提示文本')
+    question_type = models.CharField(
+        max_length=16,
+        choices=[('single', '单选'), ('multi', '多选')],
+        default='single',
+        verbose_name='问题类型'
+    )
+    is_required = models.BooleanField(default=True, verbose_name='是否必填')
+    is_active = models.BooleanField(default=True, verbose_name='是否启用')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        verbose_name = '问卷步骤模板'
+        verbose_name_plural = '问卷步骤模板'
+        unique_together = [['device_template', 'step_order'], ['device_template', 'key']]
+        ordering = ['device_template', 'step_order']
+
+    def __str__(self):
+        return f"{self.device_template} - {self.step_order}. {self.title}"
+
+
+class RecycleQuestionOption(models.Model):
+    """回收问卷选项"""
+    question_template = models.ForeignKey(
+        RecycleQuestionTemplate,
+        on_delete=models.CASCADE,
+        related_name='options',
+        verbose_name='问题模板'
+    )
+    value = models.CharField(max_length=128, verbose_name='选项值', help_text='如：official, black, 256GB')
+    label = models.CharField(max_length=128, verbose_name='选项标签', help_text='显示给用户的文本')
+    desc = models.CharField(max_length=256, blank=True, verbose_name='选项描述', help_text='辅助说明文本')
+    impact = models.CharField(
+        max_length=16,
+        choices=[
+            ('positive', '正面影响'),
+            ('minor', '轻微影响'),
+            ('major', '重大影响'),
+            ('critical', '严重影响'),
+        ],
+        blank=True,
+        verbose_name='对估价的影响'
+    )
+    option_order = models.IntegerField(default=0, verbose_name='选项顺序')
+    is_active = models.BooleanField(default=True, verbose_name='是否启用')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        verbose_name = '问卷选项'
+        verbose_name_plural = '问卷选项'
+        unique_together = [['question_template', 'value']]
+        ordering = ['question_template', 'option_order', 'id']
+
+    def __str__(self):
+        return f"{self.question_template.title} - {self.label}"

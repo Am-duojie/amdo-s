@@ -8,10 +8,12 @@
       <el-table-column prop="id" label="队列ID" width="100" />
       <el-table-column prop="type" label="类型" width="120" />
       <el-table-column prop="rules_hit" label="命中规则" />
-      <el-table-column label="操作" width="240">
+      <el-table-column label="操作" width="180">
         <template #default="{row}">
-          <el-button v-if="hasPerm('audit:write')" size="small" type="success" @click="decision(row,'approve')">通过</el-button>
-          <el-button v-if="hasPerm('audit:write')" size="small" type="danger" @click="decision(row,'reject')">驳回</el-button>
+          <el-space wrap>
+            <el-button v-if="hasPerm('audit:write')" size="small" type="success" @click="decision(row,'approve')">通过</el-button>
+            <el-button v-if="hasPerm('audit:write')" size="small" type="danger" @click="decision(row,'reject')">驳回</el-button>
+          </el-space>
         </template>
       </el-table-column>
     </el-table>

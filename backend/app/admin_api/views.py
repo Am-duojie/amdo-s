@@ -8,10 +8,17 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from rest_framework import status
 from django.conf import settings
-from .models import AdminUser, AdminRole, AdminInspectionReport, AdminAuditQueueItem, AdminAuditLog, AdminRefreshToken, AdminTokenBlacklist
+from .models import (
+    AdminUser, AdminRole, AdminInspectionReport, AdminAuditQueueItem, AdminAuditLog, AdminRefreshToken, AdminTokenBlacklist,
+    RecycleDeviceTemplate, RecycleQuestionTemplate, RecycleQuestionOption
+)
 from app.secondhand_app.models import RecycleOrder, VerifiedProduct, VerifiedOrder, Order, Shop, Category, Product, Message, Address, VerifiedDevice, create_verified_device_from_recycle_order
 from app.secondhand_app.alipay_client import AlipayClient
-from .serializers import AdminUserSerializer, RecycleOrderListSerializer, VerifiedProductListSerializer, AdminAuditQueueItemSerializer, ShopAdminSerializer, VerifiedDeviceListSerializer
+from .serializers import (
+    AdminUserSerializer, RecycleOrderListSerializer, VerifiedProductListSerializer, AdminAuditQueueItemSerializer,
+    ShopAdminSerializer, VerifiedDeviceListSerializer,
+    RecycleDeviceTemplateSerializer, RecycleDeviceTemplateListSerializer, RecycleQuestionTemplateSerializer, RecycleQuestionOptionSerializer
+)
 from app.secondhand_app.serializers import OrderSerializer, VerifiedProductSerializer, VerifiedDeviceSerializer
 from .jwt import encode as jwt_encode, decode as jwt_decode
 from django.contrib.auth.hashers import check_password, make_password
@@ -2406,3 +2413,906 @@ class AddressesAdminView(APIView):
             return Response({'success': True})
         except Address.DoesNotExist:
             return Response({'detail': '地址不存在'}, status=404)
+
+
+# ==================== 回收机型模板管理 ====================
+
+@method_decorator(csrf_exempt, name='dispatch')
+class RecycleDeviceTemplateView(APIView):
+    """回收机型模板管理"""
+    authentication_classes = []
+    permission_classes = []
+    
+    def get(self, request, template_id=None):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
+        if not has_perms(admin, ['recycle_template:view']):
+            return Response({'detail': '没有权限执行此操作，需要 recycle_template:view 权限'}, status=403)
+        
+        if template_id:
+            # 获取单个模板详情
+            try:
+                template = RecycleDeviceTemplate.objects.get(id=template_id)
+                serializer = RecycleDeviceTemplateSerializer(template)
+                return Response(serializer.data)
+            except RecycleDeviceTemplate.DoesNotExist:
+                return Response({'detail': '模板不存在'}, status=404)
+        else:
+            # 获取模板列表
+            device_type = request.query_params.get('device_type', '')
+            brand = request.query_params.get('brand', '')
+            search = request.query_params.get('search', '').strip()
+            page = int(request.query_params.get('page', 1))
+            page_size = int(request.query_params.get('page_size', 20))
+            
+            qs = RecycleDeviceTemplate.objects.all()
+            
+            if device_type:
+                qs = qs.filter(device_type=device_type)
+            if brand:
+                qs = qs.filter(brand=brand)
+            if search:
+                qs = qs.filter(
+                    Q(device_type__icontains=search) |
+                    Q(brand__icontains=search) |
+                    Q(model__icontains=search)
+                )
+            
+            total = qs.count()
+            items = qs.order_by('device_type', 'brand', 'model')[(page-1)*page_size: page*page_size]
+            serializer = RecycleDeviceTemplateListSerializer(items, many=True)
+            return Response({'results': serializer.data, 'count': total})
+    
+    def post(self, request):
+        """创建模板"""
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
+        if not has_perms(admin, ['recycle_template:create']):
+            return Response({'detail': '没有权限执行此操作，需要 recycle_template:create 权限'}, status=403)
+        
+        data = request.data.copy()
+        data['created_by'] = admin.id
+        
+        serializer = RecycleDeviceTemplateSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+    
+    def put(self, request, template_id):
+        """更新模板"""
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
+        if not has_perms(admin, ['recycle_template:update']):
+            return Response({'detail': '没有权限执行此操作，需要 recycle_template:update 权限'}, status=403)
+        
+        try:
+            template = RecycleDeviceTemplate.objects.get(id=template_id)
+            serializer = RecycleDeviceTemplateSerializer(template, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=400)
+        except RecycleDeviceTemplate.DoesNotExist:
+            return Response({'detail': '模板不存在'}, status=404)
+    
+    def delete(self, request, template_id):
+        """删除模板"""
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
+        if not has_perms(admin, ['recycle_template:delete']):
+            return Response({'detail': '没有权限执行此操作，需要 recycle_template:delete 权限'}, status=403)
+        
+        try:
+            template = RecycleDeviceTemplate.objects.get(id=template_id)
+            template.delete()
+            return Response({'success': True})
+        except RecycleDeviceTemplate.DoesNotExist:
+            return Response({'detail': '模板不存在'}, status=404)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class RecycleTemplateDownloadView(APIView):
+    """下载机型模板文件（Excel格式）"""
+    authentication_classes = []
+    permission_classes = []
+    
+    def get(self, request):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
+        if not has_perms(admin, ['recycle_template:view']):
+            return Response({'detail': '没有权限执行此操作，需要 recycle_template:view 权限'}, status=403)
+        
+        try:
+            import io
+            from django.http import HttpResponse
+            
+            # 尝试使用pandas生成Excel，如果没有则使用csv
+            try:
+                import pandas as pd
+                use_excel = True
+            except ImportError:
+                use_excel = False
+            
+            # 检查是否导出现有机型（包含完整问卷配置）
+            export_existing = request.query_params.get('export_existing', '').lower() == 'true'
+            
+            if export_existing:
+                # 导出现有机型模板（包含完整问卷配置）
+                from app.admin_api.models import RecycleDeviceTemplate
+                templates = RecycleDeviceTemplate.objects.filter(is_active=True).order_by('device_type', 'brand', 'model')
+                
+                template_data = []
+                question_data = []
+                option_data = []
+                
+                for template in templates:
+                    # 机型基础信息
+                    template_data.append({
+                        '设备类型': template.device_type,
+                        '品牌': template.brand,
+                        '型号': template.model,
+                        '系列': template.series or '',
+                        '存储容量': ','.join(template.storages),
+                        '是否启用': '是' if template.is_active else '否'
+                    })
+                    
+                    # 该机型的问卷步骤和选项
+                    questions = template.questions.filter(is_active=True).order_by('step_order')
+                    for question in questions:
+                        question_data.append({
+                            '设备类型': template.device_type,
+                            '品牌': template.brand,
+                            '型号': template.model,
+                            '步骤顺序': question.step_order,
+                            '问题标识': question.key,
+                            '问题标题': question.title,
+                            '提示文本': question.helper or '',
+                            '问题类型': question.question_type,
+                            '是否必填': '是' if question.is_required else '否',
+                            '是否启用': '是' if question.is_active else '否'
+                        })
+                        
+                        # 该问题的选项（存储容量问题除外，会自动生成）
+                        if question.key != 'storage':
+                            options = question.options.filter(is_active=True).order_by('option_order', 'id')
+                            for option in options:
+                                option_data.append({
+                                    '设备类型': template.device_type,
+                                    '品牌': template.brand,
+                                    '型号': template.model,
+                                    '问题标识': question.key,
+                                    '选项值': option.value,
+                                    '选项标签': option.label,
+                                    '选项描述': option.desc or '',
+                                    '对估价的影响': option.impact or '',
+                                    '选项顺序': option.option_order,
+                                    '是否启用': '是' if option.is_active else '否'
+                                })
+            else:
+                # 创建空模板（仅示例数据）
+                template_data = []
+                template_data.append({
+                    '设备类型': '手机',
+                    '品牌': '苹果',
+                    '型号': 'iPhone 15 Pro Max',
+                    '系列': '15系列',
+                    '存储容量': '128GB,256GB,512GB,1TB',
+                    '是否启用': '是'
+                })
+                
+                # 创建问卷步骤数据（示例，使用默认问卷）
+                from app.admin_api.management.commands.import_recycle_templates import DEFAULT_QUESTIONS
+                question_data = []
+                for q in DEFAULT_QUESTIONS:
+                    question_data.append({
+                        '设备类型': '手机',
+                        '品牌': '苹果',
+                        '型号': 'iPhone 15 Pro Max',
+                        '步骤顺序': q['step_order'],
+                        '问题标识': q['key'],
+                        '问题标题': q['title'],
+                        '提示文本': q.get('helper', ''),
+                        '问题类型': q['question_type'],
+                        '是否必填': '是' if q['is_required'] else '否',
+                        '是否启用': '是'
+                    })
+                
+                # 创建问卷选项数据（示例）
+                option_data = []
+                for q in DEFAULT_QUESTIONS:
+                    if q['key'] == 'storage':
+                        continue  # 存储容量选项会自动生成
+                    for opt in q.get('options', []):
+                        option_data.append({
+                            '设备类型': '手机',
+                            '品牌': '苹果',
+                            '型号': 'iPhone 15 Pro Max',
+                            '问题标识': q['key'],
+                            '选项值': opt['value'],
+                            '选项标签': opt['label'],
+                            '选项描述': opt.get('desc', ''),
+                            '对估价的影响': opt.get('impact', ''),
+                            '选项顺序': opt['option_order'],
+                            '是否启用': '是'
+                        })
+            
+            if use_excel:
+                # 使用pandas生成Excel
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    # 工作表1：机型模板
+                    df_templates = pd.DataFrame(template_data)
+                    df_templates.to_excel(writer, index=False, sheet_name='机型模板')
+                    
+                    # 工作表2：问卷步骤（如果有数据）
+                    if question_data:
+                        df_questions = pd.DataFrame(question_data)
+                        df_questions.to_excel(writer, index=False, sheet_name='问卷步骤')
+                    
+                    # 工作表3：问卷选项（如果有数据）
+                    if option_data:
+                        df_options = pd.DataFrame(option_data)
+                        df_options.to_excel(writer, index=False, sheet_name='问卷选项')
+                    
+                    # 工作表4：填写说明
+                    instructions_text = [
+                        '【使用方式】',
+                        '方式一：导出现有机型（推荐）',
+                        '1. 在管理端页面，点击"导出完整模板"按钮',
+                        '2. 系统会导出所有现有机型及其完整问卷配置',
+                        '3. 在Excel中修改机型信息或问卷配置',
+                        '4. 保存后点击"上传导入"重新导入',
+                        '',
+                        '方式二：使用空模板',
+                        '1. 点击"下载模板"按钮下载空模板',
+                        '2. 在"机型模板"工作表中填写机型信息',
+                        '3. 如果填写了"问卷步骤"和"问卷选项"工作表，会使用自定义配置',
+                        '4. 如果没有填写问卷工作表，会使用默认13步问卷',
+                        '',
+                        '【机型模板工作表】',
+                        '1. 设备类型：手机、平板、笔记本',
+                        '2. 品牌：如苹果、华为、小米等',
+                        '3. 型号：具体型号名称',
+                        '4. 系列：可选，如"15系列"、"Pro系列"',
+                        '5. 存储容量：多个容量用逗号分隔，如"128GB,256GB,512GB"',
+                        '6. 是否启用：是/否',
+                        '',
+                        '【问卷步骤工作表】（可选）',
+                        '如果填写此工作表，导入时会使用此配置创建问卷，否则使用默认13步问卷',
+                        '1. 设备类型、品牌、型号：必须填写，用于指定该问卷配置适用于哪个机型',
+                        '2. 步骤顺序：从1开始，控制问题显示顺序',
+                        '3. 问题标识：唯一标识，如channel, color, storage',
+                        '4. 问题标题：显示给用户的问题文本',
+                        '5. 提示文本：辅助说明（可选）',
+                        '6. 问题类型：single（单选）或multi（多选）',
+                        '7. 是否必填：是/否',
+                        '8. 是否启用：是/否',
+                        '',
+                        '【问卷选项工作表】（可选）',
+                        '如果填写问卷步骤，必须填写对应的选项',
+                        '1. 设备类型、品牌、型号：必须填写，对应机型模板中的机型',
+                        '2. 问题标识：对应问卷步骤中的问题标识',
+                        '3. 选项值：唯一标识，如official, black',
+                        '4. 选项标签：显示给用户的文本',
+                        '5. 选项描述：辅助说明（可选）',
+                        '6. 对估价的影响：positive/minor/major/critical（可选）',
+                        '7. 选项顺序：控制选项显示顺序',
+                        '8. 是否启用：是/否',
+                        '',
+                        '注意：',
+                        '- 存储容量问题的选项会自动从机型模板的存储容量生成',
+                        '- 如果机型已存在，会更新存储容量和系列信息',
+                        '- 如果提供了问卷配置，会替换现有问卷（如果存在）',
+                        '- 每个机型可以有自己独立的问卷配置'
+                    ]
+                    instructions = pd.DataFrame({'说明': instructions_text})
+                    instructions.to_excel(writer, index=False, sheet_name='填写说明')
+                
+                output.seek(0)
+                response = HttpResponse(
+                    output.read(),
+                    content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+                if export_existing:
+                    response['Content-Disposition'] = 'attachment; filename="机型模板完整导出.xlsx"'
+                else:
+                    response['Content-Disposition'] = 'attachment; filename="机型模板导入文件.xlsx"'
+                return response
+            else:
+                # 使用CSV格式
+                import csv
+                response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+                response['Content-Disposition'] = 'attachment; filename="机型模板导入文件.csv"'
+                
+                writer = csv.DictWriter(response, fieldnames=['设备类型', '品牌', '型号', '系列', '存储容量', '是否启用'])
+                writer.writeheader()
+                writer.writerows(template_data)
+                
+                return response
+        except Exception as e:
+            return Response({'detail': f'生成模板文件失败: {str(e)}'}, status=500)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class RecycleTemplateImportView(APIView):
+    """上传文件并批量导入机型模板"""
+    authentication_classes = []
+    permission_classes = []
+    
+    def post(self, request):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
+        if not has_perms(admin, ['recycle_template:create']):
+            return Response({'detail': '没有权限执行此操作，需要 recycle_template:create 权限'}, status=403)
+        
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            return Response({'detail': '请上传文件'}, status=400)
+        
+        clear = request.data.get('clear', False)
+        
+        try:
+            from app.admin_api.models import RecycleDeviceTemplate, RecycleQuestionTemplate, RecycleQuestionOption
+            from app.admin_api.management.commands.import_recycle_templates import DEFAULT_QUESTIONS
+            import io
+            
+            # 解析文件
+            file_content = uploaded_file.read()
+            file_name = uploaded_file.name.lower()
+            
+            devices_data = []
+            custom_questions = None  # 自定义问卷步骤
+            custom_options = None   # 自定义问卷选项
+            
+            # 判断文件类型并解析
+            if file_name.endswith('.xlsx') or file_name.endswith('.xls'):
+                try:
+                    import pandas as pd
+                    excel_file = io.BytesIO(file_content)
+                    
+                    # 读取机型模板工作表
+                    try:
+                        df_templates = pd.read_excel(excel_file, sheet_name='机型模板', engine='openpyxl')
+                    except ValueError:
+                        # 如果没有指定工作表名，读取第一个工作表
+                        excel_file.seek(0)
+                        df_templates = pd.read_excel(excel_file, engine='openpyxl')
+                    
+                    # 尝试读取问卷步骤工作表
+                    try:
+                        excel_file.seek(0)
+                        df_questions = pd.read_excel(excel_file, sheet_name='问卷步骤', engine='openpyxl')
+                        if not df_questions.empty:
+                            custom_questions = df_questions
+                    except (ValueError, KeyError):
+                        pass  # 没有问卷步骤工作表，使用默认
+                    
+                    # 尝试读取问卷选项工作表
+                    try:
+                        excel_file.seek(0)
+                        df_options = pd.read_excel(excel_file, sheet_name='问卷选项', engine='openpyxl')
+                        if not df_options.empty:
+                            custom_options = df_options
+                    except (ValueError, KeyError):
+                        pass  # 没有问卷选项工作表，使用默认
+                    
+                    df = df_templates
+                except ImportError:
+                    return Response({'detail': '系统未安装pandas和openpyxl，无法解析Excel文件。请安装：pip install pandas openpyxl'}, status=500)
+                except Exception as e:
+                    return Response({'detail': f'解析Excel文件失败: {str(e)}'}, status=400)
+            elif file_name.endswith('.csv'):
+                try:
+                    import pandas as pd
+                    df = pd.read_csv(io.BytesIO(file_content), encoding='utf-8-sig')
+                except ImportError:
+                    import csv
+                    import codecs
+                    df_data = []
+                    csv_reader = csv.DictReader(codecs.iterdecode(io.BytesIO(file_content), 'utf-8-sig'))
+                    for row in csv_reader:
+                        df_data.append(row)
+                    df = pd.DataFrame(df_data)
+                except Exception as e:
+                    return Response({'detail': f'解析CSV文件失败: {str(e)}'}, status=400)
+            else:
+                return Response({'detail': '不支持的文件格式，请上传Excel(.xlsx/.xls)或CSV文件'}, status=400)
+            
+            # 验证必需的列
+            required_columns = ['设备类型', '品牌', '型号', '存储容量']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                return Response({'detail': f'文件缺少必需的列: {", ".join(missing_columns)}'}, status=400)
+            
+            # 转换为字典列表
+            for _, row in df.iterrows():
+                device_type = str(row.get('设备类型', '')).strip()
+                brand = str(row.get('品牌', '')).strip()
+                model = str(row.get('型号', '')).strip()
+                series = str(row.get('系列', '')).strip() if pd.notna(row.get('系列')) else ''
+                storages_str = str(row.get('存储容量', '')).strip()
+                is_active_str = str(row.get('是否启用', '是')).strip().lower()
+                
+                if not device_type or not brand or not model or not storages_str:
+                    continue  # 跳过空行
+                
+                # 解析存储容量
+                storages = [s.strip() for s in storages_str.split(',') if s.strip()]
+                if not storages:
+                    continue
+                
+                # 解析是否启用
+                is_active = is_active_str in ['是', 'yes', 'true', '1', '启用']
+                
+                devices_data.append({
+                    'device_type': device_type,
+                    'brand': brand,
+                    'model': model,
+                    'series': series,
+                    'storages': storages,
+                    'is_active': is_active
+                })
+            
+            if not devices_data:
+                return Response({'detail': '文件中没有有效的机型数据'}, status=400)
+            
+            # 解析自定义问卷配置（支持按机型匹配，支持匹配优先级）
+            # questions_config_by_device: {(device_type, brand, model): [questions]}
+            questions_config_by_device = {}
+            if custom_questions is not None and not custom_questions.empty:
+                try:
+                    for _, q_row in custom_questions.iterrows():
+                        # 获取机型匹配条件（可选，用于灵活匹配）
+                        device_type = str(q_row.get('设备类型', '')).strip() if pd.notna(q_row.get('设备类型')) else None
+                        brand = str(q_row.get('品牌', '')).strip() if pd.notna(q_row.get('品牌')) else None
+                        model = str(q_row.get('型号', '')).strip() if pd.notna(q_row.get('型号')) else None
+                        
+                        step_order = int(q_row.get('步骤顺序', 0))
+                        key = str(q_row.get('问题标识', '')).strip()
+                        title = str(q_row.get('问题标题', '')).strip()
+                        helper = str(q_row.get('提示文本', '')).strip() if pd.notna(q_row.get('提示文本')) else ''
+                        question_type = str(q_row.get('问题类型', 'single')).strip()
+                        is_required_str = str(q_row.get('是否必填', '是')).strip().lower()
+                        is_active_str = str(q_row.get('是否启用', '是')).strip().lower()
+                        
+                        if not key or not title:
+                            continue
+                        
+                        # 创建匹配键：如果所有字段都为空，则匹配所有机型；否则按填写情况匹配
+                        match_key = (device_type, brand, model)
+                        if match_key not in questions_config_by_device:
+                            questions_config_by_device[match_key] = []
+                        
+                        questions_config_by_device[match_key].append({
+                            'step_order': step_order,
+                            'key': key,
+                            'title': title,
+                            'helper': helper,
+                            'question_type': question_type,
+                            'is_required': is_required_str in ['是', 'yes', 'true', '1'],
+                            'is_active': is_active_str in ['是', 'yes', 'true', '1', '启用']
+                        })
+                except Exception as e:
+                    return Response({'detail': f'解析问卷步骤配置失败: {str(e)}'}, status=400)
+            
+            # options_config_by_device: {(device_type, brand, model, question_key): [options]}
+            options_config_by_device = {}
+            if custom_options is not None and not custom_options.empty:
+                try:
+                    for _, opt_row in custom_options.iterrows():
+                        # 获取机型匹配条件（可选，用于灵活匹配）
+                        device_type = str(opt_row.get('设备类型', '')).strip() if pd.notna(opt_row.get('设备类型')) else None
+                        brand = str(opt_row.get('品牌', '')).strip() if pd.notna(opt_row.get('品牌')) else None
+                        model = str(opt_row.get('型号', '')).strip() if pd.notna(opt_row.get('型号')) else None
+                        question_key = str(opt_row.get('问题标识', '')).strip()
+                        value = str(opt_row.get('选项值', '')).strip()
+                        label = str(opt_row.get('选项标签', '')).strip()
+                        desc = str(opt_row.get('选项描述', '')).strip() if pd.notna(opt_row.get('选项描述')) else ''
+                        impact = str(opt_row.get('对估价的影响', '')).strip() if pd.notna(opt_row.get('对估价的影响')) else ''
+                        option_order = int(opt_row.get('选项顺序', 0))
+                        is_active_str = str(opt_row.get('是否启用', '是')).strip().lower()
+                        
+                        if not question_key or not value or not label:
+                            continue
+                        
+                        # 创建匹配键
+                        match_key = (device_type, brand, model, question_key)
+                        if match_key not in options_config_by_device:
+                            options_config_by_device[match_key] = []
+                        
+                        options_config_by_device[match_key].append({
+                            'value': value,
+                            'label': label,
+                            'desc': desc,
+                            'impact': impact,
+                            'option_order': option_order,
+                            'is_active': is_active_str in ['是', 'yes', 'true', '1', '启用']
+                        })
+                except Exception as e:
+                    return Response({'detail': f'解析问卷选项配置失败: {str(e)}'}, status=400)
+            
+            # 清空现有数据（如果指定）
+            if clear:
+                RecycleQuestionOption.objects.all().delete()
+                RecycleQuestionTemplate.objects.all().delete()
+                RecycleDeviceTemplate.objects.all().delete()
+            
+            # 导入数据
+            total_templates = 0
+            total_questions = 0
+            total_options = 0
+            errors = []
+            
+            for device_data in devices_data:
+                try:
+                    # 创建或更新机型模板
+                    template, created = RecycleDeviceTemplate.objects.get_or_create(
+                        device_type=device_data['device_type'],
+                        brand=device_data['brand'],
+                        model=device_data['model'],
+                        defaults={
+                            'storages': device_data['storages'],
+                            'series': device_data['series'],
+                            'is_active': device_data['is_active'],
+                            'created_by': admin,
+                        }
+                    )
+                    
+                    if not created:
+                        # 更新现有模板
+                        template.storages = device_data['storages']
+                        template.series = device_data['series']
+                        template.is_active = device_data['is_active']
+                        template.save()
+                    
+                    if created:
+                        total_templates += 1
+                    
+                    # 查找匹配的问卷配置（按优先级：精确匹配 > 品牌匹配 > 设备类型匹配 > 通用匹配 > 默认配置）
+                    questions_to_create = None
+                    
+                    if questions_config_by_device:
+                        # 尝试精确匹配（设备类型+品牌+型号）
+                        exact_match = (device_data['device_type'], device_data['brand'], device_data['model'])
+                        if exact_match in questions_config_by_device:
+                            questions_to_create = questions_config_by_device[exact_match]
+                        else:
+                            # 尝试品牌匹配（设备类型+品牌）
+                            brand_match = (device_data['device_type'], device_data['brand'], None)
+                            if brand_match in questions_config_by_device:
+                                questions_to_create = questions_config_by_device[brand_match]
+                            else:
+                                # 尝试设备类型匹配（设备类型）
+                                device_match = (device_data['device_type'], None, None)
+                                if device_match in questions_config_by_device:
+                                    questions_to_create = questions_config_by_device[device_match]
+                                else:
+                                    # 尝试通用匹配（全部为空）
+                                    general_match = (None, None, None)
+                                    if general_match in questions_config_by_device:
+                                        questions_to_create = questions_config_by_device[general_match]
+                    
+                    # 如果找到了匹配的配置，删除现有问卷并重新创建
+                    if questions_to_create is not None:
+                        template.questions.all().delete()
+                    
+                    # 如果模板还没有问卷，创建问卷
+                    if not template.questions.exists():
+                        # 使用匹配的自定义配置或默认配置
+                        if questions_to_create is None:
+                            questions_to_create = DEFAULT_QUESTIONS
+                        
+                        for q_data in questions_to_create:
+                            question_key = q_data.get('key') if isinstance(q_data, dict) else q_data['key']
+                            
+                            # 处理存储容量问题（特殊处理，选项从机型存储容量生成）
+                            if question_key == 'storage':
+                                question = RecycleQuestionTemplate.objects.create(
+                                    device_template=template,
+                                    step_order=q_data.get('step_order', 3) if isinstance(q_data, dict) else q_data.get('step_order', 3),
+                                    key='storage',
+                                    title=q_data.get('title', '内存 / 存储') if isinstance(q_data, dict) else q_data.get('title', '内存 / 存储'),
+                                    helper=q_data.get('helper', '选容量以便精准估价') if isinstance(q_data, dict) else q_data.get('helper', '选容量以便精准估价'),
+                                    question_type=q_data.get('question_type', 'single') if isinstance(q_data, dict) else q_data.get('question_type', 'single'),
+                                    is_required=q_data.get('is_required', True) if isinstance(q_data, dict) else q_data.get('is_required', True),
+                                    is_active=q_data.get('is_active', True) if isinstance(q_data, dict) else q_data.get('is_active', True),
+                                )
+                                # 为存储容量问题创建选项（从机型存储容量生成）
+                                for idx, storage in enumerate(device_data['storages']):
+                                    RecycleQuestionOption.objects.create(
+                                        question_template=question,
+                                        value=storage.lower().replace('gb', 'gb').replace('tb', 'tb'),
+                                        label=storage,
+                                        desc='',
+                                        impact='',
+                                        option_order=idx,
+                                        is_active=True,
+                                    )
+                                    total_options += 1
+                            else:
+                                # 普通问题
+                                question = RecycleQuestionTemplate.objects.create(
+                                    device_template=template,
+                                    step_order=q_data.get('step_order') if isinstance(q_data, dict) else q_data['step_order'],
+                                    key=question_key,
+                                    title=q_data.get('title') if isinstance(q_data, dict) else q_data['title'],
+                                    helper=q_data.get('helper', '') if isinstance(q_data, dict) else q_data.get('helper', ''),
+                                    question_type=q_data.get('question_type', 'single') if isinstance(q_data, dict) else q_data.get('question_type', 'single'),
+                                    is_required=q_data.get('is_required', True) if isinstance(q_data, dict) else q_data.get('is_required', True),
+                                    is_active=q_data.get('is_active', True) if isinstance(q_data, dict) else q_data.get('is_active', True),
+                                )
+                                total_questions += 1
+                                
+                                # 查找匹配的选项配置（按优先级匹配）
+                                opts_to_create = []
+                                
+                                if options_config_by_device:
+                                    # 尝试精确匹配（设备类型+品牌+型号+问题标识）
+                                    exact_match = (device_data['device_type'], device_data['brand'], device_data['model'], question_key)
+                                    if exact_match in options_config_by_device:
+                                        opts_to_create = options_config_by_device[exact_match]
+                                    else:
+                                        # 尝试品牌匹配（设备类型+品牌+问题标识）
+                                        brand_match = (device_data['device_type'], device_data['brand'], None, question_key)
+                                        if brand_match in options_config_by_device:
+                                            opts_to_create = options_config_by_device[brand_match]
+                                        else:
+                                            # 尝试设备类型匹配（设备类型+问题标识）
+                                            device_match = (device_data['device_type'], None, None, question_key)
+                                            if device_match in options_config_by_device:
+                                                opts_to_create = options_config_by_device[device_match]
+                                            else:
+                                                # 尝试通用匹配（全部为空+问题标识）
+                                                general_match = (None, None, None, question_key)
+                                                if general_match in options_config_by_device:
+                                                    opts_to_create = options_config_by_device[general_match]
+                                
+                                # 如果没有找到匹配的选项配置，使用默认配置中的选项
+                                if not opts_to_create:
+                                    if isinstance(q_data, dict) and 'options' in q_data and q_data['options']:
+                                        opts_to_create = q_data['options']
+                                    else:
+                                        opts_to_create = q_data.get('options', []) if isinstance(q_data, dict) else []
+                                
+                                for opt_data in opts_to_create:
+                                    RecycleQuestionOption.objects.create(
+                                        question_template=question,
+                                        value=opt_data.get('value') if isinstance(opt_data, dict) else opt_data['value'],
+                                        label=opt_data.get('label') if isinstance(opt_data, dict) else opt_data['label'],
+                                        desc=opt_data.get('desc', '') if isinstance(opt_data, dict) else opt_data.get('desc', ''),
+                                        impact=opt_data.get('impact', '') if isinstance(opt_data, dict) else opt_data.get('impact', ''),
+                                        option_order=opt_data.get('option_order', 0) if isinstance(opt_data, dict) else opt_data.get('option_order', 0),
+                                        is_active=opt_data.get('is_active', True) if isinstance(opt_data, dict) else opt_data.get('is_active', True),
+                                    )
+                                    total_options += 1
+                except Exception as e:
+                    errors.append(f"{device_data['brand']} {device_data['model']}: {str(e)}")
+            
+            result = {
+                'success': True,
+                'message': '导入完成',
+                'statistics': {
+                    'templates': total_templates,
+                    'questions': total_questions,
+                    'options': total_options,
+                    'total_devices': len(devices_data)
+                }
+            }
+            
+            if errors:
+                result['errors'] = errors
+                result['error_count'] = len(errors)
+            
+            return Response(result)
+        except Exception as e:
+            import traceback
+            return Response({'detail': f'导入失败: {str(e)}', 'traceback': traceback.format_exc()}, status=500)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class RecycleQuestionTemplateView(APIView):
+    """问卷步骤模板管理"""
+    authentication_classes = []
+    permission_classes = []
+    
+    def get(self, request, template_id, question_id=None):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
+        if not has_perms(admin, ['recycle_template:view']):
+            return Response({'detail': '没有权限执行此操作，需要 recycle_template:view 权限'}, status=403)
+        
+        try:
+            device_template = RecycleDeviceTemplate.objects.get(id=template_id)
+        except RecycleDeviceTemplate.DoesNotExist:
+            return Response({'detail': '机型模板不存在'}, status=404)
+        
+        if question_id:
+            # 获取单个问题详情
+            try:
+                question = RecycleQuestionTemplate.objects.get(id=question_id, device_template=device_template)
+                serializer = RecycleQuestionTemplateSerializer(question)
+                return Response(serializer.data)
+            except RecycleQuestionTemplate.DoesNotExist:
+                return Response({'detail': '问题不存在'}, status=404)
+        else:
+            # 获取问题列表
+            questions = RecycleQuestionTemplate.objects.filter(device_template=device_template).order_by('step_order')
+            serializer = RecycleQuestionTemplateSerializer(questions, many=True)
+            return Response({'results': serializer.data})
+    
+    def post(self, request, template_id):
+        """创建问题"""
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
+        if not has_perms(admin, ['recycle_template:create']):
+            return Response({'detail': '没有权限执行此操作，需要 recycle_template:create 权限'}, status=403)
+        
+        try:
+            device_template = RecycleDeviceTemplate.objects.get(id=template_id)
+        except RecycleDeviceTemplate.DoesNotExist:
+            return Response({'detail': '机型模板不存在'}, status=404)
+        
+        data = request.data.copy()
+        data['device_template'] = template_id
+        
+        serializer = RecycleQuestionTemplateSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save(device_template=device_template)
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+    
+    def put(self, request, template_id, question_id):
+        """更新问题"""
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
+        if not has_perms(admin, ['recycle_template:update']):
+            return Response({'detail': '没有权限执行此操作，需要 recycle_template:update 权限'}, status=403)
+        
+        try:
+            device_template = RecycleDeviceTemplate.objects.get(id=template_id)
+            question = RecycleQuestionTemplate.objects.get(id=question_id, device_template=device_template)
+        except RecycleDeviceTemplate.DoesNotExist:
+            return Response({'detail': '机型模板不存在'}, status=404)
+        except RecycleQuestionTemplate.DoesNotExist:
+            return Response({'detail': '问题不存在'}, status=404)
+        
+        serializer = RecycleQuestionTemplateSerializer(question, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
+    
+    def delete(self, request, template_id, question_id):
+        """删除问题"""
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
+        if not has_perms(admin, ['recycle_template:delete']):
+            return Response({'detail': '没有权限执行此操作，需要 recycle_template:delete 权限'}, status=403)
+        
+        try:
+            device_template = RecycleDeviceTemplate.objects.get(id=template_id)
+            question = RecycleQuestionTemplate.objects.get(id=question_id, device_template=device_template)
+            question.delete()
+            return Response({'success': True})
+        except RecycleDeviceTemplate.DoesNotExist:
+            return Response({'detail': '机型模板不存在'}, status=404)
+        except RecycleQuestionTemplate.DoesNotExist:
+            return Response({'detail': '问题不存在'}, status=404)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class RecycleQuestionOptionView(APIView):
+    """问卷选项管理"""
+    authentication_classes = []
+    permission_classes = []
+    
+    def get(self, request, template_id, question_id, option_id=None):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
+        if not has_perms(admin, ['recycle_template:view']):
+            return Response({'detail': '没有权限执行此操作，需要 recycle_template:view 权限'}, status=403)
+        
+        try:
+            device_template = RecycleDeviceTemplate.objects.get(id=template_id)
+            question = RecycleQuestionTemplate.objects.get(id=question_id, device_template=device_template)
+        except RecycleDeviceTemplate.DoesNotExist:
+            return Response({'detail': '机型模板不存在'}, status=404)
+        except RecycleQuestionTemplate.DoesNotExist:
+            return Response({'detail': '问题不存在'}, status=404)
+        
+        if option_id:
+            # 获取单个选项详情
+            try:
+                option = RecycleQuestionOption.objects.get(id=option_id, question_template=question)
+                serializer = RecycleQuestionOptionSerializer(option)
+                return Response(serializer.data)
+            except RecycleQuestionOption.DoesNotExist:
+                return Response({'detail': '选项不存在'}, status=404)
+        else:
+            # 获取选项列表
+            options = RecycleQuestionOption.objects.filter(question_template=question).order_by('option_order', 'id')
+            serializer = RecycleQuestionOptionSerializer(options, many=True)
+            return Response({'results': serializer.data})
+    
+    def post(self, request, template_id, question_id):
+        """创建选项"""
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
+        if not has_perms(admin, ['recycle_template:create']):
+            return Response({'detail': '没有权限执行此操作，需要 recycle_template:create 权限'}, status=403)
+        
+        try:
+            device_template = RecycleDeviceTemplate.objects.get(id=template_id)
+            question = RecycleQuestionTemplate.objects.get(id=question_id, device_template=device_template)
+        except RecycleDeviceTemplate.DoesNotExist:
+            return Response({'detail': '机型模板不存在'}, status=404)
+        except RecycleQuestionTemplate.DoesNotExist:
+            return Response({'detail': '问题不存在'}, status=404)
+        
+        data = request.data.copy()
+        data['question_template'] = question_id
+        
+        serializer = RecycleQuestionOptionSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save(question_template=question)
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+    
+    def put(self, request, template_id, question_id, option_id):
+        """更新选项"""
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
+        if not has_perms(admin, ['recycle_template:update']):
+            return Response({'detail': '没有权限执行此操作，需要 recycle_template:update 权限'}, status=403)
+        
+        try:
+            device_template = RecycleDeviceTemplate.objects.get(id=template_id)
+            question = RecycleQuestionTemplate.objects.get(id=question_id, device_template=device_template)
+            option = RecycleQuestionOption.objects.get(id=option_id, question_template=question)
+        except RecycleDeviceTemplate.DoesNotExist:
+            return Response({'detail': '机型模板不存在'}, status=404)
+        except RecycleQuestionTemplate.DoesNotExist:
+            return Response({'detail': '问题不存在'}, status=404)
+        except RecycleQuestionOption.DoesNotExist:
+            return Response({'detail': '选项不存在'}, status=404)
+        
+        serializer = RecycleQuestionOptionSerializer(option, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
+    
+    def delete(self, request, template_id, question_id, option_id):
+        """删除选项"""
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
+        if not has_perms(admin, ['recycle_template:delete']):
+            return Response({'detail': '没有权限执行此操作，需要 recycle_template:delete 权限'}, status=403)
+        
+        try:
+            device_template = RecycleDeviceTemplate.objects.get(id=template_id)
+            question = RecycleQuestionTemplate.objects.get(id=question_id, device_template=device_template)
+            option = RecycleQuestionOption.objects.get(id=option_id, question_template=question)
+            option.delete()
+            return Response({'success': True})
+        except RecycleDeviceTemplate.DoesNotExist:
+            return Response({'detail': '机型模板不存在'}, status=404)
+        except RecycleQuestionTemplate.DoesNotExist:
+            return Response({'detail': '问题不存在'}, status=404)
+        except RecycleQuestionOption.DoesNotExist:
+            return Response({'detail': '选项不存在'}, status=404)

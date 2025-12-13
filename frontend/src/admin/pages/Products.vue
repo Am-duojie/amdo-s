@@ -38,13 +38,15 @@
       <el-table-column prop="category" label="分类" width="120" />
       <el-table-column prop="shop" label="店铺" width="120" />
       <el-table-column prop="created_at" label="创建时间" width="180" />
-      <el-table-column label="操作" width="320" fixed="right">
+      <el-table-column label="操作" width="360" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" @click="edit(row)">编辑</el-button>
-          <el-button v-if="hasPerm('product:write')" size="small" type="primary" @click="doAction(row, 'publish')">发布</el-button>
-          <el-button v-if="hasPerm('product:write')" size="small" @click="doAction(row, 'unpublish')">下架</el-button>
-          <el-button v-if="hasPerm('product:write')" size="small" type="success" @click="doAction(row, 'mark-sold')">标记已售</el-button>
-          <el-button v-if="hasPerm('product:delete')" size="small" type="danger" @click="remove(row)">删除</el-button>
+          <el-space wrap>
+            <el-button size="small" @click="edit(row)">编辑</el-button>
+            <el-button v-if="hasPerm('product:write')" size="small" type="primary" @click="doAction(row, 'publish')">发布</el-button>
+            <el-button v-if="hasPerm('product:write')" size="small" @click="doAction(row, 'unpublish')">下架</el-button>
+            <el-button v-if="hasPerm('product:write')" size="small" type="success" @click="doAction(row, 'mark-sold')">标记已售</el-button>
+            <el-button v-if="hasPerm('product:delete')" size="small" type="danger" @click="remove(row)">删除</el-button>
+          </el-space>
         </template>
       </el-table-column>
     </el-table>

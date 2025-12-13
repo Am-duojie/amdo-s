@@ -11,8 +11,10 @@
       <el-table-column prop="price" label="价格" width="120" />
       <el-table-column label="操作" width="220">
         <template #default="{row}">
-          <el-button v-if="hasPerm('recycled:write')" size="small" @click="publish(row)">发布官方验</el-button>
-          <el-button v-if="hasPerm('recycled:write')" size="small" type="warning" @click="toggleStock(row)">上下架</el-button>
+          <el-space wrap>
+            <el-button v-if="hasPerm('recycled:write')" size="small" @click="publish(row)">发布官方验</el-button>
+            <el-button v-if="hasPerm('recycled:write')" size="small" type="warning" @click="toggleStock(row)">上下架</el-button>
+          </el-space>
         </template>
       </el-table-column>
     </el-table>
