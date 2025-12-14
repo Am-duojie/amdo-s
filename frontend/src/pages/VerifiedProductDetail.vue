@@ -51,32 +51,49 @@
           </div>
           <div class="meta">库存：{{ product.stock ?? '—' }} · 所在地：{{ product.location || '官方仓' }}</div>
           <div class="attrs">
-            <div>成色：{{ conditionText }}</div>
-            <div v-if="product.category?.name">分类：{{ product.category.name }}</div>
             <div>保障：官方质检 · 7天无理由</div>
           </div>
-          <div class="inspection" v-if="inspectionAvailable">
-            <div class="ins-title">质检信息</div>
-            <div class="ins-meta">
-              <span>结果：{{ inspectionText }}</span>
-              <span v-if="product.inspection_date"> · 日期：{{ product.inspection_date }}</span>
-              <span v-if="product.inspection_staff"> · 质检员：{{ product.inspection_staff }}</span>
-            </div>
-            <div v-if="product.inspection_note" class="ins-note">说明：{{ product.inspection_note }}</div>
-            <div v-if="reports.length" class="reports">
-              <div
-                v-for="(r, idx) in reports"
-                :key="idx"
-                class="report"
-                @click="previewReport(r)"
-              >
-                <el-icon><Document /></el-icon>
-                <span>{{ getReportName(r) }}</span>
+          <!-- 主要规格 -->
+          <div class="main-specs">
+            <div class="specs-title">主要规格</div>
+            <div class="specs-grid">
+              <div class="spec-item" v-if="product.brand">
+                <span class="label">品牌</span>
+                <span class="value">{{ product.brand }}</span>
+              </div>
+              <div class="spec-item" v-if="product.model">
+                <span class="label">型号</span>
+                <span class="value">{{ product.model }}</span>
+              </div>
+              <div class="spec-item" v-if="product.storage">
+                <span class="label">存储容量</span>
+                <span class="value">{{ product.storage }}</span>
+              </div>
+              <div class="spec-item" v-if="product.ram">
+                <span class="label">运行内存</span>
+                <span class="value">{{ product.ram }}</span>
+              </div>
+              <div class="spec-item" v-if="product.version">
+                <span class="label">版本</span>
+                <span class="value">{{ product.version }}</span>
+              </div>
+              <div class="spec-item">
+                <span class="label">成色</span>
+                <span class="value">{{ conditionText }}</span>
+              </div>
+              <div class="spec-item" v-if="product.repair_status">
+                <span class="label">拆修和功能</span>
+                <span class="value">{{ product.repair_status }}</span>
               </div>
             </div>
-            <div v-else class="empty">暂无质检报告</div>
           </div>
         </div>
+      </div>
+
+      <!-- 验机报告 -->
+      <div class="detail-block inspection-block">
+        <div class="block-title">验机评估报告</div>
+        <InspectionReport :product-id="product.id" />
       </div>
 
       <div class="detail-block" v-if="detailImages.length">
@@ -100,9 +117,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { PictureFilled, Document } from '@element-plus/icons-vue'
+import { PictureFilled, Document, ArrowDown, ArrowUp, Picture, Lightning, Monitor } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
+import InspectionReport from '@/components/InspectionReport.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -111,6 +129,7 @@ const product = ref(null)
 const loading = ref(false)
 const error = ref(null)
 const currentImage = ref(0)
+const specsExpanded = ref(false)
 
 const conditionMap = {
   excellent: '九九新',
@@ -140,6 +159,13 @@ const reports = computed(() => {
 const conditionText = computed(() => conditionMap[product.value?.condition] || '官方验')
 const inspectionAvailable = computed(() => product.value && (product.value.inspection_result || reports.value.length))
 const inspectionText = computed(() => product.value?.inspection_result || '已完成质检')
+const inspectionResultText = computed(() => {
+  const result = product.value?.inspection_result
+  if (result === 'pass') return '合格'
+  if (result === 'warn') return '警告'
+  if (result === 'fail') return '不合格'
+  return result || '已完成'
+})
 
 function resolveImageField(img) {
   if (!img) return null
@@ -315,41 +341,53 @@ onMounted(loadProduct)
   color: #444;
   margin-bottom: 12px;
 }
-.inspection {
-  padding: 12px;
+/* 主要规格 */
+.main-specs {
+  padding: 16px;
   background: #f9fbff;
   border: 1px solid #e6f2ff;
   border-radius: 8px;
+  margin-top: 16px;
 }
-.ins-title {
+
+.specs-title {
   font-weight: 600;
-  margin-bottom: 6px;
+  font-size: 15px;
+  color: #303133;
+  margin-bottom: 12px;
 }
-.ins-meta {
-  color: #555;
-  margin-bottom: 6px;
+
+.specs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
 }
-.ins-note {
-  color: #333;
-  margin-bottom: 8px;
-}
-.reports {
+
+.spec-item {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.report {
-  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  color: #333;
+  padding: 10px 12px;
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid #e6e8ee;
 }
-.report:hover {
-  color: #409eff;
+
+.spec-item .label {
+  font-size: 14px;
+  color: #606266;
 }
-.empty {
-  color: #888;
+
+.spec-item .value {
+  font-size: 14px;
+  color: #303133;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .specs-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .detail-block {
   margin-top: 24px;
@@ -379,7 +417,23 @@ onMounted(loadProduct)
     height: 300px;
   }
 }
+
+/* 验机报告区块 */
+.inspection-block {
+  background: var(--bg-page, #f5f7fa);
+  padding: 40px 20px;
+  border-radius: 16px;
+  margin-top: 24px;
+}
+
+.inspection-block .block-title {
+  text-align: center;
+  margin-bottom: 30px;
+}
 </style>
+
+
+
 
 
 

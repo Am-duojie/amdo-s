@@ -243,6 +243,22 @@ class Command(BaseCommand):
                 for model_name, storages_dict in models_dict.items():
                     # 获取存储容量列表
                     storages = sorted(storages_dict.keys())
+                    
+                    # 构建基础价格表（从价目表中提取）
+                    # LOCAL_PRICE_TABLE 结构：{storage: price} 或 {storage: {condition: price}}
+                    base_prices = {}
+                    for storage, price_info in storages_dict.items():
+                        base_price = None
+                        if isinstance(price_info, dict):
+                            # 如果是字典，优先使用 'good' 成色的价格作为基础价格
+                            # 如果没有 'good'，使用第一个值
+                            base_price = price_info.get('good') or (list(price_info.values())[0] if price_info.values() else None)
+                        elif isinstance(price_info, (int, float)):
+                            # 如果直接是数字，使用它作为基础价格（良好成色）
+                            base_price = price_info
+                        
+                        if base_price and isinstance(base_price, (int, float)) and base_price > 0:
+                            base_prices[storage] = float(base_price)
 
                     # 创建或获取机型模板
                     template, created = RecycleDeviceTemplate.objects.get_or_create(
@@ -251,6 +267,7 @@ class Command(BaseCommand):
                         model=model_name,
                         defaults={
                             'storages': storages,
+                            'base_prices': base_prices,
                             'series': self._derive_series(model_name),
                             'is_active': True,
                             'created_by': admin_user,
@@ -261,11 +278,12 @@ class Command(BaseCommand):
                         total_templates += 1
                         self.stdout.write(f'    [OK] 创建模板: {model_name} (存储: {", ".join(storages)})')
                     else:
-                        # 更新存储容量
+                        # 更新存储容量和基础价格
                         template.storages = storages
+                        template.base_prices = base_prices
                         template.series = self._derive_series(model_name)
                         template.save()
-                        self.stdout.write(f'    [UPDATE] 更新模板: {model_name} (存储: {", ".join(storages)})')
+                        self.stdout.write(f'    [UPDATE] 更新模板: {model_name} (存储: {", ".join(storages)}, 价格: {len(base_prices)}个)')
 
                     # 如果模板还没有问卷，创建默认问卷
                     if not template.questions.exists():
@@ -335,3 +353,4 @@ class Command(BaseCommand):
         if m:
             return f"{m.group(1)}系列"
         return ''
+

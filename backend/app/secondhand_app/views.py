@@ -1253,9 +1253,43 @@ class RecycleOrderViewSet(viewsets.ModelViewSet):
             logger.error(f'获取质检报告失败: {e}')
             return Response({'detail': '获取质检报告失败'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=True, methods=['post'])
+    def confirm_final_price(self, request, pk=None):
+        """用户确认最终价格"""
+        order = self.get_object()
+        
+        # 检查订单是否属于当前用户
+        if order.user != request.user:
+            return Response({'detail': '无权访问'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # 检查订单状态是否为已检测
+        if order.status != 'inspected':
+            return Response({'detail': '订单状态不正确，只有已检测状态的订单才能确认价格'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 检查是否有最终价格
+        if not order.final_price:
+            return Response({'detail': '订单尚未设置最终价格'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 检查是否已经确认过
+        if order.final_price_confirmed:
+            return Response({'detail': '订单价格已确认，无需重复确认'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 确认价格并更新订单状态
+        order.final_price_confirmed = True
+        order.status = 'completed'
+        order.save()
+        
+        logger.info(f'用户 {request.user.username} 确认了回收订单 #{order.id} 的最终价格: ¥{order.final_price}')
+        
+        return Response({
+            'success': True,
+            'message': '价格确认成功，订单已进入打款阶段',
+            'order': RecycleOrderSerializer(order, context={'request': request}).data
+        })
+
     @action(detail=False, methods=['post'], permission_classes=[])
     def estimate(self, request):
-        """估价接口 - 使用智能估价模型"""
+        """估价接口 - 优先使用机型模板中的基础价格"""
         device_type = request.data.get('device_type')
         brand = request.data.get('brand')
         model = request.data.get('model')
@@ -1266,17 +1300,49 @@ class RecycleOrderViewSet(viewsets.ModelViewSet):
         if not all([device_type, brand, model]):
             return Response({'error': '缺少必要参数'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 使用价格服务进行估价（支持第三方API和智能模型）
-        estimated_price, from_api = price_service.estimate(device_type, brand, model, storage, condition)
+        base_price = None
+        price_source = 'template'  # 价格来源：template/api/model/local
         
-        # 如果价格服务返回0，尝试使用智能估价模型
-        if estimated_price == 0 and device_type == '手机':
-            try:
-                from .price_model import price_model
-                estimated_price = price_model.estimate(brand, model, storage, condition, release_year)
-                from_api = False  # 使用本地模型
-            except Exception as e:
-                logger.warning(f"智能估价模型失败: {e}")
+        # 优先从机型模板获取基础价格
+        try:
+            from app.admin_api.models import RecycleDeviceTemplate
+            template = RecycleDeviceTemplate.objects.filter(
+                device_type=device_type,
+                brand=brand,
+                model=model,
+                is_active=True
+            ).first()
+            
+            if template and template.base_prices and storage:
+                # 从模板的基础价格表中获取对应容量的基础价格
+                base_price = template.base_prices.get(storage)
+                if base_price:
+                    base_price = float(base_price)
+                    logger.info(f"从机型模板获取基础价格: {device_type}/{brand}/{model}/{storage} = {base_price}")
+        except Exception as e:
+            logger.warning(f"从机型模板获取基础价格失败: {e}")
+
+        # 如果没有从模板获取到基础价格，使用价格服务进行估价
+        if base_price is None or base_price == 0:
+            estimated_price, from_api = price_service.estimate(device_type, brand, model, storage, condition)
+            price_source = 'api' if from_api else 'model'
+            
+            # 如果价格服务返回0，尝试使用智能估价模型
+            if estimated_price == 0 and device_type == '手机':
+                try:
+                    from .price_model import price_model
+                    estimated_price = price_model.estimate(brand, model, storage, condition, release_year)
+                    price_source = 'local_model'
+                except Exception as e:
+                    logger.warning(f"智能估价模型失败: {e}")
+            
+            base_price = estimated_price
+        
+        # 根据成色调整价格
+        if base_price and base_price > 0:
+            estimated_price = self._adjust_price_by_condition(base_price, condition)
+        else:
+            estimated_price = 0
         
         if estimated_price == 0:
             return Response({
@@ -1284,20 +1350,35 @@ class RecycleOrderViewSet(viewsets.ModelViewSet):
                 'suggestions': [
                     '确认品牌和型号是否正确',
                     '确认存储容量格式（如：128GB、256GB）',
-                    '如果设备较新，价格数据可能尚未更新'
+                    '如果设备较新，价格数据可能尚未更新',
+                    '管理员可以在机型模板中设置基础价格'
                 ]
             }, status=status.HTTP_400_BAD_REQUEST)
         
         bonus = self._calculate_bonus()  # 计算加价
 
         return Response({
-            'estimated_price': float(estimated_price),
-            'bonus': float(bonus),
-            'total_price': float(estimated_price + bonus),
-            'source': 'api' if from_api else 'model',  # 标识价格来源：api/model/local
+            'base_price': float(base_price) if base_price else None,  # 基础价格
+            'estimated_price': float(estimated_price),  # 根据成色调整后的价格
+            'bonus': float(bonus),  # 额外加价
+            'total_price': float(estimated_price + bonus),  # 总价
+            'price_source': price_source,  # 价格来源：template/api/model/local_model
+            'condition': condition,  # 成色
             'currency': 'CNY',
             'unit': '元'
         })
+    
+    def _adjust_price_by_condition(self, base_price: float, condition: str) -> float:
+        """根据成色调整价格"""
+        condition_multipliers = {
+            'new': 1.0,        # 全新：100%
+            'like_new': 0.95,  # 近新：95%
+            'good': 0.85,      # 良好：85%
+            'fair': 0.70,      # 一般：70%
+            'poor': 0.50,      # 较差：50%
+        }
+        multiplier = condition_multipliers.get(condition, 0.85)
+        return round(base_price * multiplier, 2)
 
     def _calculate_price(self, device_type, brand, model, storage, condition):
         """计算基础价格"""
@@ -1501,6 +1582,209 @@ class VerifiedProductViewSet(viewsets.ModelViewSet):
         products = VerifiedProduct.objects.filter(seller=request.user).order_by('-created_at')
         serializer = VerifiedProductSerializer(products, many=True, context={'request': request})
         return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def inspection_report(self, request, pk=None):
+        """获取商品质检报告详情"""
+        product = self.get_object()
+        
+        # 从数据库获取质检报告数据
+        # 如果 inspection_reports 字段存储的是完整的报告数据，直接返回
+        # 否则，构建默认的报告结构
+        
+        # 基本信息
+        base_info = {
+            'model': f"{product.brand} {product.model}",
+            'level': f"外观 {product.get_condition_display()}",
+            'spec': product.storage or '',
+            'color': '',  # 数据库中没有 color 字段，可以从 title 中提取或留空
+            'price': str(product.price),
+            'coverImage': product.cover_image or ''
+        }
+        
+        # 检查是否有自定义的质检报告数据
+        if isinstance(product.inspection_reports, list) and len(product.inspection_reports) > 0:
+            # 如果有完整的报告数据结构，直接使用
+            if isinstance(product.inspection_reports[0], dict) and 'title' in product.inspection_reports[0]:
+                return Response({
+                    'baseInfo': base_info,
+                    'categories': product.inspection_reports
+                })
+        
+        # 否则返回默认的质检报告结构（基于用户提供的HTML模板）
+        default_categories = [
+            {
+                'title': '外观检测',
+                'images': product.detail_images[:3] if product.detail_images else [],
+                'groups': [
+                    {
+                        'name': '外壳外观',
+                        'items': [
+                            {'label': '碎裂', 'value': '无', 'pass': True},
+                            {'label': '划痕', 'value': '无', 'pass': True},
+                            {'label': '机身弯曲', 'value': '无', 'pass': True},
+                            {'label': '脱胶/缝隙', 'value': '无', 'pass': True},
+                            {'label': '外壳/其他', 'value': '正常', 'pass': True},
+                            {'label': '磕碰', 'value': '几乎不可见', 'pass': True},
+                            {'label': '刻字/图', 'value': '无', 'pass': True},
+                            {'label': '掉漆/磨损', 'value': '几乎不可见', 'pass': True},
+                            {'label': '摄像头/闪光灯外观', 'value': '正常', 'pass': True},
+                            {'label': '褶皱', 'value': '无', 'pass': True},
+                            {'label': '卡托', 'value': '正常', 'pass': True},
+                            {'label': '音频网罩', 'value': '正常', 'pass': True}
+                        ]
+                    }
+                ]
+            },
+            {
+                'title': '屏幕检测',
+                'images': [],
+                'groups': [
+                    {
+                        'name': '屏幕触控',
+                        'items': [
+                            {'label': '触控', 'value': '正常', 'pass': True}
+                        ]
+                    },
+                    {
+                        'name': '屏幕外观',
+                        'items': [
+                            {'label': '屏幕/其它', 'value': '正常', 'pass': True},
+                            {'label': '碎裂', 'value': '无', 'pass': True},
+                            {'label': '内屏掉漆/划伤', 'value': '无', 'pass': True},
+                            {'label': '屏幕凸点（褶皱）', 'value': '正常', 'pass': True},
+                            {'label': '支架破损', 'value': '无', 'pass': True},
+                            {'label': '浅划痕', 'value': '几乎不可见', 'pass': True},
+                            {'label': '深划痕', 'value': '几乎不可见', 'pass': True}
+                        ]
+                    },
+                    {
+                        'name': '屏幕显示',
+                        'items': [
+                            {'label': '进灰', 'value': '无', 'pass': True},
+                            {'label': '坏点', 'value': '无', 'pass': True},
+                            {'label': '气泡', 'value': '无', 'pass': True},
+                            {'label': '色斑', 'value': '无', 'pass': True},
+                            {'label': '其它', 'value': '正常', 'pass': True},
+                            {'label': '亮点/亮斑', 'value': '无', 'pass': True},
+                            {'label': '泛红/泛黄', 'value': '无', 'pass': True},
+                            {'label': '图文残影', 'value': '无', 'pass': True}
+                        ]
+                    }
+                ]
+            },
+            {
+                'title': '设备功能',
+                'images': [],
+                'groups': [
+                    {
+                        'name': '按键',
+                        'items': [
+                            {'label': '电源键', 'value': '正常', 'pass': True},
+                            {'label': '音量键', 'value': '正常', 'pass': True},
+                            {'label': '静音键', 'value': '正常', 'pass': True},
+                            {'label': '其它按键', 'value': '正常', 'pass': True}
+                        ]
+                    },
+                    {
+                        'name': '生物识别',
+                        'items': [
+                            {'label': '面部识别', 'value': '正常', 'pass': True},
+                            {'label': '指纹识别', 'value': '正常', 'pass': True}
+                        ]
+                    },
+                    {
+                        'name': '传感器',
+                        'items': [
+                            {'label': '重力感应', 'value': '正常', 'pass': True},
+                            {'label': '指南针', 'value': '正常', 'pass': True},
+                            {'label': '距离感应', 'value': '正常', 'pass': True},
+                            {'label': '光线感应', 'value': '正常', 'pass': True}
+                        ]
+                    },
+                    {
+                        'name': '接口',
+                        'items': [
+                            {'label': '充电接口', 'value': '正常', 'pass': True},
+                            {'label': '耳机接口', 'value': '正常', 'pass': True}
+                        ]
+                    },
+                    {
+                        'name': '无线',
+                        'items': [
+                            {'label': 'WiFi', 'value': '正常', 'pass': True},
+                            {'label': '蓝牙', 'value': '正常', 'pass': True},
+                            {'label': 'GPS', 'value': '正常', 'pass': True},
+                            {'label': 'NFC', 'value': '正常', 'pass': True}
+                        ]
+                    },
+                    {
+                        'name': '充电',
+                        'items': [
+                            {'label': '充电功能', 'value': '正常', 'pass': True},
+                            {'label': '无线充电', 'value': '正常', 'pass': True}
+                        ]
+                    },
+                    {
+                        'name': '通话功能',
+                        'items': [
+                            {'label': '通话', 'value': '正常', 'pass': True},
+                            {'label': '信号', 'value': '正常', 'pass': True}
+                        ]
+                    },
+                    {
+                        'name': '声音与振动',
+                        'items': [
+                            {'label': '扬声器', 'value': '正常', 'pass': True},
+                            {'label': '麦克风', 'value': '正常', 'pass': True},
+                            {'label': '振动', 'value': '正常', 'pass': True}
+                        ]
+                    },
+                    {
+                        'name': '摄像头',
+                        'items': [
+                            {'label': '前置摄像头', 'value': '正常', 'pass': True},
+                            {'label': '后置摄像头', 'value': '正常', 'pass': True},
+                            {'label': '闪光灯', 'value': '正常', 'pass': True}
+                        ]
+                    },
+                    {
+                        'name': '其它状况',
+                        'items': [
+                            {'label': '电池健康', 'value': product.battery_health or '未检测', 'pass': True}
+                        ]
+                    }
+                ]
+            },
+            {
+                'title': '维修浸液',
+                'images': [],
+                'groups': [
+                    {
+                        'name': '维修浸液',
+                        'items': [
+                            {'label': '屏幕', 'value': '未检出维修更换', 'pass': True},
+                            {'label': '主板', 'value': '未检出维修', 'pass': True},
+                            {'label': '机身', 'value': '未检出维修更换', 'pass': True},
+                            {'label': '零件维修/更换', 'value': '未检出维修更换', 'pass': True},
+                            {'label': '零件缺失', 'value': '未检出缺失', 'pass': True},
+                            {'label': '后摄维修情况', 'value': '未检出维修更换', 'pass': True},
+                            {'label': '前摄维修情况', 'value': '未检出维修更换', 'pass': True},
+                            {'label': '浸液痕迹情况', 'value': '未检出浸液痕迹', 'pass': True}
+                        ]
+                    }
+                ],
+                'footer': {
+                    'label': '拆机检测',
+                    'value': '平台未拆机检测'
+                }
+            }
+        ]
+        
+        return Response({
+            'baseInfo': base_info,
+            'categories': default_categories
+        })
 
 
 class VerifiedOrderViewSet(viewsets.ModelViewSet):

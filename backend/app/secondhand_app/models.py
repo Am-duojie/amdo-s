@@ -308,9 +308,8 @@ class RecycleOrder(models.Model):
     """回收订单"""
     STATUS_CHOICES = [
         ('pending', '待估价'),
-        ('quoted', '已估价'),
-        ('confirmed', '已确认'),
         ('shipped', '已寄出'),
+        ('received', '已收货'),
         ('inspected', '已检测'),
         ('completed', '已完成'),
         ('cancelled', '已取消'),
@@ -480,6 +479,9 @@ class VerifiedProduct(models.Model):
     brand = models.CharField(max_length=50, blank=True, verbose_name='品牌')  # 苹果、华为、小米等
     model = models.CharField(max_length=100, blank=True, verbose_name='型号')  # iPhone 13、华为Mate 60等
     storage = models.CharField(max_length=50, blank=True, verbose_name='存储容量')  # 128GB、256GB等
+    ram = models.CharField(max_length=20, blank=True, verbose_name='运行内存')  # 6GB、8GB等
+    version = models.CharField(max_length=50, blank=True, verbose_name='版本')  # 国行、港版等
+    repair_status = models.CharField(max_length=100, blank=True, verbose_name='拆修和功能')  # 未拆未修、功能正常等
     screen_size = models.CharField(max_length=20, blank=True, verbose_name='屏幕尺寸')
     battery_health = models.CharField(max_length=20, blank=True, verbose_name='电池健康度')
     charging_type = models.CharField(max_length=50, blank=True, verbose_name='充电方式')

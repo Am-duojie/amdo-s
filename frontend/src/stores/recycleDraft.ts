@@ -24,8 +24,9 @@ const baseState = {
   currentStep: 1,
   storage: undefined as string | undefined,
   condition: undefined as ConditionLevel | undefined,
-  estimated_price: null as number | null,
-  bonus: null as number | null,
+  base_price: null as number | null,  // 基础价格（从模板获取）
+  estimated_price: null as number | null,  // 根据成色调整后的价格
+  bonus: null as number | null,  // 额外加价
 };
 
 function loadPersistedState() {
@@ -52,6 +53,7 @@ export const useRecycleDraftStore = defineStore("recycleDraft", {
         currentStep: this.currentStep,
         storage: this.storage,
         condition: this.condition,
+        base_price: this.base_price,
         estimated_price: this.estimated_price,
         bonus: this.bonus,
       };
@@ -62,6 +64,7 @@ export const useRecycleDraftStore = defineStore("recycleDraft", {
       this.currentStep = 1;
       this.storage = undefined;
       this.condition = undefined;
+      this.base_price = null;
       this.estimated_price = null;
       this.bonus = null;
     },
@@ -112,7 +115,8 @@ export const useRecycleDraftStore = defineStore("recycleDraft", {
       this.condition = condition;
       this.persist();
     },
-    setQuote(estimated_price?: number | null, bonus?: number | null) {
+    setQuote(estimated_price?: number | null, bonus?: number | null, base_price?: number | null) {
+      this.base_price = base_price ?? null;
       this.estimated_price = estimated_price ?? null;
       this.bonus = bonus ?? null;
       this.persist();

@@ -14,12 +14,7 @@
           <div v-if="order" class="order-content">
             <!-- 订单状态 -->
             <div class="order-status">
-              <el-steps :active="getStepIndex(order.status)" finish-status="success">
-                <el-step title="下单" :description="formatDate(order.created_at)" />
-                <el-step title="付款" :description="getStepTime('paid')" />
-                <el-step title="发货" :description="getStepTime('shipped')" />
-                <el-step title="完成" :description="getStepTime('completed')" />
-              </el-steps>
+              <OrderSteps :order="order" type="trade" />
               <div class="current-status">
                 <el-tag :type="getStatusType(order.status)" size="large">
                   {{ getStatusText(order.status) }}
@@ -282,6 +277,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { PictureFilled } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
+import OrderSteps from '@/components/OrderSteps.vue'
 
 const route = useRoute()
 const router = useRouter()

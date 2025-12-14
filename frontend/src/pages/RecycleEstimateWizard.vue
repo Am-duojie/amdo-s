@@ -15,15 +15,14 @@
       </div>
     </div>
 
-    <!-- 估价信息卡片 -->
-    <el-card shadow="never" class="card price-info-card" v-if="estimatedPriceText !== '--'">
+    <!-- 估价信息卡片 - 只在完成所有必填问题后显示 -->
+    <el-card shadow="never" class="card price-info-card" v-if="canCheckout && estimatedPriceText !== '--'">
       <div class="price-info-content">
         <div class="price-info-label">预计到手价</div>
         <div class="price-info-value">{{ estimatedPriceText }}</div>
         <div class="price-info-condition" v-if="draft.condition">按成色：{{ conditionText }}</div>
         <div class="price-info-status" v-if="estimateError">{{ estimateError }}</div>
         <div class="price-info-status" v-else-if="estimating">正在根据所选信息估价...</div>
-        <div class="price-info-status" v-else-if="!shouldEstimate">选择容量与成色后自动估价</div>
       </div>
     </el-card>
 
@@ -608,6 +607,14 @@ async function runEstimate() {
   estimating.value = true;
   estimateError.value = "";
   try {
+    console.log("开始估价:", {
+      device_type: deviceType.value,
+      brand: brand.value,
+      model: model.value,
+      storage: selectedStorage.value,
+      condition: draft.condition
+    });
+    
     const { data } = await estimateRecyclePrice({
       device_type: deviceType.value,
       brand: brand.value,
@@ -615,10 +622,31 @@ async function runEstimate() {
       storage: selectedStorage.value || "",
       condition: draft.condition || "good",
     });
-    draft.setQuote(data?.estimated_price ?? null, data?.bonus ?? null);
+    
+    console.log("估价API返回:", data);
+    
+    draft.setQuote(
+      data?.estimated_price ?? null, 
+      data?.bonus ?? null,
+      data?.base_price ?? null
+    );
+    
+    // 验证价格是否有效
+    if (data?.estimated_price && data.estimated_price > 0) {
+      console.log("估价成功:", {
+        base_price: draft.base_price,
+        estimated_price: draft.estimated_price,
+        bonus: draft.bonus
+      });
+    } else {
+      console.warn("估价返回的价格无效:", data?.estimated_price);
+      estimateError.value = "估价返回的价格无效";
+      ElMessage.warning("估价返回的价格无效，请检查设备信息");
+    }
   } catch (error: any) {
-    estimateError.value = error?.response?.data?.error || error?.message || "估价失败";
-    draft.setQuote(null, null);
+    console.error("估价失败:", error);
+    estimateError.value = error?.response?.data?.error || error?.response?.data?.detail || error?.message || "估价失败";
+    draft.setQuote(null, null, null);
     ElMessage.error(estimateError.value);
   } finally {
     estimating.value = false;
@@ -647,7 +675,7 @@ watch(
 );
 
 
-function goCheckout() {
+async function goCheckout() {
   if (!canCheckout.value) {
     if (!selectedStorage.value) {
       ElMessage.warning("请先选择存储容量");
@@ -664,6 +692,46 @@ function goCheckout() {
     ElMessage.warning("请完成所有必填问题后再提交");
     return;
   }
+  
+  // 确保估价已完成
+  if (!draft.estimated_price) {
+    ElMessage.info("正在获取最新估价...");
+    try {
+      // 直接调用估价API，不依赖 shouldEstimate
+      estimating.value = true;
+      const { data } = await estimateRecyclePrice({
+        device_type: deviceType.value,
+        brand: brand.value,
+        model: model.value,
+        storage: selectedStorage.value || "",
+        condition: draft.condition || "good",
+      });
+      draft.setQuote(
+        data?.estimated_price ?? null,
+        data?.bonus ?? null,
+        data?.base_price ?? null
+      );
+      estimating.value = false;
+      
+      // 等待估价完成，检查价格是否有效（大于0）
+      if (!draft.estimated_price || draft.estimated_price <= 0) {
+        console.error("估价失败：返回的价格无效", draft.estimated_price);
+        ElMessage.error("估价失败，返回的价格无效，请稍后重试");
+        return;
+      }
+      
+      console.log("估价完成，准备跳转到提交订单页面", {
+        base_price: draft.base_price,
+        estimated_price: draft.estimated_price,
+        bonus: draft.bonus
+      });
+    } catch (error: any) {
+      estimating.value = false;
+      ElMessage.error(error?.response?.data?.error || error?.message || "估价失败，请稍后重试");
+      return;
+    }
+  }
+  
   draft.setSelection({ device_type: deviceType.value, brand: brand.value, model: model.value });
   router.push("/recycle/checkout");
 }

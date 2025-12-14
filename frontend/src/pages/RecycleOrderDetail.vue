@@ -71,19 +71,9 @@
         </el-card>
 
         <!-- 流程进度 -->
-        <el-card class="info-card">
-          <template #header>
-            <span>订单进度</span>
-          </template>
-          <el-steps :active="getStepActive()" finish-status="success" align-center>
-            <el-step title="提交订单" :description="formatDate(order.created_at)"></el-step>
-            <el-step title="已估价" :description="order.estimated_price ? '¥' + order.estimated_price : '待估价'"></el-step>
-            <el-step title="已确认" :description="order.status === 'confirmed' ? '已确认估价' : '待确认'"></el-step>
-            <el-step title="已寄出" :description="order.shipped_at ? formatDate(order.shipped_at) : '待寄出'"></el-step>
-            <el-step title="已检测" :description="order.inspected_at ? formatDate(order.inspected_at) : '待检测'"></el-step>
-            <el-step title="已完成" :description="order.status === 'completed' ? '订单完成' : '待完成'"></el-step>
-          </el-steps>
-        </el-card>
+        <BaseCard title="订单进度" shadow="sm">
+          <OrderSteps :order="order" type="recycle" />
+        </BaseCard>
 
         <!-- 联系信息 -->
         <el-card class="info-card" v-if="order.contact_name || order.contact_phone || order.address">
@@ -194,33 +184,42 @@
         <!-- 操作区域 -->
         <el-card class="action-card">
           <div class="action-buttons">
-            <!-- 待估价状态：等待管理员估价 -->
+            <!-- 待估价状态：填写物流信息 -->
             <template v-if="order.status === 'pending'">
-              <el-alert type="info" :closable="false">
-                订单已提交，等待管理员估价中...
-              </el-alert>
-            </template>
-
-            <!-- 已估价状态：确认估价或提出异议 -->
-            <template v-if="order.status === 'quoted'">
-              <el-button type="primary" size="large" @click="showConfirmDialog = true">
-                确认估价并填写地址
-              </el-button>
-              <el-button type="warning" size="large" @click="showDisputeDialog = true">
-                对价格有异议
-              </el-button>
-              <el-button type="danger" link @click="cancelOrder">取消订单</el-button>
-            </template>
-
-            <!-- 已确认状态：填写物流信息 -->
-            <template v-if="order.status === 'confirmed'">
               <el-alert type="info" :closable="false" style="margin-bottom: 16px;">
-                订单已确认，请填写物流信息并寄出设备
+                订单已提交，请填写物流信息并寄出设备
               </el-alert>
               <el-button type="primary" size="large" @click="showShippingDialog = true">
                 填写物流信息
               </el-button>
-              <el-button type="danger" link @click="cancelOrder">取消订单</el-button>
+            </template>
+
+            <!-- 已寄出状态：等待平台收货 -->
+            <template v-if="order.status === 'shipped'">
+              <el-alert type="info" :closable="false" style="margin-bottom: 16px;">
+                订单已提交，设备已寄出，等待平台收货
+              </el-alert>
+            </template>
+
+            <!-- 已寄出状态：等待平台收货 -->
+            <template v-if="order.status === 'shipped'">
+              <el-alert type="info" :closable="false" style="margin-bottom: 16px;">
+                订单已提交，设备已寄出，等待平台收货
+              </el-alert>
+            </template>
+            
+            <!-- 已收货状态：等待质检 -->
+            <template v-if="order.status === 'received'">
+              <el-alert type="info" :closable="false" style="margin-bottom: 16px;">
+                平台已收货，等待质检中
+              </el-alert>
+            </template>
+            
+            <!-- 已检测状态：等待完成 -->
+            <template v-if="order.status === 'inspected'">
+              <el-alert type="success" :closable="false" style="margin-bottom: 16px;">
+                质检已完成，等待最终确认
+              </el-alert>
             </template>
 
             <!-- 已寄出状态：等待平台检测 -->
@@ -231,13 +230,36 @@
             </template>
 
             <!-- 已检测状态：确认最终价格或提出异议 -->
-            <template v-if="order.status === 'inspected'">
+            <template v-if="order.status === 'inspected' && !order.final_price_confirmed">
+              <el-alert type="info" :closable="false" style="margin-bottom: 16px;">
+                <template #title>
+                  质检已完成，请确认最终价格
+                </template>
+                <div style="margin-top: 8px;">
+                  <div style="font-size: 16px; margin-bottom: 8px;">
+                    最终价格: <span style="color: #f56c6c; font-weight: bold; font-size: 20px;">¥{{ order.final_price }}</span>
+                    <span v-if="order.bonus > 0" style="color: #67c23a; font-size: 16px; margin-left: 8px;">
+                      + 加价 ¥{{ order.bonus }}
+                    </span>
+                  </div>
+                  <div v-if="order.bonus > 0" style="font-size: 18px; color: #ff6600; font-weight: bold;">
+                    实付金额: ¥{{ (parseFloat(order.final_price) + parseFloat(order.bonus || 0)).toFixed(2) }}
+                  </div>
+                </div>
+              </el-alert>
               <el-button type="primary" size="large" @click="confirmFinalPrice">
                 确认最终价格
               </el-button>
               <el-button type="warning" size="large" @click="showFinalDisputeDialog = true">
                 对最终价格有异议
               </el-button>
+            </template>
+            
+            <!-- 已检测但等待确认 -->
+            <template v-if="order.status === 'inspected' && order.final_price_confirmed">
+              <el-alert type="success" :closable="false">
+                您已确认最终价格，订单正在进入打款阶段...
+              </el-alert>
             </template>
 
             <!-- 已完成状态：等待打款 -->
@@ -262,64 +284,7 @@
       </div>
     </div>
 
-    <!-- 确认估价对话框 -->
-    <el-dialog v-model="showConfirmDialog" title="确认估价并填写信息" width="600px">
-      <el-form :model="confirmForm" label-width="100px">
-        <el-divider content-position="left">联系信息</el-divider>
-        <el-form-item label="联系人姓名" required>
-          <el-input v-model="confirmForm.contact_name" placeholder="请输入联系人姓名"></el-input>
-        </el-form-item>
-        <el-form-item label="联系电话" required>
-          <el-input v-model="confirmForm.contact_phone" placeholder="请输入联系电话"></el-input>
-        </el-form-item>
-        <el-form-item label="收货地址" required>
-          <el-input 
-            v-model="confirmForm.address" 
-            type="textarea" 
-            :rows="3"
-            placeholder="请输入详细的收货地址"
-          ></el-input>
-        </el-form-item>
-        
-        <el-divider content-position="left">物流信息（可选，也可稍后填写）</el-divider>
-        <el-form-item label="物流公司">
-          <el-select v-model="confirmForm.shipping_carrier" placeholder="请选择物流公司（可选）" style="width: 100%">
-            <el-option label="顺丰速运" value="顺丰速运"></el-option>
-            <el-option label="圆通速递" value="圆通速递"></el-option>
-            <el-option label="申通快递" value="申通快递"></el-option>
-            <el-option label="中通快递" value="中通快递"></el-option>
-            <el-option label="韵达快递" value="韵达快递"></el-option>
-            <el-option label="EMS" value="EMS"></el-option>
-            <el-option label="其他" value="其他"></el-option>
-          </el-select>
-        </el-form-item>
-        <el-form-item label="运单号">
-          <el-input v-model="confirmForm.tracking_number" placeholder="请输入运单号（可选）"></el-input>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showConfirmDialog = false">取消</el-button>
-        <el-button type="primary" @click="confirmEstimate" :loading="submitting">确认</el-button>
-      </template>
-    </el-dialog>
 
-    <!-- 价格异议对话框 -->
-    <el-dialog v-model="showDisputeDialog" title="价格异议" width="600px">
-      <el-form :model="disputeForm" label-width="100px">
-        <el-form-item label="异议原因" required>
-          <el-input 
-            v-model="disputeForm.reason" 
-            type="textarea" 
-            :rows="4"
-            placeholder="请说明您对预估价格的异议原因"
-          ></el-input>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showDisputeDialog = false">取消</el-button>
-        <el-button type="warning" @click="submitDispute" :loading="submitting">提交异议</el-button>
-      </template>
-    </el-dialog>
 
     <!-- 填写物流信息对话框 -->
     <el-dialog v-model="showShippingDialog" title="填写物流信息" width="600px">
@@ -371,6 +336,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import api from '@/utils/api'
+import BaseCard from '@/components/BaseCard.vue'
+import OrderSteps from '@/components/OrderSteps.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -380,22 +347,8 @@ const submitting = ref(false)
 const order = ref(null)
 const inspectionReport = ref(null)
 
-const showConfirmDialog = ref(false)
-const showDisputeDialog = ref(false)
 const showShippingDialog = ref(false)
 const showFinalDisputeDialog = ref(false)
-
-const confirmForm = ref({
-  contact_name: '',
-  contact_phone: '',
-  address: '',
-  shipping_carrier: '',
-  tracking_number: ''
-})
-
-const disputeForm = ref({
-  reason: ''
-})
 
 const shippingForm = ref({
   carrier: '',
@@ -408,8 +361,7 @@ const finalDisputeForm = ref({
 
 const statusMap = {
   pending: '待估价',
-  quoted: '已估价',
-  confirmed: '已确认',
+  received: '已收货',
   shipped: '已寄出',
   inspected: '已检测',
   completed: '已完成',
@@ -461,18 +413,6 @@ const formatDate = (dateString) => {
   })
 }
 
-const getStepActive = () => {
-  const stepMap = {
-    pending: 0,
-    quoted: 1,
-    confirmed: 2,
-    shipped: 3,
-    inspected: 4,
-    completed: 5
-  }
-  return stepMap[order.value?.status] ?? 0
-}
-
 const getCheckItemLabel = (key) => {
   const labelMap = {
     screen: '屏幕',
@@ -509,96 +449,13 @@ const loadOrderDetail = async () => {
       inspectionReport.value = null
     }
 
-    // 初始化表单数据
-    if (order.value.contact_name) {
-      confirmForm.value.contact_name = order.value.contact_name
-    }
-    if (order.value.contact_phone) {
-      confirmForm.value.contact_phone = order.value.contact_phone
-    }
-    if (order.value.address) {
-      confirmForm.value.address = order.value.address
-    }
+
   } catch (error) {
     console.error('加载订单详情失败:', error)
     ElMessage.error('加载订单详情失败，请稍后重试')
     router.push('/my-recycle-orders')
   } finally {
     loading.value = false
-  }
-}
-
-const confirmEstimate = async () => {
-  if (!confirmForm.value.contact_name || !confirmForm.value.contact_phone || !confirmForm.value.address) {
-    ElMessage.warning('请填写完整的联系信息')
-    return
-  }
-
-  submitting.value = true
-  try {
-    const updateData = {
-      status: 'confirmed',
-      contact_name: confirmForm.value.contact_name,
-      contact_phone: confirmForm.value.contact_phone,
-      address: confirmForm.value.address
-    }
-
-    // 如果填写了物流信息，一起提交
-    if (confirmForm.value.shipping_carrier && confirmForm.value.tracking_number) {
-      updateData.shipping_carrier = confirmForm.value.shipping_carrier
-      updateData.tracking_number = confirmForm.value.tracking_number
-      updateData.status = 'shipped'  // 如果填写了物流信息，直接变为已寄出状态
-      updateData.shipped_at = new Date().toISOString()
-    }
-
-    const res = await api.patch(`/recycle-orders/${order.value.id}/`, updateData)
-    
-    if (updateData.status === 'shipped') {
-      ElMessage.success('确认成功！物流信息已提交，订单状态已更新为已寄出')
-    } else {
-      ElMessage.success('确认成功！请填写物流信息并寄出设备')
-    }
-    
-    showConfirmDialog.value = false
-    // 重置表单
-    confirmForm.value = {
-      contact_name: '',
-      contact_phone: '',
-      address: '',
-      shipping_carrier: '',
-      tracking_number: ''
-    }
-    await loadOrderDetail()
-  } catch (error) {
-    console.error('确认估价失败:', error)
-    const errorMsg = error.response?.data?.detail || error.response?.data?.status?.[0] || '确认失败，请稍后重试'
-    ElMessage.error(errorMsg)
-  } finally {
-    submitting.value = false
-  }
-}
-
-const submitDispute = async () => {
-  if (!disputeForm.value.reason.trim()) {
-    ElMessage.warning('请填写异议原因')
-    return
-  }
-
-  submitting.value = true
-  try {
-    await api.patch(`/recycle-orders/${order.value.id}/`, {
-      price_dispute: true,
-      price_dispute_reason: disputeForm.value.reason
-    })
-    ElMessage.success('异议已提交，等待管理员重新评估')
-    showDisputeDialog.value = false
-    disputeForm.value.reason = ''
-    await loadOrderDetail()
-  } catch (error) {
-    console.error('提交异议失败:', error)
-    ElMessage.error(error.response?.data?.detail || '提交失败，请稍后重试')
-  } finally {
-    submitting.value = false
   }
 }
 
@@ -610,13 +467,12 @@ const submitShipping = async () => {
 
   submitting.value = true
   try {
+    // 提交物流信息，后端会自动将状态从 pending 变为 shipped
     await api.patch(`/recycle-orders/${order.value.id}/`, {
-      status: 'shipped',
       shipping_carrier: shippingForm.value.carrier,
-      tracking_number: shippingForm.value.tracking_number,
-      shipped_at: new Date().toISOString()
+      tracking_number: shippingForm.value.tracking_number
     })
-    ElMessage.success('物流信息已提交！设备寄出后，请等待平台检测')
+    ElMessage.success('物流信息已提交！订单状态已更新为已寄出')
     showShippingDialog.value = false
     shippingForm.value = { carrier: '', tracking_number: '' }
     await loadOrderDetail()
@@ -630,18 +486,24 @@ const submitShipping = async () => {
 
 const confirmFinalPrice = async () => {
   try {
-    await ElMessageBox.confirm('确认接受最终价格吗？', '确认', {
-      confirmButtonText: '确认',
-      cancelButtonText: '取消',
-      type: 'info'
-    })
+    const finalPrice = order.value.final_price
+    const bonus = order.value.bonus || 0
+    const totalPrice = (parseFloat(finalPrice) + parseFloat(bonus)).toFixed(2)
+    
+    await ElMessageBox.confirm(
+      `确认接受最终价格 ¥${finalPrice}${bonus > 0 ? ` + 加价 ¥${bonus}` : ''} = ¥${totalPrice} 吗？确认后订单将进入打款阶段。`, 
+      '确认最终价格', 
+      {
+        confirmButtonText: '确认',
+        cancelButtonText: '取消',
+        type: 'info'
+      }
+    )
 
     submitting.value = true
     try {
-      await api.patch(`/recycle-orders/${order.value.id}/`, {
-        status: 'completed'
-      })
-      ElMessage.success('已确认最终价格，订单已完成')
+      await api.post(`/recycle-orders/${order.value.id}/confirm_final_price/`)
+      ElMessage.success('已确认最终价格，订单已进入打款阶段')
       await loadOrderDetail()
     } catch (error) {
       console.error('确认最终价格失败:', error)

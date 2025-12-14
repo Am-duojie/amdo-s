@@ -207,6 +207,12 @@ const routes = [
     component: () => import('@/pages/PaymentReturn.vue'),
     meta: { hideSearch: true, theme: 'yellow' }
   },
+  {
+    path: '/ui-showcase',
+    name: 'UIShowcase',
+    component: () => import('@/pages/UIShowcase.vue'),
+    meta: { hideSearch: true, theme: 'yellow' }
+  },
 
 ]
 

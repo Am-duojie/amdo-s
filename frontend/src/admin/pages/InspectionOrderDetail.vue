@@ -26,14 +26,9 @@
             :status="getStepStatus('pending')"
           />
           <el-step 
-            title="已估价" 
-            :description="formatTime(detail.status === 'quoted' ? detail.updated_at : null)"
-            :status="getStepStatus('quoted')"
-          />
-          <el-step 
-            title="已确认" 
-            :description="formatTime(detail.status === 'confirmed' ? detail.updated_at : null)"
-            :status="getStepStatus('confirmed')"
+            title="已收货"
+            :description="formatTime(detail.status === 'received' ? detail.received_at : null)"
+            :status="getStepStatus('received')"
           />
           <el-step 
             title="已寄出" 
@@ -493,8 +488,7 @@ const openPaymentDialog = () => {
 
 const statusMap = {
   pending: { text: '待估价', type: 'info' },
-  quoted: { text: '已估价', type: 'warning' },
-  confirmed: { text: '已确认', type: 'primary' },
+  received: { text: '已收货', type: 'success' },
   shipped: { text: '已寄出', type: 'primary' },
   inspected: { text: '已检测', type: 'success' },
   completed: { text: '已完成', type: 'success' },
@@ -598,25 +592,18 @@ const getStepStatus = (step) => {
     return 'success'
   }
   
-  // 已估价
-  if (step === 'quoted') {
-    if (['quoted', 'confirmed', 'shipped', 'inspected', 'completed'].includes(status)) {
-      return 'success'
-    }
-    return 'wait'
-  }
-  
-  // 已确认
-  if (step === 'confirmed') {
-    if (['confirmed', 'shipped', 'inspected', 'completed'].includes(status)) {
-      return 'success'
-    }
-    return 'wait'
-  }
   
   // 已寄出
   if (step === 'shipped') {
-    if (['shipped', 'inspected', 'completed'].includes(status)) {
+    if (['shipped', 'received', 'inspected', 'completed'].includes(status)) {
+      return 'success'
+    }
+    return 'wait'
+  }
+  
+  // 已收货
+  if (step === 'received') {
+    if (['received', 'inspected', 'completed'].includes(status)) {
       return 'success'
     }
     return 'wait'
@@ -806,9 +793,7 @@ const markReceived = async () => {
 
 const quickMarkQuoted = async () => {
   try {
-    await ElMessageBox.confirm('确认标记为已估价？', '确认', { type: 'warning' })
-    await adminApi.put(`/inspection-orders/${orderId}`, { status: 'quoted' })
-    ElMessage.success('已标记为已估价')
+    // 已移除"已估价"状态，订单提交后直接进入"已寄出"状态
     await loadDetail()
   } catch (error) {
     if (error !== 'cancel') {

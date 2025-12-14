@@ -91,6 +91,17 @@
             <el-tag v-for="s in row.storages" :key="s" size="small" style="margin-right: 4px">{{ s }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="基础价格" width="200">
+          <template #default="{ row }">
+            <div v-if="row.base_prices && Object.keys(row.base_prices).length > 0" class="base-prices-display">
+              <div v-for="(price, storage) in row.base_prices" :key="storage" class="price-tag">
+                <span class="storage">{{ storage }}:</span>
+                <span class="price">¥{{ Number(price).toFixed(2) }}</span>
+              </div>
+            </div>
+            <el-text v-else type="info" size="small">未设置</el-text>
+          </template>
+        </el-table-column>
         <el-table-column label="问卷数量" width="100">
           <template #default="{ row }">
             <el-tag>{{ row.question_count || 0 }} 题</el-tag>
@@ -138,7 +149,7 @@
     <el-dialog
       v-model="dialogVisible"
       :title="isEdit ? '编辑机型模板' : '新增机型模板'"
-      width="600px"
+      width="700px"
       @close="handleDialogClose"
     >
       <el-form :model="form" label-width="120px" :rules="formRules" ref="formRef">
@@ -167,6 +178,7 @@
             default-first-option
             placeholder="选择或输入存储容量"
             style="width: 100%"
+            @change="handleStoragesChange"
           >
             <el-option label="128GB" value="128GB" />
             <el-option label="256GB" value="256GB" />
@@ -174,6 +186,31 @@
             <el-option label="1TB" value="1TB" />
           </el-select>
           <div class="form-hint">可多选，也可以输入自定义容量</div>
+        </el-form-item>
+        <el-form-item label="基础价格">
+          <div class="base-prices-editor">
+            <div v-if="form.storages && form.storages.length > 0" class="prices-list">
+              <div v-for="storage in form.storages" :key="storage" class="price-item">
+                <span class="storage-label">{{ storage }}：</span>
+                <el-input-number
+                  v-model="form.base_prices[storage]"
+                  :min="0"
+                  :precision="2"
+                  :step="100"
+                  placeholder="请输入基础价格"
+                  style="width: 200px"
+                />
+                <span class="price-unit">元</span>
+              </div>
+            </div>
+            <div v-else class="empty-hint">
+              <el-text type="info">请先选择存储容量</el-text>
+            </div>
+            <div class="form-hint" style="margin-top: 12px">
+              <strong>用途：</strong>为每个存储容量设置基础价格（良好成色），用于回收估价计算
+              <div style="margin-top: 4px;"><strong>说明：</strong>基础价格会根据用户选择的成色自动调整（全新100%、近新95%、良好85%、一般70%、较差50%）</div>
+            </div>
+          </div>
         </el-form-item>
         <el-form-item label="状态">
           <el-switch v-model="form.is_active" active-text="启用" inactive-text="禁用" />
@@ -442,6 +479,7 @@ const form = reactive({
   model: '',
   series: '',
   storages: [],
+  base_prices: {},  // 基础价格表：{ "128GB": 4500, "256GB": 5200, ... }
   is_active: true,
 })
 
@@ -703,6 +741,17 @@ const handleSizeChange = (size) => {
   load()
 }
 
+// 存储容量变化时，同步更新基础价格表
+const handleStoragesChange = (newStorages) => {
+  const oldPrices = { ...form.base_prices }
+  const newPrices = {}
+  // 保留已存在的价格，新增的容量初始化为0
+  newStorages.forEach(storage => {
+    newPrices[storage] = oldPrices[storage] || 0
+  })
+  form.base_prices = newPrices
+}
+
 // 创建
 const handleCreate = () => {
   isEdit.value = false
@@ -713,23 +762,42 @@ const handleCreate = () => {
     model: '',
     series: '',
     storages: [],
+    base_prices: {},
     is_active: true,
   })
   dialogVisible.value = true
 }
 
 // 编辑
-const handleEdit = (row) => {
+const handleEdit = async (row) => {
   isEdit.value = true
   currentId.value = row.id
-  Object.assign(form, {
-    device_type: row.device_type,
-    brand: row.brand,
-    model: row.model,
-    series: row.series || '',
-    storages: row.storages || [],
-    is_active: row.is_active,
-  })
+  
+  // 如果是编辑，需要获取完整数据（包含 base_prices）
+  try {
+    const res = await adminApi.get(`/recycle-templates/${row.id}`)
+    const fullData = res.data
+    Object.assign(form, {
+      device_type: fullData.device_type,
+      brand: fullData.brand,
+      model: fullData.model,
+      series: fullData.series || '',
+      storages: fullData.storages || [],
+      base_prices: fullData.base_prices || {},
+      is_active: fullData.is_active,
+    })
+  } catch (error) {
+    // 如果获取失败，使用列表数据
+    Object.assign(form, {
+      device_type: row.device_type,
+      brand: row.brand,
+      model: row.model,
+      series: row.series || '',
+      storages: row.storages || [],
+      base_prices: row.base_prices || {},
+      is_active: row.is_active,
+    })
+  }
   dialogVisible.value = true
 }
 
@@ -1061,4 +1129,67 @@ onMounted(() => {
 .form-hint div {
   margin-top: 4px;
 }
+
+.base-prices-editor {
+  width: 100%;
+}
+
+.prices-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.price-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.storage-label {
+  min-width: 80px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.price-unit {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.empty-hint {
+  padding: 20px;
+  text-align: center;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px dashed #d1d5db;
+}
+
+.base-prices-display {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.price-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.price-tag .storage {
+  color: #6b7280;
+  min-width: 50px;
+}
+
+.price-tag .price {
+  color: #1f2937;
+  font-weight: 600;
+}
 </style>
+

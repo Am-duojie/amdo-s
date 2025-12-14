@@ -31,12 +31,7 @@
                 {{ getStatusText(order.status) }}
               </el-tag>
             </div>
-            <el-steps :active="getStepIndex(order.status)" finish-status="success" align-center>
-              <el-step title="下单" :description="formatDate(order.created_at)" />
-              <el-step title="付款" :description="getStepTime('paid')" />
-              <el-step title="发货" :description="getStepTime('shipped')" />
-              <el-step title="完成" :description="getStepTime('completed')" />
-            </el-steps>
+            <OrderSteps :order="order" type="verified" />
           </div>
 
           <!-- 商品信息 -->
@@ -131,6 +126,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
+import OrderSteps from '@/components/OrderSteps.vue'
 
 const route = useRoute()
 const router = useRouter()

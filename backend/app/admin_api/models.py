@@ -70,6 +70,11 @@ class RecycleDeviceTemplate(models.Model):
     brand = models.CharField(max_length=64, verbose_name='品牌')
     model = models.CharField(max_length=128, verbose_name='型号')
     storages = models.JSONField(default=list, verbose_name='存储容量列表', help_text='如：["128GB", "256GB", "512GB"]')
+    base_prices = models.JSONField(
+        default=dict, 
+        verbose_name='基础价格表', 
+        help_text='按存储容量存储基础价格，格式：{"128GB": 4500, "256GB": 5200, "512GB": 6500}，单位为元'
+    )
     series = models.CharField(max_length=64, blank=True, verbose_name='系列', help_text='如：iPhone 13系列')
     is_active = models.BooleanField(default=True, verbose_name='是否启用')
     created_by = models.ForeignKey(AdminUser, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='创建人')

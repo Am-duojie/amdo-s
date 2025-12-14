@@ -540,11 +540,21 @@ class RecycleOrderSerializer(serializers.ModelSerializer):
             'price_dispute', 'price_dispute_reason', 'reject_reason', 'final_price_confirmed', 'payment_retry_count',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['user', 'estimated_price', 'final_price', 'received_at', 
+        read_only_fields = ['user', 'final_price', 'received_at', 
                            'inspected_at', 'paid_at', 'created_at', 'updated_at']
 
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
+        # 允许在创建时设置 estimated_price（从请求数据中获取）
+        request = self.context.get('request')
+        if request and 'estimated_price' in request.data:
+            try:
+                validated_data['estimated_price'] = float(request.data['estimated_price'])
+            except (ValueError, TypeError):
+                pass  # 如果转换失败，使用默认值（null）
+        # 设置初始状态为 'pending'（待估价），用户提交订单后处于待估价状态
+        validated_data['status'] = 'pending'
+        # 不设置寄出时间，等用户填写物流信息后再设置
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
@@ -553,14 +563,20 @@ class RecycleOrderSerializer(serializers.ModelSerializer):
         current_status = instance.status
         new_status = validated_data.get('status', current_status)
         
+        # 如果用户填写了物流信息，自动将状态从 pending 变为 shipped
+        if current_status == 'pending' and 'shipping_carrier' in validated_data and 'tracking_number' in validated_data:
+            if validated_data.get('shipping_carrier') and validated_data.get('tracking_number'):
+                validated_data['status'] = 'shipped'
+                from django.utils import timezone
+                if not instance.shipped_at:
+                    validated_data['shipped_at'] = timezone.now()
+        
         # 定义允许的状态流转规则（用户操作）
+        # 流程：待估价 -> 已寄出（用户填写物流） -> 已收货（平台操作） -> 已检测 -> 已完成
         allowed_transitions = {
-            'quoted': ['confirmed', 'shipped'],  # 已估价 -> 已确认 或 已寄出（如果同时填写了物流信息）
-            'confirmed': ['shipped'],  # 已确认 -> 已寄出
-            'inspected': ['completed'],  # 已检测 -> 已完成
             'pending': ['cancelled'],
-            'quoted': ['cancelled'],
-            'confirmed': ['cancelled']
+            'shipped': ['cancelled'],  # 用户可以在已寄出状态取消订单
+            'inspected': ['completed'],  # 已检测 -> 已完成
         }
         
         # 如果状态发生变化，检查是否允许
@@ -569,7 +585,7 @@ class RecycleOrderSerializer(serializers.ModelSerializer):
             if new_status not in allowed_next:
                 # 如果不在允许的流转中，检查是否是管理员操作（通过其他字段判断）
                 # 或者保持原状态不变
-                if new_status not in ['pending', 'quoted', 'confirmed', 'shipped', 'inspected', 'completed', 'cancelled']:
+                if new_status not in ['pending', 'shipped', 'received', 'inspected', 'completed', 'cancelled']:
                     raise serializers.ValidationError({
                         'status': f'不允许从 {current_status} 状态转换到 {new_status} 状态。允许的转换：{allowed_next}'
                     })
@@ -658,7 +674,7 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
     is_favorited = serializers.SerializerMethodField()
     cover_image = serializers.CharField(required=False, allow_blank=True)
     detail_images = serializers.ListField(child=serializers.CharField(), required=False)
-    inspection_reports = serializers.ListField(child=serializers.CharField(), required=False)
+    inspection_reports = serializers.JSONField(required=False)
     inspection_result = serializers.ChoiceField(choices=[('pass','pass'),('warn','warn'),('fail','fail')], required=False)
     inspection_date = serializers.DateField(required=False, allow_null=True)
     inspection_staff = serializers.CharField(required=False, allow_blank=True)
@@ -671,7 +687,7 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'seller', 'category', 'category_id', 'shop', 'shop_id', 'title', 'description',
             'price', 'original_price', 'condition', 'status', 'location',
-            'contact_phone', 'contact_wechat', 'brand', 'model', 'storage',
+            'contact_phone', 'contact_wechat', 'brand', 'model', 'storage', 'ram', 'version', 'repair_status',
             'screen_size', 'battery_health', 'charging_type', 'verified_at',
             'verified_by', 'view_count', 'sales_count', 'images',
             'is_favorited', 'created_at', 'updated_at',

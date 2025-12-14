@@ -16,9 +16,8 @@
           <el-select v-model="statusFilter" placeholder="全部" clearable style="width: 160px" @change="handleSearch">
             <el-option label="全部" value="" />
             <el-option label="待估价" value="pending" />
-            <el-option label="已估价" value="quoted" />
-            <el-option label="已确认" value="confirmed" />
             <el-option label="已寄出" value="shipped" />
+            <el-option label="已收货" value="received" />
             <el-option label="已检测" value="inspected" />
             <el-option label="已完成" value="completed" />
             <el-option label="已打款" value="paid" />
@@ -223,6 +222,7 @@ const selectedOrders = ref([])
 const loading = ref(false)
 const search = ref('')
 const statusFilter = ref('')
+const paymentFilter = ref('')
 const pagination = ref({ current: 1, pageSize: 20, total: 0 })
 const detailDialogVisible = ref(false)
 const currentOrder = ref(null)
@@ -233,10 +233,16 @@ const stats = ref({
   completed: 0
 })
 
+const statItems = computed(() => [
+  { key: 'pending', label: '待估价', value: stats.value.pending },
+  { key: 'shipped', label: '已寄出', value: stats.value.shipped },
+  { key: 'inspected', label: '已检测', value: stats.value.inspected },
+  { key: 'completed', label: '已完成', value: stats.value.completed }
+])
+
 const statusMap = {
   pending: { text: '待估价', type: 'info' },
-  quoted: { text: '已估价', type: 'warning' },
-  confirmed: { text: '已确认', type: 'primary' },
+  received: { text: '已收货', type: 'success' },
   shipped: { text: '已寄出', type: 'primary' },
   inspected: { text: '已检测', type: 'success' },
   completed: { text: '已完成', type: 'success' },
@@ -252,12 +258,11 @@ const conditionMap = {
   poor: { text: '较差', type: 'danger' }
 }
 
-// 流程步骤
+// 流程步骤（按实际流程顺序）
 const processSteps = [
   { label: '提交订单', value: 'pending' },
-  { label: '已估价', value: 'quoted' },
-  { label: '已确认', value: 'confirmed' },
   { label: '已寄出', value: 'shipped' },
+  { label: '已收货', value: 'received' },
   { label: '已检测', value: 'inspected' },
   { label: '已完成', value: 'completed' },
   { label: '已打款', value: 'paid' }
@@ -267,14 +272,42 @@ const getStatusText = (status) => statusMap[status]?.text || status
 const getStatusType = (status) => statusMap[status]?.type || 'info'
 const getConditionText = (condition) => conditionMap[condition]?.text || condition
 const getConditionType = (condition) => conditionMap[condition]?.type || 'info'
+const getPaymentStatusText = (status) => {
+  const map = {
+    pending: '待打款',
+    paid: '已打款',
+    failed: '打款失败'
+  }
+  return map[status] || status
+}
 
 const isStepCompleted = (row, stepValue) => {
   // 支付完成单独判断
   if (stepValue === 'paid') return row.payment_status === 'paid'
-  const stepIndex = processSteps.findIndex(s => s.value === stepValue)
-  const currentIndex = processSteps.findIndex(s => s.value === row.status)
-  // 当前状态所在及之前的步骤都视为完成，确保“已完成”节点变绿色
-  return currentIndex >= stepIndex
+  
+  // 根据实际完成情况判断，而不是简单的状态索引比较
+  if (stepValue === 'pending') {
+    // 提交订单：只要订单存在就已完成
+    return true
+  }
+  if (stepValue === 'shipped') {
+    // 已寄出：状态为 shipped 或之后的状态
+    return ['shipped', 'received', 'inspected', 'completed'].includes(row.status)
+  }
+  if (stepValue === 'received') {
+    // 已收货：状态为 received 或之后的状态（只有平台确认收货后才完成）
+    return ['received', 'inspected', 'completed'].includes(row.status)
+  }
+  if (stepValue === 'inspected') {
+    // 已检测：状态为 inspected 或之后的状态
+    return ['inspected', 'completed'].includes(row.status)
+  }
+  if (stepValue === 'completed') {
+    // 已完成：状态为 completed
+    return row.status === 'completed'
+  }
+  
+  return false
 }
 
 const isStepActive = (row, stepValue) => {
@@ -285,12 +318,12 @@ const isStepActive = (row, stepValue) => {
 }
 
 const canOperate = (row) => {
-  return ['pending', 'shipped', 'confirmed', 'inspected', 'completed'].includes(row.status)
+  return ['pending', 'shipped', 'received', 'inspected', 'completed'].includes(row.status)
 }
 
 const getActionText = (row) => {
   if (row.status === 'pending') return '估价'
-  if (row.status === 'shipped' || row.status === 'confirmed') return '质检'
+  if (row.status === 'shipped' || row.status === 'received') return '质检'
   if (row.status === 'inspected') return '完成订单'
   if (row.status === 'completed' && row.payment_status !== 'paid') return '打款'
   return '处理'

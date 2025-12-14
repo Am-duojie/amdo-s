@@ -91,7 +91,7 @@
     </el-card>
 
     <!-- 物流信息 -->
-    <el-card v-if="detail.status !== 'pending' && detail.status !== 'quoted'" class="detail-section" shadow="never">
+    <el-card v-if="detail.status !== 'pending'" class="detail-section" shadow="never">
       <template #header>
         <span>物流信息</span>
       </template>
@@ -266,19 +266,36 @@
         
         <!-- 开始质检 -->
         <el-button
-          v-if="(detail.status === 'shipped' || detail.status === 'confirmed') && detail.received_at && hasPerm('inspection:write')"
+          v-if="(detail.status === 'shipped' || detail.status === 'received') && hasPerm('inspection:write')"
           type="primary"
           @click="showReportDialog = true"
         >
           开始质检
         </el-button>
         
-        <!-- 完成订单 -->
+        <!-- 等待用户确认价格提示 -->
+        <el-alert
+          v-if="detail.status === 'inspected' && detail.final_price && !detail.final_price_confirmed"
+          type="warning"
+          :closable="false"
+          style="margin-bottom: 16px"
+        >
+          <template #title>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <el-icon><Clock /></el-icon>
+              <span>等待用户确认最终价格 ¥{{ detail.final_price }}{{ detail.bonus > 0 ? ` (+¥${detail.bonus})` : '' }}</span>
+            </div>
+          </template>
+          用户确认价格后，订单将自动进入打款阶段
+        </el-alert>
+        
+        <!-- 完成订单（已废弃，由用户确认价格后自动完成） -->
         <el-button
-          v-if="detail.status === 'inspected' && detail.final_price && hasPerm('inspection:write')"
+          v-if="detail.status === 'inspected' && detail.final_price && detail.final_price_confirmed && hasPerm('inspection:write')"
           type="success"
           @click="completeOrder"
           :loading="completing"
+          style="display: none"
         >
           完成订单
         </el-button>
@@ -309,7 +326,7 @@
         
         <!-- 取消订单 -->
         <el-button
-          v-if="['pending', 'quoted', 'confirmed'].includes(detail.status) && hasPerm('inspection:write')"
+          v-if="['pending', 'shipped'].includes(detail.status) && hasPerm('inspection:write')"
           type="danger"
           @click="cancelOrder"
         >
@@ -322,29 +339,171 @@
     <el-dialog
       v-model="showReportDialog"
       title="质检报告"
-      width="700px"
+      width="900px"
       @close="resetReportForm"
     >
       <el-form :model="reportForm" label-width="100px">
+        <!-- 详细质检报告（66项检测） -->
+        <el-form-item label="">
+          <div class="inspection-editor-wrapper">
+            <div class="inspection-header">
+              <span class="inspection-title">详细质检报告（66项检测）</span>
+              <el-button size="small" @click="toggleAllInspectionCategories">
+                {{ allInspectionExpanded ? '全部收起' : '全部展开' }}
+              </el-button>
+            </div>
+            
+            <el-collapse v-model="activeInspectionCategories" class="inspection-collapse">
+              <!-- 外观检测 -->
+              <el-collapse-item name="appearance" title="外观检测（12项）">
+                <div class="inspection-group">
+                  <div class="group-title">外壳外观</div>
+                  <div class="inspection-items">
+                    <div v-for="(item, idx) in inspectionData.appearance.items" :key="idx" class="inspection-item">
+                      <span class="item-label">{{ item.label }}</span>
+                      <el-input v-model="item.value" placeholder="检测结果" size="small" style="width: 150px;" />
+                      <el-select v-model="item.pass" size="small" style="width: 100px;">
+                        <el-option label="正常" :value="true" />
+                        <el-option label="异常" :value="false" />
+                      </el-select>
+                      <el-input 
+                        v-if="!item.pass" 
+                        v-model="item.image" 
+                        placeholder="异常图片URL" 
+                        size="small" 
+                        style="width: 200px;"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </el-collapse-item>
+
+              <!-- 屏幕检测 -->
+              <el-collapse-item name="screen" title="屏幕检测（16项）">
+                <div class="inspection-group">
+                  <div class="group-title">屏幕触控</div>
+                  <div class="inspection-items">
+                    <div v-for="(item, idx) in inspectionData.screen.touch" :key="idx" class="inspection-item">
+                      <span class="item-label">{{ item.label }}</span>
+                      <el-input v-model="item.value" placeholder="检测结果" size="small" style="width: 150px;" />
+                      <el-select v-model="item.pass" size="small" style="width: 100px;">
+                        <el-option label="正常" :value="true" />
+                        <el-option label="异常" :value="false" />
+                      </el-select>
+                      <el-input 
+                        v-if="!item.pass" 
+                        v-model="item.image" 
+                        placeholder="异常图片URL" 
+                        size="small" 
+                        style="width: 200px;"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="inspection-group">
+                  <div class="group-title">屏幕外观</div>
+                  <div class="inspection-items">
+                    <div v-for="(item, idx) in inspectionData.screen.appearance" :key="idx" class="inspection-item">
+                      <span class="item-label">{{ item.label }}</span>
+                      <el-input v-model="item.value" placeholder="检测结果" size="small" style="width: 150px;" />
+                      <el-select v-model="item.pass" size="small" style="width: 100px;">
+                        <el-option label="正常" :value="true" />
+                        <el-option label="异常" :value="false" />
+                      </el-select>
+                      <el-input 
+                        v-if="!item.pass" 
+                        v-model="item.image" 
+                        placeholder="异常图片URL" 
+                        size="small" 
+                        style="width: 200px;"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="inspection-group">
+                  <div class="group-title">屏幕显示</div>
+                  <div class="inspection-items">
+                    <div v-for="(item, idx) in inspectionData.screen.display" :key="idx" class="inspection-item">
+                      <span class="item-label">{{ item.label }}</span>
+                      <el-input v-model="item.value" placeholder="检测结果" size="small" style="width: 150px;" />
+                      <el-select v-model="item.pass" size="small" style="width: 100px;">
+                        <el-option label="正常" :value="true" />
+                        <el-option label="异常" :value="false" />
+                      </el-select>
+                      <el-input 
+                        v-if="!item.pass" 
+                        v-model="item.image" 
+                        placeholder="异常图片URL" 
+                        size="small" 
+                        style="width: 200px;"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </el-collapse-item>
+
+              <!-- 设备功能 -->
+              <el-collapse-item name="function" title="设备功能（30项）">
+                <div v-for="(group, groupKey) in inspectionData.function" :key="groupKey" class="inspection-group">
+                  <div class="group-title">{{ group.name }}</div>
+                  <div class="inspection-items">
+                    <div v-for="(item, idx) in group.items" :key="idx" class="inspection-item">
+                      <span class="item-label">{{ item.label }}</span>
+                      <el-input v-model="item.value" placeholder="检测结果" size="small" style="width: 150px;" />
+                      <el-select v-model="item.pass" size="small" style="width: 100px;">
+                        <el-option label="正常" :value="true" />
+                        <el-option label="异常" :value="false" />
+                      </el-select>
+                      <el-input 
+                        v-if="!item.pass" 
+                        v-model="item.image" 
+                        placeholder="异常图片URL" 
+                        size="small" 
+                        style="width: 200px;"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </el-collapse-item>
+
+              <!-- 维修浸液 -->
+              <el-collapse-item name="repair" title="维修浸液（8项）">
+                <div class="inspection-group">
+                  <div class="group-title">维修浸液</div>
+                  <div class="inspection-items">
+                    <div v-for="(item, idx) in inspectionData.repair.items" :key="idx" class="inspection-item">
+                      <span class="item-label">{{ item.label }}</span>
+                      <el-input v-model="item.value" placeholder="检测结果" size="small" style="width: 150px;" />
+                      <el-select v-model="item.pass" size="small" style="width: 100px;">
+                        <el-option label="正常" :value="true" />
+                        <el-option label="异常" :value="false" />
+                      </el-select>
+                      <el-input 
+                        v-if="!item.pass" 
+                        v-model="item.image" 
+                        placeholder="异常图片URL" 
+                        size="small" 
+                        style="width: 200px;"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </el-collapse-item>
+            </el-collapse>
+          </div>
+        </el-form-item>
+
         <el-form-item label="质检备注">
           <el-input
             v-model="reportForm.remarks"
             type="textarea"
-            :rows="4"
+            :rows="3"
             placeholder="请输入质检备注信息"
           />
         </el-form-item>
-        <el-form-item label="检测项目">
-          <el-input
-            v-model="reportForm.checkItemsJson"
-            type="textarea"
-            :rows="8"
-            placeholder='请输入JSON格式的检测项目，例如：{"外观": "良好", "屏幕": "无划痕", "功能": "正常"}'
-          />
-          <div style="font-size: 12px; color: #909399; margin-top: 4px">
-            JSON格式：{"项目名": "检测结果", ...}
-          </div>
-        </el-form-item>
+
         <el-form-item label="最终价格" required>
           <el-input-number
             v-model="reportForm.final_price"
@@ -389,7 +548,7 @@
             placeholder="请输入预估价格"
           />
           <div style="font-size: 12px; color: #909399; margin-top: 4px">
-            设置预估价格后，订单状态将自动更新为"已估价"
+            设置预估价格（订单提交后已自动进入"已寄出"状态）
           </div>
         </el-form-item>
       </el-form>
@@ -456,7 +615,7 @@ import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import adminApi from '@/utils/adminApi'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Loading } from '@element-plus/icons-vue'
+import { Check, Loading, Clock } from '@element-plus/icons-vue'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 
 const router = useRouter()
@@ -501,6 +660,239 @@ const reportForm = reactive({
   bonus: 0
 })
 
+// 质检报告数据结构
+const activeInspectionCategories = ref([])
+const allInspectionExpanded = ref(false)
+
+const inspectionData = reactive({
+  appearance: {
+    items: [
+      { label: '碎裂', value: '无', pass: true, image: '' },
+      { label: '划痕', value: '无', pass: true, image: '' },
+      { label: '机身弯曲', value: '无', pass: true, image: '' },
+      { label: '脱胶/缝隙', value: '无', pass: true, image: '' },
+      { label: '外壳/其他', value: '正常', pass: true, image: '' },
+      { label: '磕碰', value: '几乎不可见', pass: true, image: '' },
+      { label: '刻字/图', value: '无', pass: true, image: '' },
+      { label: '掉漆/磨损', value: '几乎不可见', pass: true, image: '' },
+      { label: '摄像头/闪光灯外观', value: '正常', pass: true, image: '' },
+      { label: '褶皱', value: '无', pass: true, image: '' },
+      { label: '卡托', value: '正常', pass: true, image: '' },
+      { label: '音频网罩', value: '正常', pass: true, image: '' }
+    ]
+  },
+  screen: {
+    touch: [
+      { label: '触控', value: '正常', pass: true, image: '' }
+    ],
+    appearance: [
+      { label: '屏幕/其它', value: '正常', pass: true, image: '' },
+      { label: '碎裂', value: '无', pass: true, image: '' },
+      { label: '内屏掉漆/划伤', value: '无', pass: true, image: '' },
+      { label: '屏幕凸点（褶皱）', value: '正常', pass: true, image: '' },
+      { label: '支架破损', value: '无', pass: true, image: '' },
+      { label: '浅划痕', value: '几乎不可见', pass: true, image: '' },
+      { label: '深划痕', value: '几乎不可见', pass: true, image: '' }
+    ],
+    display: [
+      { label: '进灰', value: '无', pass: true, image: '' },
+      { label: '坏点', value: '无', pass: true, image: '' },
+      { label: '气泡', value: '无', pass: true, image: '' },
+      { label: '色斑', value: '无', pass: true, image: '' },
+      { label: '其它', value: '正常', pass: true, image: '' },
+      { label: '亮点/亮斑', value: '无', pass: true, image: '' },
+      { label: '泛红/泛黄', value: '无', pass: true, image: '' },
+      { label: '图文残影', value: '无', pass: true, image: '' }
+    ]
+  },
+  function: {
+    buttons: {
+      name: '按键',
+      items: [
+        { label: '电源键', value: '正常', pass: true, image: '' },
+        { label: '音量键', value: '正常', pass: true, image: '' },
+        { label: '静音键', value: '正常', pass: true, image: '' },
+        { label: '其它按键', value: '正常', pass: true, image: '' }
+      ]
+    },
+    biometric: {
+      name: '生物识别',
+      items: [
+        { label: '面部识别', value: '正常', pass: true, image: '' },
+        { label: '指纹识别', value: '正常', pass: true, image: '' }
+      ]
+    },
+    sensors: {
+      name: '传感器',
+      items: [
+        { label: '重力感应', value: '正常', pass: true, image: '' },
+        { label: '指南针', value: '正常', pass: true, image: '' },
+        { label: '距离感应', value: '正常', pass: true, image: '' },
+        { label: '光线感应', value: '正常', pass: true, image: '' }
+      ]
+    },
+    ports: {
+      name: '接口',
+      items: [
+        { label: '充电接口', value: '正常', pass: true, image: '' },
+        { label: '耳机接口', value: '正常', pass: true, image: '' }
+      ]
+    },
+    wireless: {
+      name: '无线',
+      items: [
+        { label: 'WiFi', value: '正常', pass: true, image: '' },
+        { label: '蓝牙', value: '正常', pass: true, image: '' },
+        { label: 'GPS', value: '正常', pass: true, image: '' },
+        { label: 'NFC', value: '正常', pass: true, image: '' }
+      ]
+    },
+    charging: {
+      name: '充电',
+      items: [
+        { label: '充电功能', value: '正常', pass: true, image: '' },
+        { label: '无线充电', value: '正常', pass: true, image: '' }
+      ]
+    },
+    call: {
+      name: '通话功能',
+      items: [
+        { label: '通话', value: '正常', pass: true, image: '' },
+        { label: '信号', value: '正常', pass: true, image: '' }
+      ]
+    },
+    audio: {
+      name: '声音与振动',
+      items: [
+        { label: '扬声器', value: '正常', pass: true, image: '' },
+        { label: '麦克风', value: '正常', pass: true, image: '' },
+        { label: '振动', value: '正常', pass: true, image: '' }
+      ]
+    },
+    camera: {
+      name: '摄像头',
+      items: [
+        { label: '前置摄像头', value: '正常', pass: true, image: '' },
+        { label: '后置摄像头', value: '正常', pass: true, image: '' },
+        { label: '闪光灯', value: '正常', pass: true, image: '' }
+      ]
+    },
+    other: {
+      name: '其它状况',
+      items: [
+        { label: '电池健康', value: '未检测', pass: true, image: '' }
+      ]
+    }
+  },
+  repair: {
+    items: [
+      { label: '屏幕', value: '未检出维修更换', pass: true, image: '' },
+      { label: '主板', value: '未检出维修', pass: true, image: '' },
+      { label: '机身', value: '未检出维修更换', pass: true, image: '' },
+      { label: '零件维修/更换', value: '未检出维修更换', pass: true, image: '' },
+      { label: '零件缺失', value: '未检出缺失', pass: true, image: '' },
+      { label: '后摄维修情况', value: '未检出维修更换', pass: true, image: '' },
+      { label: '前摄维修情况', value: '未检出维修更换', pass: true, image: '' },
+      { label: '浸液痕迹情况', value: '未检出浸液痕迹', pass: true, image: '' }
+    ]
+  }
+})
+
+const toggleAllInspectionCategories = () => {
+  if (allInspectionExpanded.value) {
+    activeInspectionCategories.value = []
+  } else {
+    activeInspectionCategories.value = ['appearance', 'screen', 'function', 'repair']
+  }
+  allInspectionExpanded.value = !allInspectionExpanded.value
+}
+
+// 将质检数据转换为API格式
+const convertInspectionDataToAPI = () => {
+  return [
+    {
+      title: '外观检测',
+      images: [],
+      groups: [
+        {
+          name: '外壳外观',
+          items: inspectionData.appearance.items.map(item => ({
+            label: item.label,
+            value: item.value,
+            pass: item.pass,
+            ...(item.image && !item.pass ? { image: item.image } : {})
+          }))
+        }
+      ]
+    },
+    {
+      title: '屏幕检测',
+      images: [],
+      groups: [
+        {
+          name: '屏幕触控',
+          items: inspectionData.screen.touch.map(item => ({
+            label: item.label,
+            value: item.value,
+            pass: item.pass,
+            ...(item.image && !item.pass ? { image: item.image } : {})
+          }))
+        },
+        {
+          name: '屏幕外观',
+          items: inspectionData.screen.appearance.map(item => ({
+            label: item.label,
+            value: item.value,
+            pass: item.pass,
+            ...(item.image && !item.pass ? { image: item.image } : {})
+          }))
+        },
+        {
+          name: '屏幕显示',
+          items: inspectionData.screen.display.map(item => ({
+            label: item.label,
+            value: item.value,
+            pass: item.pass,
+            ...(item.image && !item.pass ? { image: item.image } : {})
+          }))
+        }
+      ]
+    },
+    {
+      title: '设备功能',
+      images: [],
+      groups: Object.values(inspectionData.function).map(group => ({
+        name: group.name,
+        items: group.items.map(item => ({
+          label: item.label,
+          value: item.value,
+          pass: item.pass,
+          ...(item.image && !item.pass ? { image: item.image } : {})
+        }))
+      }))
+    },
+    {
+      title: '维修浸液',
+      images: [],
+      groups: [
+        {
+          name: '维修浸液',
+          items: inspectionData.repair.items.map(item => ({
+            label: item.label,
+            value: item.value,
+            pass: item.pass,
+            ...(item.image && !item.pass ? { image: item.image } : {})
+          }))
+        }
+      ],
+      footer: {
+        label: '拆机检测',
+        value: '平台未拆机检测'
+      }
+    }
+  ]
+}
+
 const paymentForm = reactive({
   payment_method: 'wallet',
   payment_account: '',
@@ -534,9 +926,8 @@ const canShowPaymentButton = computed(() => {
 // 流程步骤
 const processSteps = [
   { label: '提交订单', value: 'pending' },
-  { label: '已估价', value: 'quoted' },
-  { label: '已确认', value: 'confirmed' },
   { label: '已寄出', value: 'shipped' },
+  { label: '已收货', value: 'received' },
   { label: '已检测', value: 'inspected' },
   { label: '已完成', value: 'completed' },
   { label: '已打款', value: 'paid' }
@@ -544,8 +935,7 @@ const processSteps = [
 
 const statusMap = {
   pending: { text: '待估价', type: 'info' },
-  quoted: { text: '已估价', type: 'warning' },
-  confirmed: { text: '已确认', type: 'primary' },
+  received: { text: '已收货', type: 'success' },
   shipped: { text: '已寄出', type: 'primary' },
   inspected: { text: '已检测', type: 'success' },
   completed: { text: '已完成', type: 'success' },
@@ -596,7 +986,7 @@ const getStepTime = (stepValue) => {
 }
 
 const canCreateReport = computed(() => {
-  return ['shipped', 'confirmed'].includes(detail.value.status) && detail.value.received_at
+  return ['shipped', 'received'].includes(detail.value.status) && detail.value.received_at
 })
 
 const canManagePrice = computed(() => {
@@ -642,8 +1032,15 @@ watch(
 
 const markReceived = async () => {
   try {
+    await ElMessageBox.confirm('确认已收到设备？确认后将更新订单状态为"已收货"', '确认收货', {
+      type: 'warning',
+      confirmButtonText: '确认',
+      cancelButtonText: '取消'
+    })
     markingReceived.value = true
-    const res = await adminApi.post(`/inspection-orders/${props.orderId}/received`)
+    const res = await adminApi.post(`/inspection-orders/${props.orderId}/logistics`, {
+      action: 'receive'
+    })
     if (res.data?.success) {
       ElMessage.success('已确认收到设备')
       await loadDetail()
@@ -691,7 +1088,7 @@ const saveEstimatedPrice = async () => {
       price_type: 'estimated',
       estimated_price: priceForm.estimated_price
     })
-    ElMessage.success('预估价格设置成功，订单状态已更新为已估价')
+    ElMessage.success('预估价格设置成功')
     priceDialogVisible.value = false
     await loadDetail()
     emit('updated')
@@ -743,26 +1140,18 @@ const saveFinalPrice = async () => {
 
   const saveReport = async () => {
     try {
-      let checkItems = {}
-      try {
-        checkItems = JSON.parse(reportForm.checkItemsJson || '{}')
-      } catch (e) {
-        ElMessage.error('检测项目JSON格式错误')
-        return
-      }
-      if (typeof checkItems !== 'object' || Array.isArray(checkItems) || checkItems === null) {
-        ElMessage.error('检测项目必须是对象(JSON)')
-        return
-      }
       if (!reportForm.final_price || reportForm.final_price <= 0) {
         ElMessage.warning('请输入有效的最终价格')
         return
       }
       savingReport.value = true
     
+    // 将质检数据转换为API格式
+    const inspectionReportData = convertInspectionDataToAPI()
+    
     // 先保存质检报告
     await adminApi.post(`/inspection-orders/${props.orderId}/report`, {
-      check_items: checkItems,
+      check_items: inspectionReportData,
       remarks: reportForm.remarks
     })
     
@@ -1057,5 +1446,64 @@ onMounted(() => {
 
 .timeline-step.completed .timeline-line {
   background: #67c23a;
+}
+
+/* 质检报告编辑器样式 */
+.inspection-editor-wrapper {
+  width: 100%;
+}
+
+.inspection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.inspection-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.inspection-collapse {
+  border: none;
+}
+
+.inspection-group {
+  margin-bottom: 20px;
+}
+
+.group-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 12px;
+  padding-left: 8px;
+  border-left: 3px solid #409eff;
+}
+
+.inspection-items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inspection-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  background: #f5f7fa;
+  border-radius: 4px;
+}
+
+.item-label {
+  min-width: 120px;
+  font-size: 13px;
+  color: #606266;
 }
 </style>

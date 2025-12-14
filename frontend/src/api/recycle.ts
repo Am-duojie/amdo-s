@@ -36,8 +36,19 @@ export type EstimatePayload = {
   release_year?: number | string
 }
 
+export type EstimateResponse = {
+  base_price?: number | null  // 基础价格（从模板获取）
+  estimated_price: number      // 根据成色调整后的价格
+  bonus: number               // 额外加价
+  total_price: number          // 总价
+  price_source?: string        // 价格来源：template/api/model/local_model
+  condition?: string           // 成色
+  currency: string
+  unit: string
+}
+
 export const estimateRecyclePrice = (payload: EstimatePayload) => {
-  return api.post('/recycle-orders/estimate/', payload)
+  return api.post<EstimateResponse>('/recycle-orders/estimate/', payload)
 }
 
 // 获取机型模板的问卷内容
@@ -69,5 +80,45 @@ export type RecycleQuestionTemplateResponse = {
 export const getRecycleQuestionTemplate = (params: { device_type: string; brand: string; model: string }) => {
   return api.get<RecycleQuestionTemplateResponse>('/recycle-templates/question-template/', { params })
 }
+
+// 创建回收订单
+export type CreateRecycleOrderPayload = {
+  device_type: string
+  brand: string
+  model: string
+  storage?: string
+  condition?: string
+  estimated_price?: number
+  bonus?: number
+  contact_name: string
+  contact_phone: string
+  address: string
+  note?: string
+}
+
+export type RecycleOrderResponse = {
+  id: number
+  user: number
+  device_type: string
+  brand: string
+  model: string
+  storage?: string
+  condition: string
+  estimated_price?: number
+  final_price?: number
+  bonus?: number
+  status: string
+  contact_name: string
+  contact_phone: string
+  address: string
+  note?: string
+  created_at: string
+  updated_at: string
+}
+
+export const createRecycleOrder = (payload: CreateRecycleOrderPayload) => {
+  return api.post<RecycleOrderResponse>('/recycle-orders/', payload)
+}
+
 
 

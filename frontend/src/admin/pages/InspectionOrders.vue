@@ -16,9 +16,8 @@
           <el-select v-model="statusFilter" placeholder="全部" clearable style="width: 160px" @change="handleSearch">
             <el-option label="全部" value="" />
             <el-option label="待估价" value="pending" />
-            <el-option label="已估价" value="quoted" />
-            <el-option label="已确认" value="confirmed" />
             <el-option label="已寄出" value="shipped" />
+            <el-option label="已收货" value="received" />
             <el-option label="已检测" value="inspected" />
             <el-option label="已完成" value="completed" />
             <el-option label="已取消" value="cancelled" />
@@ -149,8 +148,7 @@ const pagination = reactive({ current: 1, pageSize: 20, total: 0 })
 
 const statusMap = {
   pending: { text: '待估价', type: 'info' },
-  quoted: { text: '已估价', type: 'warning' },
-  confirmed: { text: '已确认', type: 'primary' },
+  received: { text: '已收货', type: 'success' },
   shipped: { text: '已寄出', type: 'primary' },
   inspected: { text: '已检测', type: 'success' },
   completed: { text: '已完成', type: 'success' },

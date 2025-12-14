@@ -1,8 +1,160 @@
 # 变更记录（Changelog）
 
+## 2025-12-14
+
+- **功能完善：官方验商品规格字段扩展** ✅ 已完成
+  - 后端模型新增字段：运行内存(ram)、版本(version)、拆修和功能(repair_status)
+  - 后端序列化器已添加这三个字段到 VerifiedProductSerializer
+  - 数据库迁移已成功执行（migration 0023）
+  - 管理端表单已添加这些字段的编辑功能
+  - 前端展示页面从后端动态获取所有规格数据，不再写死
+  - 主要规格包括：品牌、型号、存储容量、运行内存、版本、成色、拆修和功能
+  - 所有前端展示的数据都可以在管理系统中编辑
+  - 文件：
+    - `backend/app/secondhand_app/models.py` - 添加 ram, version, repair_status 字段
+    - `backend/app/secondhand_app/serializers.py` - 在 VerifiedProductSerializer 的 fields 列表中添加 ram, version, repair_status
+    - `backend/app/secondhand_app/migrations/0023_add_verified_product_specs.py` - 数据库迁移（已执行）
+    - `frontend/src/admin/pages/components/VerifiedProductForm.vue` - 添加字段编辑功能
+    - `frontend/src/pages/VerifiedProductDetail.vue` - 从后端动态获取数据
+  - 验证方式：在管理端编辑官方验商品，填写运行内存、版本、拆修和功能；保存后在前端查看商品详情，检查这些字段是否正确显示
+
+- **UI优化：官方验商品详情页设备规格模块**
+  - 将原有的简单质检信息模块替换为更详细的设备规格模块
+  - 关键规格始终显示：外观、电池健康度、屏幕尺寸
+  - 详细规格可折叠展开：存储容量、充电方式、质检日期、质检员、质检结果
+  - 使用图标和卡片式设计，提升视觉效果
+  - 支持展开/收起功能，优化信息展示层次
+  - 文件：
+    - `frontend/src/pages/VerifiedProductDetail.vue` - 替换质检信息模块为设备规格模块
+    - `docs/70-ui/verified-product-detail-optimization.md` - 详细的优化建议文档
+  - 验证方式：访问官方验商品详情页，查看设备规格模块是否正确显示；点击"展开更多"按钮，检查详细规格是否正确展开/收起
+
+## 2025-12-14
+
+- **流程优化：回收订单提交流程改进**
+  - 用户完成估价问卷后，跳转到估价详情页（`RecycleCheckout.vue`）查看预估价格和详细信息
+  - 用户点击"提交订单"后，订单状态为 `pending`（待寄出），并自动跳转到订单详情页
+  - 用户在订单详情页填写物流信息（物流公司、运单号）后，订单自动变为 `shipped`（已寄出）
+  - 后端自动检测：当用户填写物流信息时，订单状态从 `pending` 自动变为 `shipped`，并设置寄出时间
+  - 完整流程：估价问卷 → 估价详情页 → 提交订单（pending）→ 填写物流（shipped）→ 平台收货（received）→ 质检（inspected）→ 确认价格（completed）→ 打款
+  - 文件：
+    - `backend/app/secondhand_app/serializers.py` - 修改订单创建逻辑，初始状态为 `pending`；在 update 方法中添加自动状态转换逻辑
+    - `frontend/src/pages/RecycleCheckout.vue` - 更新页面标题为"估价详情"；提交订单后跳转到订单详情页而不是订单列表
+    - `frontend/src/pages/RecycleOrderDetail.vue` - 在 `pending` 状态显示"填写物流信息"按钮；简化物流信息提交逻辑
+  - 验证方式：完成估价问卷 → 查看估价详情 → 提交订单 → 自动跳转到订单详情页 → 填写物流信息 → 检查状态是否自动变为"已寄出"
+
+- **功能新增：回收订单价格确认流程**
+  - 管理员完成质检并设置最终价格后，用户需要确认价格才能进入打款阶段
+  - 新增用户端价格确认API端点：`POST /api/recycle-orders/{id}/confirm_final_price/`
+  - 管理端显示"等待用户确认价格"提示，用户确认后订单自动变为"已完成"状态
+  - 用户端显示最终价格和加价金额，提供"确认最终价格"和"对最终价格有异议"两个选项
+  - 确认价格后 `final_price_confirmed` 字段变为 `true`，订单状态自动变为 `completed`
+  - 完整流程：pending（用户填写物流）→ shipped（管理员收货）→ received（管理员质检）→ inspected（用户确认价格）→ completed（管理员打款）
+  - 文件：
+    - `backend/app/secondhand_app/views.py` - 新增 `confirm_final_price` action
+    - `backend/app/admin_api/views.py` - 在订单详情响应中添加 `final_price_confirmed` 字段
+    - `frontend/src/pages/RecycleOrderDetail.vue` - 更新价格确认UI和逻辑，添加物流信息填写功能
+    - `frontend/src/admin/pages/components/RecycleOrderDetail.vue` - 添加等待确认提示
+    - `docs/40-dev-guide/recycle-order-price-confirmation.md` - 详细技术文档
+    - `docs/QUICK-START-PRICE-CONFIRMATION.md` - 快速开始指南
+  - 验证方式：提交订单→填写物流信息→管理员收货质检→用户确认价格→管理员打款，检查每个环节的状态流转是否正确
+
 ## 2025-12-13
 
 > 📋 **变更单**: [2025-12-13-admin-ui-fixes.md](../maintenance/changes/2025-12-13-admin-ui-fixes.md)
+
+- **流程优化：简化回收订单状态流程**
+  - 去掉"已估价"（quoted）和"已确认"（confirmed）状态
+  - 用户提交订单后直接进入"已寄出"（shipped）状态
+  - 新增"已收货"（received）状态，用于平台确认收货
+  - 简化后的状态流程：pending -> shipped -> received -> inspected -> completed
+  - 管理端添加"确认收货"功能，可将订单从"已寄出"更新为"已收货"
+  - **修复流程进度显示逻辑**：修正流程步骤顺序（已寄出应在已收货之前），修正完成判断逻辑（根据实际状态判断，而不是索引比较），确保"已收货"只在状态为 received 或之后才显示为已完成
+    - 修复 `isStepCompleted` 函数：从基于索引的比较改为基于实际状态的判断
+    - 确保当订单状态为 `shipped` 时，"已收货"步骤不会显示为已完成
+    - 只有当订单状态为 `received`、`inspected` 或 `completed` 时，"已收货"步骤才显示为已完成
+  - 文件：
+    - `backend/app/secondhand_app/models.py` - 更新 STATUS_CHOICES，去掉 quoted 和 confirmed，添加 received
+    - `backend/app/secondhand_app/serializers.py` - 修改创建订单时的初始状态为 shipped，简化状态流转规则
+    - `backend/app/admin_api/views.py` - 更新确认收货逻辑，支持从 shipped 到 received 的状态转换
+    - `backend/app/secondhand_app/migrations/0022_*.py` - 数据库迁移
+    - `frontend/src/admin/pages/InspectionOrders.vue` - 更新状态筛选和显示
+    - `frontend/src/admin/pages/components/RecycleOrderDetail.vue` - 更新状态显示和操作按钮
+    - `frontend/src/admin/pages/InspectionOrderDetail.vue` - 更新状态步骤显示
+    - `frontend/src/admin/pages/RecycleOrderManagement.vue` - 更新状态筛选和显示，修复流程进度判断逻辑
+    - `frontend/src/pages/RecycleOrderDetail.vue` - 更新用户端状态显示
+    - `frontend/src/pages/MyRecycleOrders.vue` - 更新状态筛选
+  - 验证方式：提交回收订单，检查状态是否为"已寄出"，流程进度中"已收货"不应显示为已完成；在管理端点击"确认收货"，检查状态是否更新为"已收货"，流程进度中"已收货"应显示为已完成；检查前端所有状态显示是否正确
+
+- **功能实现：回收订单提交功能**
+  - 实现提交订单API调用，创建回收订单
+  - 添加订单数据验证（设备信息、存储容量、价格等）
+  - 使用收款账户信息作为联系人信息（后续可优化为从用户资料获取）
+  - 添加详细的错误处理和用户提示
+  - 后端允许在创建订单时设置 `estimated_price`，并将订单状态初始化为 `shipped`（已寄出）
+  - 文件：
+    - `frontend/src/api/recycle.ts` - 添加 `createRecycleOrder` API函数和类型定义
+    - `frontend/src/pages/RecycleCheckout.vue` - 实现 `handleSubmit` 函数，调用API创建订单
+    - `backend/app/secondhand_app/serializers.py` - 修改 `RecycleOrderSerializer.create`，允许设置 `estimated_price` 和初始状态
+  - 验证方式：完成问卷后进入提交订单页面，填写必要信息，点击"提交订单"，检查是否成功创建订单并跳转到"我的回收订单"页面；检查订单状态是否为"已估价"
+
+- **Bug修复：提交订单页面价格显示问题**
+  - 修复提交订单页面"预计到手价"显示为"--"的问题
+  - 改进价格检查逻辑：检查价格是否为 null、undefined 或 0，而不仅仅是 null
+  - 改进 onMounted 中的估价触发条件，放宽检查逻辑，确保有基本信息时就能触发估价
+  - 添加详细的调试日志，便于排查问题
+  - 在估价函数中添加价格有效性验证（必须大于0）
+  - 文件：
+    - `frontend/src/pages/RecycleCheckout.vue` - 改进 onMounted 逻辑，添加调试日志，改进价格显示判断
+    - `frontend/src/pages/RecycleEstimateWizard.vue` - 改进估价函数，添加价格验证和调试日志
+  - 验证方式：完成问卷后点击"提交订单"，检查价格是否正确显示；打开浏览器控制台查看调试日志；直接访问提交订单页面，检查是否自动触发估价并显示价格
+
+- **功能完善：机型模板支持基础价格配置**
+  - 在 `RecycleDeviceTemplate` 模型中添加 `base_prices` 字段（JSON格式），按存储容量存储基础价格
+  - 估价API优先从机型模板获取基础价格，然后根据成色调整
+  - 导入命令自动从 `LOCAL_PRICE_TABLE` 提取基础价格并写入模板
+  - 前端显示报价明细：基础价格、成色调整、额外加价
+  - **管理端支持编辑基础价格**：在机型模板编辑对话框中，可以为每个存储容量设置基础价格
+  - 文件：
+    - `backend/app/admin_api/models.py` - 添加 base_prices 字段
+    - `backend/app/admin_api/serializers.py` - 更新序列化器包含 base_prices
+    - `backend/app/admin_api/migrations/0005_*.py` - 数据库迁移
+    - `backend/app/secondhand_app/views.py` - 修改估价API，优先使用模板基础价格
+    - `backend/app/admin_api/management/commands/import_recycle_templates.py` - 导入时提取基础价格
+    - `frontend/src/stores/recycleDraft.ts` - 添加 base_price 字段
+    - `frontend/src/api/recycle.ts` - 更新API类型定义
+    - `frontend/src/pages/RecycleEstimateWizard.vue` - 保存 base_price
+    - `frontend/src/pages/RecycleCheckout.vue` - 显示报价明细
+    - `frontend/src/admin/pages/RecycleTemplates.vue` - 添加基础价格编辑功能，表格显示基础价格
+  - 验证方式：运行迁移，重新导入模板数据，检查模板是否包含基础价格；在管理端编辑机型模板，设置基础价格并保存；估价时检查是否优先使用模板价格；提交订单页面检查是否显示报价明细
+
+- **UI优化：重新设计回收提交订单页面**
+  - 删除产品图标表情符号
+  - 删除拆机相关选项和说明（同意拆机复选框、拆机前需确认标签、拆机检测说明）
+  - 删除价格反馈链接
+  - 删除"无额外加价"提示（仅在有额外加价时显示）
+  - 删除"顺丰上门"和"京东上门"邮寄方式，仅保留"自行邮寄"选项
+  - 自行邮寄直接显示平台收件信息（收件人、收件地址），支持一键复制
+  - 文件：
+    - `frontend/src/pages/RecycleCheckout.vue` - 删除拆机相关代码，删除价格反馈和无额外加价提示，删除上门取件选项，简化邮寄方式显示
+  - 验证方式：进入提交订单页面，检查拆机部分已删除，价格区域不显示反馈链接和无额外加价提示，邮寄方式仅显示平台收件信息
+
+- **UI优化：重新设计回收提交订单页面（初始版本）**
+  - 按照参考设计重新布局，主要显示订单信息、邮寄方式和收款信息
+  - 订单信息区域：显示产品信息、预计到手价、价格反馈、拆机确认选项
+  - 邮寄方式区域：提供顺丰上门、京东上门、自行邮寄三种选项，支持选择取件地址和时间
+  - 收款信息区域：显示收款方式和账户信息，支持修改收款信息
+  - 新增平台回收承担快递费用概览表格
+  - 文件：
+    - `frontend/src/pages/RecycleCheckout.vue` - 完全重写，采用新的布局和交互设计
+  - 验证方式：进入回收提交订单页面，检查订单信息、邮寄方式选择、收款信息显示是否正常
+
+- **修复：回收估价页面预计到手价显示时机**
+  - 预计到手价卡片现在只在完成所有必填问题后才显示
+  - 修复了在步骤1/13时就显示价格的问题
+  - 文件：
+    - `frontend/src/pages/RecycleEstimateWizard.vue` - 修改价格卡片显示条件为 `canCheckout && estimatedPriceText !== '--'`
+  - 验证方式：进入回收估价页面，在未完成所有必填问题前，不应该显示预计到手价卡片
 
 - **修复：管理端多标签页空白页面问题**
   - 添加 ErrorBoundary 组件，捕获组件渲染错误并显示友好的错误提示

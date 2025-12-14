@@ -419,7 +419,7 @@ class InspectionOrderDetailView(APIView):
         profile = getattr(o.user, 'profile', None)
         if rep:
             report_data = {
-                'check_items': rep.check_items or {},
+                'check_items': rep.check_items if rep.check_items is not None else {},
                 'remarks': rep.remarks or '',
                 'evidence': rep.evidence or [],
                 'overall_result': rep.overall_result or '',
@@ -481,6 +481,8 @@ class InspectionOrderDetailView(APIView):
             'price_dispute': o.price_dispute,
             'price_dispute_reason': o.price_dispute_reason or '',
             'reject_reason': o.reject_reason or '',
+            # 价格确认
+            'final_price_confirmed': o.final_price_confirmed,
             # 时间信息
             'created_at': o.created_at.isoformat(),
             'updated_at': o.updated_at.isoformat(),
@@ -532,7 +534,8 @@ class InspectionOrderDetailView(APIView):
                 action='status_change', 
                 snapshot_json={'old_status': old_status, 'new_status': status_val, 'reject_reason': reject_reason}
             )
-            if o.status in ['inspected', 'completed']:
+            # 允许从 received 状态直接进入 inspected 状态（质检完成后）
+            if o.status in ['received', 'inspected', 'completed']:
                 try:
                     create_verified_device_from_recycle_order(o)
                 except Exception:
@@ -559,8 +562,9 @@ class InspectionOrderDetailView(APIView):
                 items = json.loads(items)
             except Exception:
                 return Response({'success': False, 'detail': '检测项目JSON解析失败'}, status=400)
-        if not isinstance(items, dict):
-            return Response({'success': False, 'detail': '检测项目必须为对象'}, status=400)
+        # 支持对象格式（旧格式）和数组格式（新格式：66项检测）
+        if not isinstance(items, (dict, list)):
+            return Response({'success': False, 'detail': '检测项目必须为对象或数组'}, status=400)
         if isinstance(evidence, str):
             try:
                 evidence = json.loads(evidence)
@@ -594,7 +598,7 @@ class InspectionOrderDetailView(APIView):
             template_version=template_version
         )
         # 更新状态和质检时间
-        if o.status in ['shipped', 'confirmed']:
+        if o.status in ['shipped', 'received']:
             o.status = 'inspected'
             if not o.inspected_at:
                 o.inspected_at = timezone.now()
@@ -663,13 +667,12 @@ class InspectionOrderLogisticsView(APIView):
                 AdminAuditLog.objects.create(actor=admin, target_type='RecycleOrder', target_id=o.id, action='logistics_ship', snapshot_json={'carrier': carrier, 'tracking_number': tracking_number})
             elif action == 'receive':
                 # 平台收到
-                # 如果订单状态还是confirmed，先更新为shipped
-                if o.status == 'confirmed':
-                    o.status = 'shipped'
-                # 保持shipped状态，但标记为已收到
-                if not o.received_at:
-                    o.received_at = timezone.now()
-                AdminAuditLog.objects.create(actor=admin, target_type='RecycleOrder', target_id=o.id, action='logistics_receive', snapshot_json={'received_at': o.received_at.isoformat()})
+                # 平台确认收货
+                if o.status != 'shipped':
+                    return Response({'success': False, 'detail': f'订单状态为 {o.get_status_display()}，只有"已寄出"状态的订单才能确认收货'}, status=400)
+                o.received_at = timezone.now()
+                o.status = 'received'  # 更新为已收货状态
+                AdminAuditLog.objects.create(actor=admin, target_type='RecycleOrder', target_id=o.id, action='logistics_receive', snapshot_json={'received_at': o.received_at.isoformat(), 'new_status': 'received'})
             else:
                 return Response({'success': False, 'detail': f'不支持的操作类型: {action}'}, status=400)
             
@@ -757,9 +760,9 @@ class InspectionOrderPriceView(APIView):
                     if estimated_price <= 0:
                         return Response({'success': False, 'detail': '价格必须大于0'}, status=400)
                     o.estimated_price = estimated_price
-                    # 如果订单状态是pending，自动更新为quoted
+                    # 如果订单状态是pending，自动更新为shipped（简化流程）
                     if o.status == 'pending':
-                        o.status = 'quoted'
+                        o.status = 'shipped'
                     # 清除价格异议标记（如果重新估价）
                     if o.price_dispute:
                         o.price_dispute = False

@@ -13,9 +13,8 @@
       <el-radio-group v-model="selectedStatus" @change="loadOrders">
         <el-radio-button label="all">全部</el-radio-button>
         <el-radio-button label="pending">待估价</el-radio-button>
-        <el-radio-button label="quoted">已估价</el-radio-button>
-        <el-radio-button label="confirmed">已确认</el-radio-button>
         <el-radio-button label="shipped">已寄出</el-radio-button>
+        <el-radio-button label="received">已收货</el-radio-button>
         <el-radio-button label="inspected">已检测</el-radio-button>
         <el-radio-button label="completed">已完成</el-radio-button>
         <el-radio-button label="cancelled">已取消</el-radio-button>
@@ -135,8 +134,7 @@ const pagination = ref({
 
 const statusMap = {
   pending: '待估价',
-  quoted: '已估价',
-  confirmed: '已确认',
+  received: '已收货',
   shipped: '已寄出',
   inspected: '已检测',
   completed: '已完成',

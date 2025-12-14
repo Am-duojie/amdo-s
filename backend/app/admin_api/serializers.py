@@ -92,7 +92,7 @@ class RecycleDeviceTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = RecycleDeviceTemplate
         fields = [
-            'id', 'device_type', 'brand', 'model', 'storages', 'series',
+            'id', 'device_type', 'brand', 'model', 'storages', 'base_prices', 'series',
             'is_active', 'created_by', 'created_by_username', 'questions',
             'created_at', 'updated_at'
         ]
@@ -105,7 +105,7 @@ class RecycleDeviceTemplateListSerializer(serializers.ModelSerializer):
     class Meta:
         model = RecycleDeviceTemplate
         fields = [
-            'id', 'device_type', 'brand', 'model', 'storages', 'series',
+            'id', 'device_type', 'brand', 'model', 'storages', 'base_prices', 'series',
             'is_active', 'created_by_username', 'question_count',
             'created_at', 'updated_at'
         ]

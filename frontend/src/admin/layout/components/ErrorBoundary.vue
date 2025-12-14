@@ -71,3 +71,4 @@ watch(() => router.currentRoute.value.fullPath, () => {
   justify-content: center;
 }
 </style>
+
