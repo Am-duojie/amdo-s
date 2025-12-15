@@ -76,6 +76,25 @@ class RecycleDeviceTemplate(models.Model):
         help_text='按存储容量存储基础价格，格式：{"128GB": 4500, "256GB": 5200, "512GB": 6500}，单位为元'
     )
     series = models.CharField(max_length=64, blank=True, verbose_name='系列', help_text='如：iPhone 13系列')
+    
+    # 规格选项（用于前端展示和官方验商品）
+    ram_options = models.JSONField(default=list, blank=True, verbose_name='运行内存选项', help_text='如：["6GB", "8GB", "12GB"]')
+    version_options = models.JSONField(default=list, blank=True, verbose_name='版本选项', help_text='如：["国行", "港版", "美版"]')
+    color_options = models.JSONField(default=list, blank=True, verbose_name='颜色选项', help_text='如：["黑色", "白色", "蓝色"]')
+    screen_size = models.CharField(max_length=20, blank=True, verbose_name='屏幕尺寸', help_text='如：6.1英寸')
+    battery_capacity = models.CharField(max_length=20, blank=True, verbose_name='电池容量', help_text='如：3095mAh')
+    charging_type = models.CharField(max_length=50, blank=True, verbose_name='充电方式', help_text='如：Lightning、Type-C')
+    
+    # 默认图片（用于官方验商品）
+    default_cover_image = models.CharField(max_length=500, blank=True, verbose_name='默认封面图')
+    default_detail_images = models.JSONField(default=list, blank=True, verbose_name='默认详情图列表')
+    
+    # 商品描述模板
+    description_template = models.TextField(blank=True, verbose_name='商品描述模板', help_text='支持变量：{brand} {model} {storage} {condition} {ram} {version}')
+    
+    # 分类关联
+    category = models.ForeignKey('secondhand_app.Category', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='商品分类')
+    
     is_active = models.BooleanField(default=True, verbose_name='是否启用')
     created_by = models.ForeignKey(AdminUser, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='创建人')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')

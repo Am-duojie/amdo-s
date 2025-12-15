@@ -43,20 +43,32 @@
         <el-form-item label="设备类型">
           <el-select v-model="filters.device_type" placeholder="全部" clearable style="width: 160px" @change="handleSearch">
             <el-option label="全部" value="" />
-            <el-option label="手机" value="手机" />
-            <el-option label="平板" value="平板" />
-            <el-option label="笔记本" value="笔记本" />
+            <el-option
+              v-for="deviceType in deviceTypeOptions"
+              :key="deviceType"
+              :label="deviceType"
+              :value="deviceType"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="品牌">
-          <el-input
+          <el-select
             v-model="filters.brand"
-            placeholder="搜索品牌"
+            placeholder="全部"
             clearable
+            filterable
             style="width: 160px"
-            @keyup.enter="handleSearch"
+            @change="handleSearch"
             @clear="handleSearch"
-          />
+          >
+            <el-option label="全部" value="" />
+            <el-option
+              v-for="brand in brandOptions"
+              :key="brand"
+              :label="brand"
+              :value="brand"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="关键词">
           <el-input
@@ -154,14 +166,40 @@
     >
       <el-form :model="form" label-width="120px" :rules="formRules" ref="formRef">
         <el-form-item label="设备类型" prop="device_type">
-          <el-select v-model="form.device_type" placeholder="请选择设备类型" style="width: 100%">
-            <el-option label="手机" value="手机" />
-            <el-option label="平板" value="平板" />
-            <el-option label="笔记本" value="笔记本" />
+          <el-select
+            v-model="form.device_type"
+            placeholder="请选择设备类型"
+            filterable
+            allow-create
+            default-first-option
+            style="width: 100%"
+          >
+            <el-option
+              v-for="deviceType in deviceTypeOptions"
+              :key="deviceType"
+              :label="deviceType"
+              :value="deviceType"
+            />
           </el-select>
+          <div class="form-hint">从已有模板中选择设备类型，或输入新类型</div>
         </el-form-item>
         <el-form-item label="品牌" prop="brand">
-          <el-input v-model="form.brand" placeholder="请输入品牌" />
+          <el-select
+            v-model="form.brand"
+            filterable
+            allow-create
+            default-first-option
+            placeholder="请选择或输入品牌"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="brand in brandOptions"
+              :key="brand"
+              :label="brand"
+              :value="brand"
+            />
+          </el-select>
+          <div class="form-hint">从已有模板中选择品牌，或输入新品牌名称</div>
         </el-form-item>
         <el-form-item label="型号" prop="model">
           <el-input v-model="form.model" placeholder="请输入型号" />
@@ -451,6 +489,10 @@ const savingQuestion = ref(false)
 const savingOption = ref(false)
 const importing = ref(false)
 const uploadFileRef = ref(null)
+
+// 动态选项数据
+const deviceTypeOptions = ref([])
+const brandOptions = ref([])
 
 // 分页
 const pagination = reactive({
@@ -752,8 +794,49 @@ const handleStoragesChange = (newStorages) => {
   form.base_prices = newPrices
 }
 
+// 加载分类列表
+const loadCategories = async () => {
+  try {
+    const res = await adminApi.get('/categories')
+    categories.value = res.data.results || []
+  } catch (error) {
+    console.error('加载分类失败:', error)
+  }
+}
+
+// 加载设备类型和品牌选项（从数据库中已有的模板实时获取）
+const loadCatalogOptions = async () => {
+  try {
+    // 使用 fetch 直接调用 /api/recycle-catalog/ 端点（不需要认证）
+    const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
+    const res = await fetch(`${API_BASE}/recycle-catalog/`)
+    const data = await res.json()
+    
+    // recycle-catalog 返回格式: { device_types: [], brands: {}, models: {} }
+    
+    // 设置设备类型选项
+    deviceTypeOptions.value = data.device_types || []
+    
+    // brands 是一个对象，key 是设备类型，value 是品牌数组
+    const brandsData = data.brands || {}
+    
+    // 合并所有设备类型的品牌，去重
+    const allBrands = new Set()
+    Object.values(brandsData).forEach(brandList => {
+      brandList.forEach(brand => allBrands.add(brand))
+    })
+    
+    brandOptions.value = Array.from(allBrands).sort()
+  } catch (error) {
+    console.error('加载选项失败:', error)
+    deviceTypeOptions.value = []
+    brandOptions.value = []
+  }
+}
+
 // 创建
 const handleCreate = () => {
+  loadCatalogOptions() // 加载选项
   isEdit.value = false
   currentId.value = null
   Object.assign(form, {
@@ -772,6 +855,9 @@ const handleCreate = () => {
 const handleEdit = async (row) => {
   isEdit.value = true
   currentId.value = row.id
+  
+  // 加载选项
+  loadCatalogOptions()
   
   // 如果是编辑，需要获取完整数据（包含 base_prices）
   try {
@@ -1065,6 +1151,8 @@ const getImpactLabel = (impact) => {
 
 onMounted(() => {
   load()
+  loadCategories()
+  loadCatalogOptions() // 加载设备类型和品牌选项，用于筛选区域
 })
 </script>
 

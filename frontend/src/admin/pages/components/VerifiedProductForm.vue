@@ -4,6 +4,29 @@
       <!-- 基础信息 -->
       <el-card shadow="never" class="card-block">
         <template #header>基础信息</template>
+      
+      <!-- 模板选择 -->
+      <el-form-item label="从模板选择">
+        <el-select
+          v-model="selectedTemplate"
+          placeholder="选择机型模板（可选）"
+          clearable
+          filterable
+          style="width: 100%"
+          @change="handleTemplateChange"
+        >
+          <el-option
+            v-for="template in templates"
+            :key="template.id"
+            :label="`${template.device_type} / ${template.brand} / ${template.model}`"
+            :value="template.id"
+          />
+        </el-select>
+        <div style="font-size: 12px; color: #909399; margin-top: 4px">
+          选择模板后将自动填充品牌、型号、规格等信息
+        </div>
+      </el-form-item>
+      
       <el-form-item label="商品标题" prop="title">
         <el-input v-model="form.title" placeholder="请输入商品标题" />
       </el-form-item>
@@ -300,6 +323,75 @@ const previewImages = ref([])
 const previewIndex = ref(0)
 
 const isEdit = computed(() => !!props.product?.id)
+
+// 模板相关
+const templates = ref([])
+const selectedTemplate = ref(null)
+
+// 加载模板列表
+const loadTemplates = async () => {
+  try {
+    const res = await adminApi.get('/recycle-templates', {
+      params: { page_size: 100, is_active: true }
+    })
+    templates.value = res.data.results || []
+  } catch (error) {
+    console.error('加载模板失败:', error)
+  }
+}
+
+// 处理模板选择
+const handleTemplateChange = async (templateId) => {
+  if (!templateId) return
+  
+  try {
+    const res = await adminApi.get(`/recycle-templates/${templateId}`)
+    const template = res.data
+    
+    // 自动填充表单
+    form.brand = template.brand
+    form.model = template.model
+    form.storage = template.storages?.[0] || ''
+    form.ram = template.ram_options?.[0] || ''
+    form.version = template.version_options?.[0] || ''
+    form.cover_image = template.default_cover_image || ''
+    form.detail_images = template.default_detail_images || []
+    
+    // 生成标题
+    form.title = `${template.brand} ${template.model} ${form.storage || ''} ${form.ram || ''}`.trim()
+    
+    // 使用描述模板
+    if (template.description_template) {
+      form.description = template.description_template
+        .replace(/{brand}/g, template.brand)
+        .replace(/{model}/g, template.model)
+        .replace(/{storage}/g, form.storage)
+        .replace(/{ram}/g, form.ram)
+        .replace(/{version}/g, form.version)
+        .replace(/{condition}/g, form.condition)
+    }
+    
+    // 设置分类
+    if (template.category) {
+      form.category_id = template.category
+    }
+    
+    // 更新文件列表显示
+    if (form.cover_image) {
+      coverFileList.value = [{ url: form.cover_image }]
+    }
+    if (form.detail_images && form.detail_images.length > 0) {
+      detailFileList.value = form.detail_images.map(url => ({ url }))
+    }
+    
+    ElMessage.success('已从模板自动填充信息')
+  } catch (error) {
+    ElMessage.error('加载模板详情失败')
+  }
+}
+
+// 在组件挂载时加载模板
+loadTemplates()
 
 const form = reactive({
   title: '',

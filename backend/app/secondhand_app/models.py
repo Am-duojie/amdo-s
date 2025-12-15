@@ -316,10 +316,31 @@ class RecycleOrder(models.Model):
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recycle_orders', verbose_name='用户')
+    
+    # 核心关联：关联到机型模板
+    template = models.ForeignKey(
+        'admin_api.RecycleDeviceTemplate',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='recycle_orders',
+        verbose_name='机型模板'
+    )
+    
+    # 用户选择的具体配置（从模板的选项中选择）
+    selected_storage = models.CharField(max_length=50, blank=True, verbose_name='选择的存储容量')
+    selected_color = models.CharField(max_length=50, blank=True, verbose_name='选择的颜色')
+    selected_ram = models.CharField(max_length=20, blank=True, verbose_name='选择的运行内存')
+    selected_version = models.CharField(max_length=50, blank=True, verbose_name='选择的版本')
+    
+    # 保留原有字段作为快照（避免模板修改后影响历史订单）
     device_type = models.CharField(max_length=50, verbose_name='设备类型')  # 手机、平板、笔记本等
     brand = models.CharField(max_length=50, verbose_name='品牌')  # 苹果、华为、小米等
     model = models.CharField(max_length=100, verbose_name='型号')  # iPhone 13、华为Mate 60等
     storage = models.CharField(max_length=50, blank=True, verbose_name='存储容量')  # 128GB、256GB等
+    
+    # 问卷答案（JSON格式存储）
+    questionnaire_answers = models.JSONField(default=dict, blank=True, verbose_name='问卷答案')
     condition = models.CharField(max_length=20, choices=[
         ('new', '全新'),
         ('like_new', '几乎全新'),
@@ -400,15 +421,32 @@ class VerifiedDevice(models.Model):
         ('poor', '8成新'),
     ]
 
+    # 来源关联
     recycle_order = models.ForeignKey(RecycleOrder, on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_devices', verbose_name='来源回收单')
+    
+    # 机型模板关联（必填）
+    template = models.ForeignKey(
+        'admin_api.RecycleDeviceTemplate',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='verified_devices',
+        verbose_name='机型模板'
+    )
+    
     seller = models.ForeignKey(User, on_delete=models.CASCADE, related_name='verified_devices', verbose_name='卖家/库存持有人')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='verified_devices', verbose_name='分类')
 
     sn = models.CharField(max_length=100, unique=True, verbose_name='序列号/ SN')
     imei = models.CharField(max_length=100, blank=True, verbose_name='IMEI/MEID')
+    
+    # 具体配置（从回收订单或手动输入）
     brand = models.CharField(max_length=50, blank=True, verbose_name='品牌')
     model = models.CharField(max_length=100, blank=True, verbose_name='型号')
     storage = models.CharField(max_length=50, blank=True, verbose_name='存储容量')
+    ram = models.CharField(max_length=20, blank=True, verbose_name='运行内存')
+    version = models.CharField(max_length=50, blank=True, verbose_name='版本')
+    color = models.CharField(max_length=50, blank=True, verbose_name='颜色')
     condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='good', verbose_name='成色')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name='状态')
     location = models.CharField(max_length=100, blank=True, verbose_name='仓位/存放位置')
@@ -462,22 +500,32 @@ class VerifiedProduct(models.Model):
         ('poor', '8成新'),
     ]
 
+    # 机型模板关联（必填）
+    template = models.ForeignKey(
+        'admin_api.RecycleDeviceTemplate',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='verified_products',
+        verbose_name='机型模板'
+    )
+    
     seller = models.ForeignKey(User, on_delete=models.CASCADE, related_name='verified_products', verbose_name='卖家')
     shop = models.ForeignKey('Shop', on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_products', verbose_name='店铺')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='verified_products', verbose_name='分类')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active', verbose_name='状态')
+    
+    # 商品基本信息（从模板自动填充）
     title = models.CharField(max_length=200, verbose_name='商品标题')
     description = models.TextField(verbose_name='商品描述')
     price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name='价格')
     original_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name='原价')
     condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='good', verbose_name='成色')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft', verbose_name='状态')
-    location = models.CharField(max_length=100, verbose_name='所在地')
-    contact_phone = models.CharField(max_length=20, blank=True, verbose_name='联系电话')
-    contact_wechat = models.CharField(max_length=50, blank=True, verbose_name='微信')
+    device_type = models.CharField(max_length=50, blank=True, verbose_name='设备类型')  # 从 template 复制
+    brand = models.CharField(max_length=50, blank=True, verbose_name='品牌')  # 从 template 复制
+    model = models.CharField(max_length=100, blank=True, verbose_name='型号')  # 从 template 复制
     
-    # 官方验货特有字段
-    brand = models.CharField(max_length=50, blank=True, verbose_name='品牌')  # 苹果、华为、小米等
-    model = models.CharField(max_length=100, blank=True, verbose_name='型号')  # iPhone 13、华为Mate 60等
+    # 具体配置
     storage = models.CharField(max_length=50, blank=True, verbose_name='存储容量')  # 128GB、256GB等
     ram = models.CharField(max_length=20, blank=True, verbose_name='运行内存')  # 6GB、8GB等
     version = models.CharField(max_length=50, blank=True, verbose_name='版本')  # 国行、港版等

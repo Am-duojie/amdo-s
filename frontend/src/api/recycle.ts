@@ -54,6 +54,7 @@ export const estimateRecyclePrice = (payload: EstimatePayload) => {
 // 获取机型模板的问卷内容
 export type RecycleQuestionTemplateResponse = {
   id: number
+  template_id: number  // 模板ID（用于提交订单时关联）
   device_type: string
   brand: string
   model: string
@@ -119,6 +120,15 @@ export type RecycleOrderResponse = {
 export const createRecycleOrder = (payload: CreateRecycleOrderPayload) => {
   return api.post<RecycleOrderResponse>('/recycle-orders/', payload)
 }
+
+
+
+
+
+
+
+
+
 
 
 

@@ -1,4 +1,13 @@
-# 变更记录（Changelog）
+# ???????????????Changelog???
+
+## 2025-12-15
+
+- **Documentation: add Amdo test note**
+  - Added placeholder doc `docs/Amdo.md` to validate documentation sync.
+  - Verification: open the new doc and confirm placeholder text renders.
+- **Documentation: add amdo_1 test note**
+  - Added placeholder doc `docs/amdo_1.md` for additional documentation sync testing.
+  - Verification: open the new doc and confirm placeholder text renders.
 
 ## 2025-12-14
 

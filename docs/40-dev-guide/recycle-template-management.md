@@ -317,3 +317,12 @@ python manage.py import_recycle_templates --clear
 - 如果机型没有配置问卷模板，用户端会自动使用前端固定的默认问卷步骤
 - 确保向后兼容，不影响现有功能
 
+
+
+
+
+
+
+
+
+

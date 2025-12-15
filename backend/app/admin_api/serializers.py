@@ -88,11 +88,16 @@ class RecycleQuestionTemplateSerializer(serializers.ModelSerializer):
 class RecycleDeviceTemplateSerializer(serializers.ModelSerializer):
     questions = RecycleQuestionTemplateSerializer(many=True, read_only=True)
     created_by_username = serializers.CharField(source='created_by.username', read_only=True, allow_null=True)
+    category_name = serializers.CharField(source='category.name', read_only=True, allow_null=True)
     
     class Meta:
         model = RecycleDeviceTemplate
         fields = [
             'id', 'device_type', 'brand', 'model', 'storages', 'base_prices', 'series',
+            'ram_options', 'version_options', 'color_options',
+            'screen_size', 'battery_capacity', 'charging_type',
+            'default_cover_image', 'default_detail_images', 'description_template',
+            'category', 'category_name',
             'is_active', 'created_by', 'created_by_username', 'questions',
             'created_at', 'updated_at'
         ]
@@ -101,11 +106,15 @@ class RecycleDeviceTemplateSerializer(serializers.ModelSerializer):
 class RecycleDeviceTemplateListSerializer(serializers.ModelSerializer):
     question_count = serializers.SerializerMethodField()
     created_by_username = serializers.CharField(source='created_by.username', read_only=True, allow_null=True)
+    category_name = serializers.CharField(source='category.name', read_only=True, allow_null=True)
     
     class Meta:
         model = RecycleDeviceTemplate
         fields = [
             'id', 'device_type', 'brand', 'model', 'storages', 'base_prices', 'series',
+            'ram_options', 'version_options', 'color_options',
+            'screen_size', 'battery_capacity', 'charging_type',
+            'default_cover_image', 'category_name',
             'is_active', 'created_by_username', 'question_count',
             'created_at', 'updated_at'
         ]

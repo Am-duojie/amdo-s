@@ -27,19 +27,18 @@ const baseState = {
   base_price: null as number | null,  // 基础价格（从模板获取）
   estimated_price: null as number | null,  // 根据成色调整后的价格
   bonus: null as number | null,  // 额外加价
+  // 新增字段：模板化架构支持
+  template_id: null as number | null,  // 关联的模板ID
+  selected_storage: undefined as string | undefined,  // 用户选择的存储容量
+  selected_color: undefined as string | undefined,  // 用户选择的颜色
+  selected_ram: undefined as string | undefined,  // 用户选择的运行内存
+  selected_version: undefined as string | undefined,  // 用户选择的版本
 };
 
 function loadPersistedState() {
-  if (typeof localStorage === "undefined") return { ...baseState };
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return { ...baseState };
-  try {
-    const parsed = JSON.parse(raw);
-    return { ...baseState, ...parsed, selection: { ...baseState.selection, ...(parsed.selection || {}) } };
-  } catch (e) {
-    console.warn("恢复回收草稿失败，使用默认值", e);
-    return { ...baseState };
-  }
+  // 不再从 localStorage 加载历史数据，每次都是全新状态
+  // 这样用户每次进入问卷都是空白状态，不会保留上次的填写信息
+  return { ...baseState };
 }
 
 export const useRecycleDraftStore = defineStore("recycleDraft", {
@@ -56,6 +55,12 @@ export const useRecycleDraftStore = defineStore("recycleDraft", {
         base_price: this.base_price,
         estimated_price: this.estimated_price,
         bonus: this.bonus,
+        // 新增字段
+        template_id: this.template_id,
+        selected_storage: this.selected_storage,
+        selected_color: this.selected_color,
+        selected_ram: this.selected_ram,
+        selected_version: this.selected_version,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
     },
@@ -67,6 +72,12 @@ export const useRecycleDraftStore = defineStore("recycleDraft", {
       this.base_price = null;
       this.estimated_price = null;
       this.bonus = null;
+      // 重置新增字段
+      this.template_id = null;
+      this.selected_storage = undefined;
+      this.selected_color = undefined;
+      this.selected_ram = undefined;
+      this.selected_version = undefined;
     },
     setSelection(patch: Partial<RecycleSelection>) {
       // 上游变更时清空下游，避免脏数据
@@ -119,6 +130,23 @@ export const useRecycleDraftStore = defineStore("recycleDraft", {
       this.base_price = base_price ?? null;
       this.estimated_price = estimated_price ?? null;
       this.bonus = bonus ?? null;
+      this.persist();
+    },
+    // 新增 actions：设置模板和用户选择的配置
+    setTemplate(templateId: number | null) {
+      this.template_id = templateId;
+      this.persist();
+    },
+    setSelectedConfig(config: {
+      storage?: string;
+      color?: string;
+      ram?: string;
+      version?: string;
+    }) {
+      if (config.storage !== undefined) this.selected_storage = config.storage;
+      if (config.color !== undefined) this.selected_color = config.color;
+      if (config.ram !== undefined) this.selected_ram = config.ram;
+      if (config.version !== undefined) this.selected_version = config.version;
       this.persist();
     },
     hydrate() {

@@ -340,10 +340,21 @@ async function handleSubmit() {
 
     // 准备订单数据
     const orderData = {
+      // 模板信息（如果有）
+      template: draft.template_id || null,
+      // 设备基本信息（作为快照保留）
       device_type: draft.selection.device_type,
       brand: draft.selection.brand,
       model: draft.selection.model,
       storage: draft.storage || "",
+      // 用户选择的配置
+      selected_storage: draft.storage || "",
+      selected_color: draft.selected_color || "",
+      selected_ram: draft.selected_ram || "",
+      selected_version: draft.selected_version || "",
+      // 问卷答案
+      questionnaire_answers: draft.answers || {},
+      // 成色和价格
       condition: draft.condition || "good",
       estimated_price: draft.estimated_price,
       bonus: draft.bonus || 0,

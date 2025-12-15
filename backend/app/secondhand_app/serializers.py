@@ -527,11 +527,15 @@ class AddressSerializer(serializers.ModelSerializer):
 class RecycleOrderSerializer(serializers.ModelSerializer):
     """回收订单序列化器"""
     user = UserSerializer(read_only=True)
+    template_info = serializers.SerializerMethodField()
     
     class Meta:
         model = RecycleOrder
         fields = [
-            'id', 'user', 'device_type', 'brand', 'model', 'storage',
+            'id', 'user', 'template', 'template_info',
+            'device_type', 'brand', 'model', 'storage',
+            'selected_storage', 'selected_color', 'selected_ram', 'selected_version',
+            'questionnaire_answers',
             'condition', 'estimated_price', 'final_price', 'bonus',
             'status', 'contact_name', 'contact_phone', 'address',
             'note', 'shipping_carrier', 'tracking_number', 'shipped_at',
@@ -542,6 +546,18 @@ class RecycleOrderSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['user', 'final_price', 'received_at', 
                            'inspected_at', 'paid_at', 'created_at', 'updated_at']
+    
+    def get_template_info(self, obj):
+        """获取模板基本信息"""
+        if obj.template:
+            return {
+                'id': obj.template.id,
+                'device_type': obj.template.device_type,
+                'brand': obj.template.brand,
+                'model': obj.template.model,
+                'series': obj.template.series or '',
+            }
+        return None
 
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
@@ -686,14 +702,14 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
         model = VerifiedProduct
         fields = [
             'id', 'seller', 'category', 'category_id', 'shop', 'shop_id', 'title', 'description',
-            'price', 'original_price', 'condition', 'status', 'location',
-            'contact_phone', 'contact_wechat', 'brand', 'model', 'storage', 'ram', 'version', 'repair_status',
+            'price', 'original_price', 'condition', 'status', 'device_type',
+            'brand', 'model', 'storage', 'ram', 'version', 'repair_status',
             'screen_size', 'battery_health', 'charging_type', 'verified_at',
             'verified_by', 'view_count', 'sales_count', 'images',
             'is_favorited', 'created_at', 'updated_at',
             'cover_image', 'detail_images', 'inspection_reports',
             'inspection_result', 'inspection_date', 'inspection_staff', 'inspection_note',
-            'stock', 'tags', 'published_at', 'removed_reason'
+            'stock', 'tags', 'published_at', 'removed_reason', 'template'
         ]
         read_only_fields = ['seller', 'view_count', 'sales_count', 'verified_at', 'verified_by', 'created_at', 'updated_at']
 
@@ -706,7 +722,7 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         # 基础必填校验
         if self.instance is None:  # create
-            required_fields = ['title', 'brand', 'model', 'price', 'condition', 'location']
+            required_fields = ['title', 'brand', 'model', 'price', 'condition']
             for f in required_fields:
                 if attrs.get(f) in [None, '', []]:
                     raise serializers.ValidationError({f: '必填'})
@@ -824,3 +840,59 @@ class VerifiedFavoriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"product_id": "该商品已收藏"})
         
         return super().create(validated_data)
+
+
+
+# ==================== 回收机型模板序列化器（用户端） ====================
+
+class RecycleQuestionOptionPublicSerializer(serializers.Serializer):
+    """问卷选项序列化器（用户端）"""
+    value = serializers.CharField()
+    label = serializers.CharField()
+    desc = serializers.CharField(allow_blank=True)
+    impact = serializers.CharField(allow_blank=True)
+
+
+class RecycleQuestionPublicSerializer(serializers.Serializer):
+    """问卷问题序列化器（用户端）"""
+    key = serializers.CharField()
+    title = serializers.CharField()
+    helper = serializers.CharField(allow_blank=True)
+    question_type = serializers.CharField()
+    is_required = serializers.BooleanField()
+    options = RecycleQuestionOptionPublicSerializer(many=True)
+
+
+class RecycleDeviceTemplateCatalogSerializer(serializers.Serializer):
+    """机型目录序列化器（用户端）- 用于列表展示"""
+    id = serializers.IntegerField()
+    device_type = serializers.CharField()
+    brand = serializers.CharField()
+    model = serializers.CharField()
+    series = serializers.CharField(allow_blank=True)
+    storages = serializers.ListField(child=serializers.CharField())
+    base_prices = serializers.DictField()
+    default_cover_image = serializers.CharField(allow_blank=True)
+    screen_size = serializers.CharField(allow_blank=True)
+    battery_capacity = serializers.CharField(allow_blank=True)
+    charging_type = serializers.CharField(allow_blank=True)
+
+
+class RecycleDeviceTemplateDetailSerializer(serializers.Serializer):
+    """机型详情序列化器（用户端）- 包含完整信息"""
+    id = serializers.IntegerField()
+    device_type = serializers.CharField()
+    brand = serializers.CharField()
+    model = serializers.CharField()
+    series = serializers.CharField(allow_blank=True)
+    storages = serializers.ListField(child=serializers.CharField())
+    base_prices = serializers.DictField()
+    ram_options = serializers.ListField(child=serializers.CharField())
+    version_options = serializers.ListField(child=serializers.CharField())
+    color_options = serializers.ListField(child=serializers.CharField())
+    screen_size = serializers.CharField(allow_blank=True)
+    battery_capacity = serializers.CharField(allow_blank=True)
+    charging_type = serializers.CharField(allow_blank=True)
+    default_cover_image = serializers.CharField(allow_blank=True)
+    default_detail_images = serializers.ListField(child=serializers.CharField())
+    description_template = serializers.CharField(allow_blank=True)

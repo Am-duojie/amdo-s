@@ -15,17 +15,6 @@
       </div>
     </div>
 
-    <!-- 估价信息卡片 - 只在完成所有必填问题后显示 -->
-    <el-card shadow="never" class="card price-info-card" v-if="canCheckout && estimatedPriceText !== '--'">
-      <div class="price-info-content">
-        <div class="price-info-label">预计到手价</div>
-        <div class="price-info-value">{{ estimatedPriceText }}</div>
-        <div class="price-info-condition" v-if="draft.condition">按成色：{{ conditionText }}</div>
-        <div class="price-info-status" v-if="estimateError">{{ estimateError }}</div>
-        <div class="price-info-status" v-else-if="estimating">正在根据所选信息估价...</div>
-      </div>
-    </el-card>
-
     <el-row :gutter="16" class="wizard-body">
       <el-col :span="24">
         <el-card shadow="never" class="card questions-card">
@@ -461,9 +450,16 @@ function selectOption(step: StepItem, option: StepOption) {
     draft.setAnswer(step.key, next);
   } else {
     draft.setAnswer(step.key, option);
+    
+    // 保存用户选择的配置到store
     if (step.key === "storage") {
       draft.setStorage(option.value);
+      draft.setSelectedConfig({ storage: option.value });
+    } else if (step.key === "color") {
+      draft.setSelectedConfig({ color: option.value });
     }
+    // 注意：ram 和 version 需要在问卷中有对应的问题才能保存
+    // 如果后端模板中有这些问题，会自动保存
   }
   draft.setQuote(null, null);
   updateCondition();
@@ -580,6 +576,12 @@ async function loadQuestionTemplate() {
     console.log('[问卷加载] 从后端获取到模板:', data);
     templateFromBackend.value = data;
     
+    // 保存模板ID到store
+    if (data.template_id) {
+      draft.setTemplate(data.template_id);
+      console.log('[问卷加载] 保存模板ID:', data.template_id);
+    }
+    
     // 如果后端模板有storages，更新storages
     if (data.storages && data.storages.length > 0) {
       storages.value = data.storages;
@@ -662,18 +664,8 @@ watch(
   }
 );
 
-watch(
-  () => storages.value,
-  (list) => {
-    if (list.length && !selectedStorage.value) {
-      const first = { value: list[0], label: list[0] };
-      draft.setAnswer("storage", first);
-      draft.setStorage(first.value);
-      updateCondition();
-    }
-  }
-);
-
+// 移除自动选择第一个存储容量的逻辑
+// 用户需要手动选择存储容量
 
 async function goCheckout() {
   if (!canCheckout.value) {
@@ -741,6 +733,10 @@ onMounted(async () => {
     ElMessage.warning("请选择机型后进入估价");
     return;
   }
+  
+  // 清空之前的填写信息，每次进入都是全新状态
+  draft.resetEstimate();
+  
   draft.setSelection({ device_type: deviceType.value, brand: brand.value, model: model.value });
   
   // 先尝试从后端加载问卷模板
@@ -867,42 +863,6 @@ onMounted(async () => {
   text-align: center;
   padding: 20px 0;
   margin-top: 20px;
-}
-/* 估价信息卡片 */
-.price-info-card {
-  margin-bottom: 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-}
-
-.price-info-content {
-  padding: 20px;
-  color: #fff;
-  text-align: center;
-}
-
-.price-info-label {
-  font-size: 14px;
-  opacity: 0.9;
-  margin-bottom: 8px;
-}
-
-.price-info-value {
-  font-size: 32px;
-  font-weight: 900;
-  margin-bottom: 8px;
-}
-
-.price-info-condition {
-  font-size: 13px;
-  opacity: 0.85;
-  margin-top: 4px;
-}
-
-.price-info-status {
-  font-size: 12px;
-  opacity: 0.8;
-  margin-top: 8px;
 }
 .empty-tip { margin-top: 12px; padding: 12px; background: #f9fafb; border: 1px dashed #e6e8ee; border-radius: 12px; color: #6b7280; }
 .storage-tag { margin-left: 6px; }

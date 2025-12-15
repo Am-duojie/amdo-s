@@ -1058,9 +1058,18 @@ class RecycleCatalogView(APIView):
             existing = next((m for m in models_payload[dt][br] if m['name'] == md), None)
             if not existing:
                 models_payload[dt][br].append({
+                    'id': template.id,
                     'name': md,
                     'storages': template.storages or [],
                     'series': template.series or None,
+                    'base_prices': template.base_prices or {},
+                    'ram_options': template.ram_options or [],
+                    'version_options': template.version_options or [],
+                    'color_options': template.color_options or [],
+                    'screen_size': template.screen_size or '',
+                    'battery_capacity': template.battery_capacity or '',
+                    'charging_type': template.charging_type or '',
+                    'default_cover_image': template.default_cover_image or '',
                 })
         
         # 排序
@@ -1210,6 +1219,7 @@ class RecycleQuestionTemplateView(APIView):
 
         return Response({
             'id': template.id,
+            'template_id': template.id,  # 添加 template_id 字段，用于前端提交订单时关联
             'device_type': template.device_type,
             'brand': template.brand,
             'model': template.model,

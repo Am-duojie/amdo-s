@@ -62,6 +62,18 @@
         <el-descriptions-item label="成色">
           <el-tag :type="getConditionType(detail.condition)">{{ getConditionText(detail.condition) }}</el-tag>
         </el-descriptions-item>
+        <!-- 模板信息 -->
+        <el-descriptions-item v-if="detail.template_info" label="关联模板" :span="2">
+          <el-tag type="info">
+            {{ detail.template_info.device_type }} / {{ detail.template_info.brand }} / {{ detail.template_info.model }}
+            <span v-if="detail.template_info.series"> ({{ detail.template_info.series }})</span>
+          </el-tag>
+        </el-descriptions-item>
+        <!-- 用户选择的配置 -->
+        <el-descriptions-item v-if="detail.selected_storage" label="选择的存储">{{ detail.selected_storage }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail.selected_color" label="选择的颜色">{{ detail.selected_color }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail.selected_ram" label="选择的内存">{{ detail.selected_ram }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail.selected_version" label="选择的版本">{{ detail.selected_version }}</el-descriptions-item>
         <el-descriptions-item label="预估价格">
           <span v-if="detail.estimated_price" style="font-size: 16px; color: #909399">
             ¥{{ detail.estimated_price }}
@@ -111,6 +123,22 @@
             确认收到设备
           </el-button>
           <span v-else>-</span>
+        </el-descriptions-item>
+      </el-descriptions>
+    </el-card>
+
+    <!-- 问卷答案 -->
+    <el-card v-if="detail.questionnaire_answers && Object.keys(detail.questionnaire_answers).length > 0" class="detail-section" shadow="never">
+      <template #header>
+        <span>问卷答案</span>
+      </template>
+      <el-descriptions :column="2" border>
+        <el-descriptions-item
+          v-for="(value, key) in detail.questionnaire_answers"
+          :key="key"
+          :label="formatQuestionKey(key)"
+        >
+          {{ value }}
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
@@ -1319,6 +1347,26 @@ const resetReportForm = () => {
 const formatTime = (time) => {
   if (!time) return '-'
   return new Date(time).toLocaleString('zh-CN')
+}
+
+// 格式化问卷问题的 key 为可读文本
+const formatQuestionKey = (key) => {
+  const keyMap = {
+    channel: '购买渠道',
+    color: '颜色',
+    storage: '存储容量',
+    screen_condition: '屏幕状况',
+    battery_health: '电池健康度',
+    appearance: '外观状况',
+    function: '功能状况',
+    accessories: '配件情况',
+    warranty: '保修情况',
+    purchase_time: '购买时间',
+    usage_time: '使用时长',
+    repair_history: '维修历史',
+    water_damage: '进水情况'
+  }
+  return keyMap[key] || key
 }
 
 onMounted(() => {

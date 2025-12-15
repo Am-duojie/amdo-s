@@ -26,6 +26,13 @@
               <span class="label">创建时间：</span>
               <span class="value">{{ formatDate(order.created_at) }}</span>
             </div>
+            <!-- 如果有模板信息，显示关联模板标签 -->
+            <div class="info-item" v-if="order.template_info">
+              <span class="label">关联模板：</span>
+              <el-tag type="success" size="small">
+                {{ order.template_info.device_type }} / {{ order.template_info.brand }} / {{ order.template_info.model }}
+              </el-tag>
+            </div>
             <div class="info-item">
               <span class="label">设备类型：</span>
               <span class="value">{{ order.device_type }}</span>
@@ -38,9 +45,39 @@
               <span class="label">存储容量：</span>
               <span class="value">{{ order.storage }}</span>
             </div>
+            <!-- 显示用户选择的配置 -->
+            <div class="info-item" v-if="order.selected_color">
+              <span class="label">颜色：</span>
+              <span class="value">{{ order.selected_color }}</span>
+            </div>
+            <div class="info-item" v-if="order.selected_ram">
+              <span class="label">运行内存：</span>
+              <span class="value">{{ order.selected_ram }}</span>
+            </div>
+            <div class="info-item" v-if="order.selected_version">
+              <span class="label">版本：</span>
+              <span class="value">{{ order.selected_version }}</span>
+            </div>
             <div class="info-item">
               <span class="label">成色：</span>
               <span class="value">{{ getConditionText(order.condition) }}</span>
+            </div>
+          </div>
+        </el-card>
+
+        <!-- 问卷答案卡片 -->
+        <el-card class="info-card" v-if="order.questionnaire_answers && Object.keys(order.questionnaire_answers).length > 0">
+          <template #header>
+            <span>问卷答案</span>
+          </template>
+          <div class="questionnaire-answers">
+            <div 
+              v-for="(answer, key) in order.questionnaire_answers" 
+              :key="key"
+              class="answer-item"
+            >
+              <span class="answer-label">{{ formatQuestionKey(key) }}：</span>
+              <span class="answer-value">{{ formatAnswerValue(answer) }}</span>
             </div>
           </div>
         </el-card>
@@ -433,6 +470,49 @@ const getCheckItemValue = (value) => {
   return String(value)
 }
 
+// 格式化问题key为中文标题
+const formatQuestionKey = (key) => {
+  const keyMap = {
+    channel: '购买渠道',
+    color: '颜色',
+    storage: '存储容量',
+    usage: '使用情况',
+    accessories: '配件情况',
+    screen_appearance: '屏幕外观',
+    body: '机身外壳',
+    display: '屏幕显示',
+    front_camera: '前置摄像头',
+    rear_camera: '后置摄像头',
+    repair: '维修情况',
+    screen_repair: '屏幕维修',
+    functional: '功能检测'
+  }
+  return keyMap[key] || key
+}
+
+// 格式化答案值
+const formatAnswerValue = (answer) => {
+  if (!answer) return '未填写'
+  
+  // 如果是数组（多选）
+  if (Array.isArray(answer)) {
+    return answer.map(item => {
+      if (typeof item === 'object' && item.label) {
+        return item.label
+      }
+      return String(item)
+    }).join('、')
+  }
+  
+  // 如果是对象（单选）
+  if (typeof answer === 'object' && answer.label) {
+    return answer.label
+  }
+  
+  // 其他情况直接返回字符串
+  return String(answer)
+}
+
 const loadOrderDetail = async () => {
   loading.value = true
   try {
@@ -742,6 +822,37 @@ onMounted(() => {
   color: #333;
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.questionnaire-answers {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.answer-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.answer-item:last-child {
+  border-bottom: none;
+}
+
+.answer-label {
+  font-size: 14px;
+  color: #666;
+  font-weight: 500;
+  min-width: 100px;
+}
+
+.answer-value {
+  font-size: 14px;
+  color: #333;
+  flex: 1;
 }
 
 .action-card {
