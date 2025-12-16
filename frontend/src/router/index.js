@@ -172,6 +172,7 @@ const routes = [
       { path: 'inspection-orders', name: 'InspectionOrders', component: () => import('@/admin/pages/InspectionOrders.vue'), meta: { requiresAdminAuth: true, title: '回收质检', icon: 'DocumentChecked', group: 'recycle' } },
       { path: 'inspection-orders/:id', name: 'InspectionOrderDetail', component: () => import('@/admin/pages/InspectionOrderDetail.vue'), meta: { requiresAdminAuth: true, title: '质检详情', icon: 'DocumentChecked', group: 'recycle', hidden: true } },
       // 官方验业务
+      { path: 'verified-devices', name: 'AdminVerifiedDeviceInventory', component: () => import('@/admin/pages/VerifiedDeviceInventory.vue'), meta: { requiresAdminAuth: true, title: '官方验库存', icon: 'Box', group: 'verified' } },
       { path: 'verified-products', name: 'VerifiedProductManagement', component: () => import('@/admin/pages/VerifiedProductManagement.vue'), meta: { requiresAdminAuth: true, title: '官方验商品', icon: 'Goods', group: 'verified' } },
       { path: 'verified-orders', name: 'VerifiedOrderManagement', component: () => import('@/admin/pages/VerifiedOrderManagement.vue'), meta: { requiresAdminAuth: true, title: '官方验订单', icon: 'ShoppingCart', group: 'verified' } },
       // 兼容旧路由
@@ -294,5 +295,4 @@ router.beforeEach(async (to, from, next) => {
 })
 
 export default router
-
 

@@ -34,6 +34,23 @@ class VerifiedDeviceListSerializer(serializers.ModelSerializer):
             'cover_image','location','suggested_price','created_at','linked_product'
         ]
 
+
+class OfficialInventorySerializer(serializers.ModelSerializer):
+    template_id = serializers.IntegerField(source='template.id', read_only=True)
+    template_name = serializers.CharField(source='template.model', read_only=True)
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    linked_product_id = serializers.IntegerField(source='linked_product.id', read_only=True)
+
+    class Meta:
+        model = VerifiedDevice
+        fields = [
+            'id', 'sn', 'imei', 'brand', 'model', 'storage', 'ram', 'version', 'color',
+            'condition', 'status', 'location', 'suggested_price', 'cost_price',
+            'inspection_result', 'inspection_date', 'inspection_staff',
+            'template_id', 'template_name', 'category_name', 'linked_product_id',
+            'created_at', 'updated_at'
+        ]
+
 class AdminAuditQueueItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = AdminAuditQueueItem

@@ -1,29 +1,27 @@
 <template>
   <div class="verified-device-inventory admin-page">
+    <div class="header-tabs">
+      <el-button size="small" plain>官方验订单</el-button>
+      <el-button size="small" type="primary">官方验库存</el-button>
+      <el-button size="small" plain @click="goProducts">官方验商品</el-button>
+    </div>
+
     <div class="page-header">
       <div>
-        <div class="page-title">官方验库存（SN 级）</div>
-        <div class="page-desc">单台设备管理：状态流转、上架、锁定/解锁、条码</div>
+        <div class="page-title">官方验库存管理</div>
+        <div class="page-desc">审核、上架、批量操作与详情查看</div>
       </div>
       <el-space>
-        <el-button :loading="loading" @click="handleRefresh" text :icon="Refresh">刷新</el-button>
+        <el-button :loading="loading" @click="loadDevices" text :icon="Refresh">刷新</el-button>
+        <el-button type="success" plain @click="openQuickList">一键上架（选设备）</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreateDevice">新增设备</el-button>
       </el-space>
     </div>
 
     <el-card shadow="hover" class="filter-card">
       <el-form :inline="true" @submit.prevent>
-        <el-form-item label="关键字">
-          <el-input
-            v-model="search"
-            placeholder="SN / 品牌 / 型号"
-            clearable
-            style="width: 240px"
-            @keyup.enter="handleSearch"
-          />
-        </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="statusFilter" placeholder="全部" clearable style="width: 160px" @change="handleSearch">
+          <el-select v-model="statusFilter" placeholder="全部" clearable style="width: 140px" @change="handleSearch">
             <el-option label="全部" value="" />
             <el-option label="待处理" value="pending" />
             <el-option label="维修/翻新中" value="repairing" />
@@ -34,9 +32,18 @@
             <el-option label="已下架" value="removed" />
           </el-select>
         </el-form-item>
+        <el-form-item label="关键字">
+          <el-input
+            v-model="search"
+            placeholder="标题 / 品牌 / 型号"
+            clearable
+            style="width: 260px"
+            @keyup.enter="handleSearch"
+          />
+        </el-form-item>
         <el-form-item>
           <el-space>
-            <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
+            <el-button type="warning" :icon="Search" @click="handleSearch">查询</el-button>
             <el-button @click="resetFilters">重置</el-button>
           </el-space>
         </el-form-item>
@@ -47,25 +54,12 @@
       <div class="table-toolbar">
         <div class="table-meta">
           <span>共 {{ pagination.total }} 条</span>
-          <span v-if="statusFilter">· 状态：{{ statusFilter }}</span>
-          <span v-if="search">· 关键词：{{ search }}</span>
+          <span v-if="statusFilter">· 状态：{{ statusText(statusFilter) }}</span>
+          <span v-if="search">· 关键字：{{ search }}</span>
         </div>
         <el-space>
-          <el-button text :icon="Refresh" @click="handleRefresh">刷新</el-button>
-          <el-dropdown @command="cmd => handleBatchAction(cmd)">
-            <el-button type="primary" plain :disabled="selected.length === 0">
-              批量操作<el-icon class="el-icon--right"><arrow-down /></el-icon>
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="lock">批量锁定</el-dropdown-item>
-                <el-dropdown-item command="unlock">批量解锁</el-dropdown-item>
-                <el-dropdown-item command="ready">批量待上架</el-dropdown-item>
-                <el-dropdown-item command="sold">批量已售</el-dropdown-item>
-                <el-dropdown-item command="remove">批量下架</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <el-button text :icon="Refresh" @click="loadDevices">刷新</el-button>
+          <el-button type="success" plain @click="openQuickList" :disabled="selected.length === 0">一键上架（选设备）</el-button>
         </el-space>
       </div>
 
@@ -76,49 +70,40 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="55" />
-        <el-table-column prop="sn" label="SN/序列号" width="180" show-overflow-tooltip />
-        <el-table-column label="设备" min-width="220" show-overflow-tooltip>
+        <el-table-column prop="id" label="ID" width="70" />
+        <el-table-column label="商品信息" min-width="320" show-overflow-tooltip>
           <template #default="{ row }">
-            <div class="title">{{ row.brand }} {{ row.model }}</div>
-            <div class="sub">{{ row.storage }}</div>
+            <div class="title">{{ row.brand }} {{ row.model }} {{ row.storage }}</div>
+            <div class="sub">模板：{{ row.template_name || '—' }}</div>
           </template>
         </el-table-column>
-        <el-table-column prop="condition" label="成色" width="90" />
-        <el-table-column prop="status" label="状态" width="100" />
-        <el-table-column prop="location" label="仓位" width="120" />
-        <el-table-column prop="suggested_price" label="建议价" width="110" align="right">
+        <el-table-column prop="suggested_price" label="价格" width="140" align="right">
           <template #default="{ row }">
-            <span v-if="row.suggested_price">¥{{ row.suggested_price }}</span>
-            <span v-else>—</span>
+            <span class="price">¥{{ displayPrice(row) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="linked_product" label="关联商品" width="110">
+        <el-table-column prop="condition" label="成色" width="110">
           <template #default="{ row }">
-            <el-tag v-if="row.linked_product" type="success" size="small">已关联</el-tag>
-            <span v-else>—</span>
+            <el-tag size="small" effect="plain">{{ statusText(row.condition) || row.condition }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="380" fixed="right">
+        <el-table-column prop="status" label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="statusTagType(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="linked_product_id" label="销量" width="90">
+          <template #default="{ row }">
+            <span>{{ row.sales_count || 0 }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="创建时间" width="160" />
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-space wrap>
               <el-button size="small" @click="openDetail(row)">详情</el-button>
-              <el-button size="small" type="primary" @click="listProduct(row)">一键上架</el-button>
-              <el-dropdown @command="cmd => handleAction(row, cmd)">
-                <el-button size="small">
-                  状态 <el-icon class="el-icon--right"><arrow-down /></el-icon>
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="lock">锁定</el-dropdown-item>
-                    <el-dropdown-item command="unlock">解锁</el-dropdown-item>
-                    <el-dropdown-item command="ready">待上架</el-dropdown-item>
-                    <el-dropdown-item command="repair">维修中</el-dropdown-item>
-                    <el-dropdown-item command="sold">已售出</el-dropdown-item>
-                    <el-dropdown-item command="remove">下架</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-              <el-button size="small" @click="downloadBarcode(row)">条码</el-button>
+              <el-button size="small" type="primary" @click="listProduct(row)">编辑</el-button>
+              <el-button size="small" type="warning" @click="handleAction(row, 'remove')">下架</el-button>
             </el-space>
           </template>
         </el-table-column>
@@ -141,22 +126,27 @@
     <el-dialog v-model="detailDialogVisible" title="设备详情" width="720px" destroy-on-close>
       <div v-if="currentDevice">
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="SN/序列号">{{ currentDevice.sn }}</el-descriptions-item>
+          <el-descriptions-item label="SN">{{ currentDevice.sn }}</el-descriptions-item>
           <el-descriptions-item label="IMEI">{{ currentDevice.imei || '—' }}</el-descriptions-item>
           <el-descriptions-item label="品牌">{{ currentDevice.brand }}</el-descriptions-item>
           <el-descriptions-item label="型号">{{ currentDevice.model }}</el-descriptions-item>
           <el-descriptions-item label="容量">{{ currentDevice.storage }}</el-descriptions-item>
-          <el-descriptions-item label="成色">{{ currentDevice.condition }}</el-descriptions-item>
+          <el-descriptions-item label="成色">{{ statusText(currentDevice.condition) || currentDevice.condition }}</el-descriptions-item>
+          <el-descriptions-item label="模板">{{ currentDevice.template_name || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="类目">{{ currentDevice.category_name || '—' }}</el-descriptions-item>
           <el-descriptions-item label="仓位">{{ currentDevice.location || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ currentDevice.status }}</el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag :type="statusTagType(currentDevice.status)" size="small">{{ statusText(currentDevice.status) }}</el-tag>
+          </el-descriptions-item>
           <el-descriptions-item label="建议售价">
             <span v-if="currentDevice.suggested_price">¥{{ currentDevice.suggested_price }}</span>
             <span v-else>—</span>
           </el-descriptions-item>
           <el-descriptions-item label="关联商品">
-            <span v-if="currentDevice.linked_product">商品ID {{ currentDevice.linked_product }}</span>
+            <span v-if="currentDevice.linked_product_id">商品ID {{ currentDevice.linked_product_id }}</span>
             <span v-else>—</span>
           </el-descriptions-item>
+          <el-descriptions-item label="入库时间">{{ currentDevice.created_at }}</el-descriptions-item>
         </el-descriptions>
         <el-divider />
         <div class="section-title">质检/备注</div>
@@ -164,7 +154,7 @@
       </div>
     </el-dialog>
 
-    <!-- 新增设备（与商品页复用逻辑） -->
+    <!-- 新增设备 -->
     <el-dialog
       v-model="createDeviceDialogVisible"
       title="新增官方验库存设备"
@@ -198,10 +188,10 @@
           <el-input v-model="deviceForm.location" placeholder="仓库/货架位" />
         </el-form-item>
         <el-form-item label="建议售价">
-          <el-input-number v-model="deviceForm.suggested_price" :min="0" :precision="2" style="width: 100%;" />
+          <el-input-number v-model="deviceForm.suggested_price" :min="0" :precision="2" style="width: 200px" />
         </el-form-item>
-        <el-form-item label="备注/质检">
-          <el-input v-model="deviceForm.inspection_note" type="textarea" :rows="3" placeholder="可填质检要点/备注" />
+        <el-form-item label="备注">
+          <el-input type="textarea" v-model="deviceForm.inspection_note" rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -210,24 +200,15 @@
       </template>
     </el-dialog>
 
-    <!-- 一键上架 -->
-    <el-dialog
-      v-model="quickListDialogVisible"
-      title="一键上架"
-      width="520px"
-      destroy-on-close
-    >
-      <div class="quick-form" v-if="currentDevice">
-        <el-descriptions :column="1" border>
-          <el-descriptions-item label="设备">{{ currentDevice.brand }} {{ currentDevice.model }} {{ currentDevice.storage }}</el-descriptions-item>
-          <el-descriptions-item label="SN">{{ currentDevice.sn }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ currentDevice.status }}</el-descriptions-item>
-        </el-descriptions>
-        <el-form :inline="true" style="margin-top: 12px;">
+    <!-- 快速上架 -->
+    <el-dialog v-model="quickListDialogVisible" title="一键上架（选设备）" width="420px" destroy-on-close>
+      <div>
+        <div class="section-title">售价设置</div>
+        <el-form label-width="100px">
           <el-form-item label="售价">
-            <el-input-number v-model="quickPrice" :min="0.01" :precision="2" />
+            <el-input-number v-model="quickPrice" :min="0" :precision="2" />
           </el-form-item>
-          <el-form-item label="原价">
+          <el-form-item label="划线价">
             <el-input-number v-model="quickOriginalPrice" :min="0" :precision="2" />
           </el-form-item>
         </el-form>
@@ -250,7 +231,10 @@ const devices = ref([])
 const loading = ref(false)
 const search = ref('')
 const statusFilter = ref('')
+const hasProduct = ref('')
+const dateRange = ref([])
 const pagination = ref({ current: 1, pageSize: 20, total: 0 })
+const salesFallback = (row) => (row.sales_count || 0)
 const selected = ref([])
 
 const detailDialogVisible = ref(false)
@@ -276,17 +260,66 @@ const deviceForm = reactive({
   inspection_note: ''
 })
 
+const statusText = (val) => {
+  const map = {
+    pending: '待处理',
+    repairing: '维修/翻新中',
+    ready: '待上架',
+    listed: '在售',
+    locked: '已锁定',
+    sold: '已售出',
+    removed: '已下架',
+    like_new: '99成新',
+    good: '95成新',
+    fair: '9成新',
+    poor: '8成新'
+  }
+  return map[val] || val || ''
+}
+const statusTagType = (val) => {
+  switch (val) {
+    case 'ready':
+      return 'success'
+    case 'listed':
+      return 'success'
+    case 'locked':
+      return 'warning'
+    case 'sold':
+      return 'info'
+    case 'removed':
+      return 'info'
+    case 'repairing':
+      return 'warning'
+    default:
+      return ''
+  }
+}
+
+const displayPrice = (row) => {
+  const price = row.suggested_price || row.cost_price || 0
+  return Number(price).toFixed(2)
+}
+
 const loadDevices = async () => {
   loading.value = true
   try {
     const params = {
       page: pagination.value.current,
-      page_size: pagination.value.pageSize
+      page_size: pagination.value.pageSize,
+      status: statusFilter.value || undefined,
+      has_product: hasProduct.value || undefined,
+      created_from: dateRange.value?.[0] || undefined,
+      created_to: dateRange.value?.[1] || undefined,
     }
-    if (search.value) params.search = search.value
-    if (statusFilter.value) params.status = statusFilter.value
-    const res = await adminApi.get('/verified-devices/', { params })
-    devices.value = res.data?.results || []
+    if (search.value) {
+      params.brand = search.value
+      params.model = search.value
+    }
+    const res = await adminApi.get('/official-inventory/', { params })
+    devices.value = (res.data?.results || []).map(item => ({
+      ...item,
+      sales_count: item.sales_count || 0
+    }))
     pagination.value.total = res.data?.count || 0
   } catch (e) {
     ElMessage.error('加载失败')
@@ -303,6 +336,8 @@ const handleSearch = () => {
 const resetFilters = () => {
   search.value = ''
   statusFilter.value = ''
+  hasProduct.value = ''
+  dateRange.value = []
   handleSearch()
 }
 
@@ -319,13 +354,13 @@ const handleSelectionChange = (rows) => {
   selected.value = rows
 }
 
-const handleRefresh = () => {
-  loadDevices()
-}
-
 const openDetail = (row) => {
   currentDevice.value = row
   detailDialogVisible.value = true
+}
+
+const goProducts = () => {
+  window.location.href = '#/admin/verified-products'
 }
 
 const openCreateDevice = () => {
@@ -405,7 +440,6 @@ const listSelectedDevice = async () => {
 }
 
 const downloadBarcode = (row) => {
-  // 简化：生成一个包含 SN 的文本供演示
   const data = `SN:${row.sn}`
   const blob = new Blob([data], { type: 'text/plain' })
   const url = URL.createObjectURL(blob)
@@ -487,4 +521,3 @@ onMounted(() => {
   background: #f5f7fa;
 }
 </style>
-

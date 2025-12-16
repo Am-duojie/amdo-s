@@ -12,11 +12,14 @@ from .models import (
     AdminUser, AdminRole, AdminInspectionReport, AdminAuditQueueItem, AdminAuditLog, AdminRefreshToken, AdminTokenBlacklist,
     RecycleDeviceTemplate, RecycleQuestionTemplate, RecycleQuestionOption
 )
-from app.secondhand_app.models import RecycleOrder, VerifiedProduct, VerifiedOrder, Order, Shop, Category, Product, Message, Address, VerifiedDevice, create_verified_device_from_recycle_order
+from app.secondhand_app.models import (
+    RecycleOrder, VerifiedProduct, VerifiedOrder, Order, Shop, Category, Product, Message, Address,
+    VerifiedDevice, create_verified_device_from_recycle_order, create_verified_product_from_device
+)
 from app.secondhand_app.alipay_client import AlipayClient
 from .serializers import (
     AdminUserSerializer, RecycleOrderListSerializer, VerifiedProductListSerializer, AdminAuditQueueItemSerializer,
-    ShopAdminSerializer, VerifiedDeviceListSerializer,
+    ShopAdminSerializer, VerifiedDeviceListSerializer, OfficialInventorySerializer,
     RecycleDeviceTemplateSerializer, RecycleDeviceTemplateListSerializer, RecycleQuestionTemplateSerializer, RecycleQuestionOptionSerializer
 )
 from app.secondhand_app.serializers import OrderSerializer, VerifiedProductSerializer, VerifiedDeviceSerializer
@@ -1316,47 +1319,24 @@ class AdminVerifiedDeviceListProductView(APIView):
         except VerifiedDevice.DoesNotExist:
             return Response({'detail': '设备不存在'}, status=404)
 
-        price = request.data.get('price') or device.suggested_price
-        if not price:
-            return Response({'detail': '缺少售价'}, status=400)
+        # 允许前端覆盖售价/状态，否则用设备建议价，默认草稿
+        price_override = request.data.get('price')
+        status_override = request.data.get('status', 'draft')
 
-        product_data = {
-            'title': f"{device.brand} {device.model} {device.storage}".strip(),
-            'description': device.inspection_note or '官方质检设备',
-            'price': price,
-            'original_price': request.data.get('original_price') or None,
-            'condition': device.condition or 'good',
-            'status': 'active',
-            'location': device.location or '官方仓',
-            'contact_phone': request.data.get('contact_phone', ''),
-            'contact_wechat': request.data.get('contact_wechat', ''),
-            'brand': device.brand,
-            'model': device.model,
-            'storage': device.storage,
-            'battery_health': device.battery_health,
-            'inspection_result': device.inspection_result,
-            'inspection_date': device.inspection_date,
-            'inspection_staff': device.inspection_staff,
-            'inspection_note': device.inspection_note,
-            'cover_image': device.cover_image,
-            'detail_images': device.detail_images,
-            'inspection_reports': device.inspection_reports,
-            'stock': 1,
-            'tags': ['官方质检', f'SN:{device.sn}'],
-            'category_id': device.category.id if device.category else None,
-        }
-        serializer = VerifiedProductSerializer(data=product_data, context={'request': request})
-        if serializer.is_valid():
-            seller = device.seller or admin
-            product = serializer.save(seller=seller)
-            device.status = 'listed'
-            device.linked_product = product
-            device.save()
+        try:
+            product = create_verified_product_from_device(device, status=status_override)
+            if price_override:
+                product.price = price_override
+                product.save(update_fields=['price', 'updated_at'])
+            device.refresh_from_db()
             return Response({
-                'detail': '上架成功',
-                'product': VerifiedProductSerializer(product).data
+                'detail': '生成官方验商品成功',
+                'product': VerifiedProductSerializer(product, context={'request': request}).data
             }, status=201)
-        return Response(serializer.errors, status=400)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=400)
+        except Exception as e:
+            return Response({'detail': f'生成失败: {str(e)}'}, status=500)
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -1397,6 +1377,76 @@ class AdminVerifiedDeviceActionView(APIView):
         device.status = target_status
         device.save(update_fields=['status', 'updated_at'])
         return Response({'detail': '操作成功', 'status': target_status})
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminOfficialInventoryView(APIView):
+    """
+    官方验库存管理：筛选/列表/简单统计
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        admin = get_admin_from_request(request)
+        if not admin:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        if not has_perms(admin, ['verified:view', 'verified:write']):
+            return Response({'detail': 'Forbidden'}, status=403)
+
+        qs = VerifiedDevice.objects.select_related('template', 'category').all().order_by('-created_at')
+
+        status_q = request.GET.get('status')
+        template_id = request.GET.get('template_id')
+        brand = request.GET.get('brand')
+        model = request.GET.get('model')
+        has_product = request.GET.get('has_product')
+        created_from = request.GET.get('created_from')
+        created_to = request.GET.get('created_to')
+
+        if status_q:
+            qs = qs.filter(status=status_q)
+        if template_id:
+            qs = qs.filter(template_id=template_id)
+        if brand:
+            qs = qs.filter(brand__icontains=brand)
+        if model:
+            qs = qs.filter(model__icontains=model)
+        if has_product == 'true':
+            qs = qs.filter(linked_product__isnull=False)
+        if has_product == 'false':
+            qs = qs.filter(linked_product__isnull=True)
+        if created_from:
+            try:
+                qs = qs.filter(created_at__gte=datetime.fromisoformat(created_from))
+            except Exception:
+                pass
+        if created_to:
+            try:
+                qs = qs.filter(created_at__lte=datetime.fromisoformat(created_to))
+            except Exception:
+                pass
+
+        # 排序
+        ordering = request.GET.get('ordering', '-created_at')
+        qs = qs.order_by(ordering)
+
+        # 分页
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 20))
+        start = (page - 1) * page_size
+        end = start + page_size
+        total = qs.count()
+
+        serializer = OfficialInventorySerializer(qs[start:end], many=True)
+
+        status_counts = {item['status']: item['c'] for item in qs.values('status').annotate(c=Count('id'))} if total else {}
+
+        return Response({
+            'count': total,
+            'results': serializer.data,
+            'status_counts': status_counts
+        })
 # 回收商品相关视图
 @method_decorator(csrf_exempt, name='dispatch')
 class RecycledProductsView(APIView):

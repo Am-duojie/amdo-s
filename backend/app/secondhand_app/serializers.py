@@ -618,8 +618,8 @@ class RecycleOrderSerializer(serializers.ModelSerializer):
         # 这些字段已经在fields中定义，应该可以正常更新
         updated_order = super().update(instance, validated_data)
 
-        # 自动：质检/完成后，生成官方验库存（避免重复）
-        if updated_order.status in ['inspected', 'completed']:
+        # 自动：收货/质检/完成后，生成官方验库存（避免重复）
+        if updated_order.status in ['received', 'inspected', 'completed']:
             try:
                 create_verified_device_from_recycle_order(updated_order)
             except Exception:

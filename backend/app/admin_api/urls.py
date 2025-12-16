@@ -13,6 +13,7 @@ from .views import (
     AdminVerifiedProductPublishView, AdminVerifiedProductUnpublishView,
     # 新增：官方验设备库存
     AdminVerifiedDeviceView, AdminVerifiedDeviceDetailView, AdminVerifiedDeviceListProductView, AdminVerifiedDeviceActionView,
+    AdminOfficialInventoryView,
     CreateVerifiedDeviceFromRecycleOrderView,
     # 新增：回收机型模板管理
     RecycleDeviceTemplateView, RecycleQuestionTemplateView, RecycleQuestionOptionView, 
@@ -56,6 +57,7 @@ urlpatterns = [
     path('verified-devices/<int:pk>/', AdminVerifiedDeviceDetailView.as_view()),
     path('verified-devices/<int:pk>/list-product/', AdminVerifiedDeviceListProductView.as_view()),
     path('verified-devices/<int:pk>/<str:action>/', AdminVerifiedDeviceActionView.as_view()),
+    path('official-inventory/', AdminOfficialInventoryView.as_view()),
     # 旧的回收产品接口
     path('verified-listings', VerifiedListingsView.as_view()),
     path('verified-listings/<int:item_id>', VerifiedListingsView.as_view()),

@@ -639,19 +639,59 @@ def create_verified_device_from_recycle_order(order, status='ready', location='�
     if existing and existing.exists():
         return existing.first()
 
+    # 优先使用回收单上的模板；没有则尝试按机型匹配
+    template = getattr(order, 'template', None)
+    if not template:
+        try:
+            from app.admin_api.models import RecycleDeviceTemplate
+            template = RecycleDeviceTemplate.objects.filter(
+                device_type=order.device_type,
+                brand=order.brand,
+                model=order.model,
+                is_active=True
+            ).first()
+        except Exception:
+            template = None
+
+    # 没有有效模板直接跳过，避免生成无模板设备
+    if not template or (hasattr(template, 'is_active') and not template.is_active):
+        return None
+
+    def _pick_from_template(value, options):
+        """如果用户选择不在模板选项里，则回落到模板首个可用值"""
+        if value and options:
+            normalized = str(value).strip().lower()
+            for opt in options:
+                if str(opt).strip().lower() == normalized:
+                    return opt
+        if options:
+            return options[0]
+        return value or ''
+
     # 自动生成占位 SN，避免唯一约束报错
     sn = f"AUTO-{uuid.uuid4().hex[:8].upper()}"
 
     suggested_price = order.final_price or order.estimated_price
     cost_price = order.final_price or order.estimated_price
 
+    # 从模板/订单决定具体配置
+    storage = _pick_from_template(order.storage, getattr(template, 'storages', []))
+    ram = _pick_from_template(getattr(order, 'selected_ram', ''), getattr(template, 'ram_options', []))
+    version = _pick_from_template(getattr(order, 'selected_version', ''), getattr(template, 'version_options', []))
+    color = _pick_from_template(getattr(order, 'selected_color', ''), getattr(template, 'color_options', []))
+
     device = VerifiedDevice.objects.create(
         recycle_order=order,
+        template=template,
         seller=getattr(order, 'user', None),
+        category=getattr(template, 'category', None) if template else None,
         sn=sn,
-        brand=order.brand,
-        model=order.model,
-        storage=order.storage or '',
+        brand=getattr(template, 'brand', None) or order.brand,
+        model=getattr(template, 'model', None) or order.model,
+        storage=storage or '',
+        ram=ram or '',
+        version=version or '',
+        color=color or '',
         condition=order.condition or 'good',
         status=status,
         location=location,
@@ -660,3 +700,92 @@ def create_verified_device_from_recycle_order(order, status='ready', location='�
         inspection_note=order.note or ''
     )
     return device
+
+
+def create_verified_product_from_device(device, status='draft'):
+    """
+    根据库存设备生成官方验商品草稿，用于库存 -> 上架打通。
+    """
+    if not device:
+        return None
+
+    # 已关联商品直接返回
+    if getattr(device, 'linked_product', None):
+        return device.linked_product
+
+    template = getattr(device, 'template', None)
+    if not template or (hasattr(template, 'is_active') and not template.is_active):
+        raise ValueError('未关联有效的机型模板，无法生成官方验商品')
+
+    def _ensure_option(value, options, field_name):
+        if not options:
+            return value
+        normalized = str(value or '').strip().lower()
+        for opt in options:
+            if str(opt).strip().lower() == normalized:
+                return value
+        raise ValueError(f'{field_name} 不在模板允许的选项中')
+
+    _ensure_option(device.storage, getattr(template, 'storages', []), 'storage')
+    _ensure_option(device.ram, getattr(template, 'ram_options', []), 'ram')
+    _ensure_option(device.version, getattr(template, 'version_options', []), 'version')
+    _ensure_option(device.color, getattr(template, 'color_options', []), 'color')
+    title = f"{device.brand} {device.model}".strip()
+    if device.storage:
+        title = f"{title} {device.storage}"
+
+    description = ''
+    if template and getattr(template, 'description_template', ''):
+        description = template.description_template.format(
+            brand=device.brand or '',
+            model=device.model or '',
+            storage=device.storage or '',
+            condition=device.get_condition_display() if hasattr(device, 'get_condition_display') else device.condition,
+            ram=device.ram or '',
+            version=device.version or ''
+        )
+    else:
+        description = f"{device.brand} {device.model} {device.storage}".strip()
+
+    cover_image = device.cover_image or (template.default_cover_image if template else '')
+    detail_images = device.detail_images or (template.default_detail_images if template else [])
+
+    price = device.suggested_price or device.cost_price or 0
+
+    product = VerifiedProduct.objects.create(
+        template=template,
+        seller=device.seller,
+        category=getattr(template, 'category', None),
+        title=title,
+        description=description,
+        price=price or 0,
+        original_price=None,
+        condition=device.condition or 'good',
+        device_type=getattr(template, 'device_type', '') if template else '',
+        brand=device.brand,
+        model=device.model,
+        storage=device.storage,
+        ram=device.ram,
+        version=device.version,
+        screen_size=getattr(template, 'screen_size', ''),
+        battery_health=device.battery_health or '',
+        charging_type=getattr(template, 'charging_type', ''),
+        cover_image=cover_image or '',
+        detail_images=detail_images,
+        inspection_reports=device.inspection_reports or [],
+        inspection_result=device.inspection_result or 'pass',
+        inspection_date=device.inspection_date,
+        inspection_staff=device.inspection_staff,
+        inspection_note=device.inspection_note or '',
+        stock=1,
+        tags=[],
+        status=status
+    )
+
+    device.linked_product = product
+    if status == 'active':
+        device.status = 'listed'
+    elif status in ['draft', 'pending', 'ready']:
+        device.status = 'ready'
+    device.save(update_fields=['linked_product', 'status', 'updated_at'])
+    return product
