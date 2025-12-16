@@ -1,9 +1,15 @@
 <template>
   <div class="verified-product-management admin-page">
+    <div class="header-tabs">
+      <el-button size="small" plain @click="goOrders">官方验订单</el-button>
+      <el-button size="small" plain @click="goInventory">官方验库存</el-button>
+      <el-button size="small" type="primary">官方验商品</el-button>
+    </div>
+
     <div class="page-header">
       <div>
         <div class="page-title">官方验商品管理</div>
-        <div class="page-desc">审核、上下架、批量操作与详情查看</div>
+        <div class="page-desc">商品上架管理、审核、批量操作与详情查看</div>
       </div>
       <el-space>
         <el-button :loading="loading" @click="handleRefresh" text :icon="Refresh">刷新</el-button>
@@ -19,13 +25,6 @@
           v-if="hasPerm('verified:write')"
           type="primary"
           size="small"
-          @click="openCreateDevice"
-        >
-          新增设备
-        </el-button>
-        <el-button
-          v-if="hasPerm('verified:write')"
-          type="primary"
           :icon="Plus"
           @click="openCreate"
         >
@@ -77,7 +76,6 @@
         </div>
         <el-space>
           <el-button text :icon="Refresh" @click="handleRefresh">刷新</el-button>
-          <el-button v-if="hasPerm('verified:write')" type="success" size="small" @click="openQuickList">一键上架（选设备）</el-button>
         </el-space>
       </div>
 
@@ -286,15 +284,16 @@
           @keyup.enter="searchDevices"
         />
         <el-button type="primary" :loading="quickLoading" @click="searchDevices">查询设备</el-button>
+        <span class="quick-hint">默认展示待上架的库存设备，可多选批量上架</span>
       </div>
       <el-table
         :data="deviceList"
         style="width: 100%; margin-top: 12px"
         height="260"
         v-loading="quickLoading"
-        @row-click="row => (selectedDeviceId = row.id)"
-        :row-class-name="({ row }) => (row.id === selectedDeviceId ? 'is-selected' : '')"
+        @selection-change="handleQuickSelection"
       >
+        <el-table-column type="selection" width="48" />
         <el-table-column prop="sn" label="SN/序列号" width="180" />
         <el-table-column prop="brand" label="品牌" width="120" />
         <el-table-column prop="model" label="型号" />
@@ -346,7 +345,7 @@ const editingProduct = ref(null)
 const quickListDialogVisible = ref(false)
 const snSearch = ref('')
 const deviceList = ref([])
-const selectedDeviceId = ref(null)
+const selectedDeviceIds = ref([])
 const quickPrice = ref(null)
 const quickOriginalPrice = ref(null)
 const quickLoading = ref(false)
@@ -465,16 +464,17 @@ const handleSelectionChange = (selection) => {
 const openQuickList = () => {
   quickListDialogVisible.value = true
   deviceList.value = []
-  selectedDeviceId.value = null
+  selectedDeviceIds.value = []
   snSearch.value = ''
   quickPrice.value = null
   quickOriginalPrice.value = null
+  searchDevices()
 }
 
 const searchDevices = async () => {
   quickLoading.value = true
   try {
-    const params = { page_size: 20 }
+    const params = { page_size: 50, status: 'ready' }
     if (snSearch.value) params.search = snSearch.value
     const res = await adminApi.get('/verified-devices/', { params })
     deviceList.value = res.data?.results || []
@@ -485,9 +485,13 @@ const searchDevices = async () => {
   }
 }
 
+const handleQuickSelection = (selection) => {
+  selectedDeviceIds.value = selection.map(item => item.id)
+}
+
 const listSelectedDevice = async () => {
-  if (!selectedDeviceId.value) {
-    ElMessage.warning('请先选择设备')
+  if (!selectedDeviceIds.value.length) {
+    ElMessage.warning('请先选择库存设备')
     return
   }
   if (!quickPrice.value) {
@@ -496,10 +500,14 @@ const listSelectedDevice = async () => {
   }
   quickLoading.value = true
   try {
-    await adminApi.post(`/verified-devices/${selectedDeviceId.value}/list-product/`, {
+    const payload = {
       price: quickPrice.value,
       original_price: quickOriginalPrice.value
-    })
+    }
+    const requests = selectedDeviceIds.value.map(id =>
+      adminApi.post(`/verified-devices/${id}/list-product/`, payload)
+    )
+    await Promise.all(requests)
     ElMessage.success('上架成功')
     quickListDialogVisible.value = false
     loadProducts()
@@ -587,6 +595,14 @@ const resetFilters = () => {
   search.value = ''
   handleSearch()
 }
+
+const goOrders = () => {
+  window.location.href = '#/admin/verified-orders'
+}
+
+const goInventory = () => {
+  window.location.href = '#/admin/verified-devices'
+}
 </script>
 
 <style scoped>
@@ -594,6 +610,12 @@ const resetFilters = () => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.header-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .page-header {
@@ -670,5 +692,18 @@ const resetFilters = () => {
   font-size: 12px;
   text-decoration: line-through;
 }
-</style>
 
+.quick-list-search {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.quick-hint {
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.is-selected {
+  background: #f5f7fa;
+}
+</style>

@@ -383,9 +383,9 @@ async function handleSubmit() {
     // 清空草稿数据（可选，根据业务需求决定）
     // draft.resetEstimate();
     
-    // 跳转到订单详情页，让用户填写物流信息
+    // 跳转到回收订单详情页（用户端）
     const orderId = response.data.id;
-    router.push(`/recycle-orders/${orderId}`);
+    router.push(`/recycle-order/${orderId}`);
   } catch (error: any) {
     console.error("提交订单失败:", error);
     if (error !== "cancel") {
