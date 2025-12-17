@@ -34,15 +34,15 @@
     <el-card class="detail-section" shadow="never">
       <template #header>
         <div class="card-header">
-          <span>订单信息</span>
-          <div class="card-actions">
-            <el-button
-              v-if="hasPerm('verified:write')"
-              size="small"
-              type="primary"
-              plain
-              :loading="creatingDevice"
-              @click="createVerifiedDevice"
+        <span>订单信息</span>
+        <div class="card-actions">
+          <el-button
+            v-if="detail.status === 'completed' && hasPerm('verified:write')"
+            size="small"
+            type="primary"
+            plain
+            :loading="creatingDevice"
+            @click="createVerifiedDevice"
             >
               生成官方验库存
             </el-button>
@@ -143,8 +143,8 @@
       </el-descriptions>
     </el-card>
 
-    <!-- 质检报告 -->
-    <el-card class="detail-section" shadow="never">
+    <!-- 质检报告 / 检测详情（完成后在订单详情中展示） -->
+    <el-card v-if="!isShippedStage" class="detail-section" shadow="never">
       <template #header>
         <div class="card-header">
           <span>质检报告</span>
@@ -158,18 +158,11 @@
           </el-button>
         </div>
       </template>
-      <div v-if="detail.report">
-        <el-descriptions :column="1" border>
-          <el-descriptions-item label="质检时间">
-            {{ formatTime(detail.report.created_at) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="质检备注">
-            {{ detail.report.remarks || '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="检测项目">
-            <pre class="check-items">{{ JSON.stringify(detail.report.check_items, null, 2) }}</pre>
-          </el-descriptions-item>
-        </el-descriptions>
+      <div v-if="inspectionReportData">
+        <InspectionReport
+          :product-id="detail.id"
+          :report-data-prop="inspectionReportData"
+        />
       </div>
       <div v-else style="color: #909399; text-align: center; padding: 20px">
         <el-empty description="暂无质检报告" />
@@ -177,7 +170,7 @@
     </el-card>
 
     <!-- 价格管理 -->
-    <el-card v-if="canManagePrice" class="detail-section" shadow="never">
+    <el-card v-if="canManagePrice && !isShippedStage" class="detail-section" shadow="never">
       <template #header>
         <span>价格管理</span>
       </template>
@@ -225,7 +218,7 @@
             设置预估价格并标记为已估价
           </el-button>
           <el-button 
-            v-if="(detail.status === 'inspected' || detail.status === 'shipped') && hasPerm('inspection:price')"
+            v-if="detail.status === 'inspected' && hasPerm('inspection:price')"
             type="primary" 
             :loading="savingPrice" 
             @click="saveFinalPrice"
@@ -294,7 +287,7 @@
         
         <!-- 开始质检 -->
         <el-button
-          v-if="(detail.status === 'shipped' || detail.status === 'received') && hasPerm('inspection:write')"
+          v-if="detail.status === 'received' && hasPerm('inspection:write')"
           type="primary"
           @click="showReportDialog = true"
         >
@@ -336,10 +329,13 @@
         >
           打款给用户
         </el-button>
-        <!-- 打款调试信息 -->
-        <el-tag v-if="!canShowPaymentButton && detail.status === 'completed' && detail.payment_status !== 'paid'" 
-                type="info" size="small" style="margin-left: 8px">
-          权限不足或无最终价格
+        <el-tag
+          v-if="paymentBlockedReason"
+          type="info"
+          size="small"
+          style="margin-left: 8px"
+        >
+          {{ paymentBlockedReason }}
         </el-tag>
         
         <!-- 发布为官方验商品 -->
@@ -394,13 +390,28 @@
                         <el-option label="正常" :value="true" />
                         <el-option label="异常" :value="false" />
                       </el-select>
-                      <el-input 
-                        v-if="!item.pass" 
-                        v-model="item.image" 
-                        placeholder="异常图片URL" 
-                        size="small" 
-                        style="width: 200px;"
-                      />
+                      <div v-if="!item.pass" class="item-image">
+                        <el-input
+                          v-model="item.image"
+                          placeholder="异常图片URL"
+                          size="small"
+                          style="width: 200px;"
+                        />
+                        <el-upload
+                          :show-file-list="false"
+                          accept="image/*"
+                          :http-request="(options) => handleInspectionImageUpload(options, item)"
+                        >
+                          <el-button size="small" :icon="Plus">上传</el-button>
+                        </el-upload>
+                        <el-image
+                          v-if="item.image"
+                          class="item-image-thumb"
+                          :src="normalizeToUrl(item.image)"
+                          fit="cover"
+                          @click="openInspectionPreview(item.image)"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -418,13 +429,28 @@
                         <el-option label="正常" :value="true" />
                         <el-option label="异常" :value="false" />
                       </el-select>
-                      <el-input 
-                        v-if="!item.pass" 
-                        v-model="item.image" 
-                        placeholder="异常图片URL" 
-                        size="small" 
-                        style="width: 200px;"
-                      />
+                      <div v-if="!item.pass" class="item-image">
+                        <el-input
+                          v-model="item.image"
+                          placeholder="异常图片URL"
+                          size="small"
+                          style="width: 200px;"
+                        />
+                        <el-upload
+                          :show-file-list="false"
+                          accept="image/*"
+                          :http-request="(options) => handleInspectionImageUpload(options, item)"
+                        >
+                          <el-button size="small" :icon="Plus">上传</el-button>
+                        </el-upload>
+                        <el-image
+                          v-if="item.image"
+                          class="item-image-thumb"
+                          :src="normalizeToUrl(item.image)"
+                          fit="cover"
+                          @click="openInspectionPreview(item.image)"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -439,13 +465,28 @@
                         <el-option label="正常" :value="true" />
                         <el-option label="异常" :value="false" />
                       </el-select>
-                      <el-input 
-                        v-if="!item.pass" 
-                        v-model="item.image" 
-                        placeholder="异常图片URL" 
-                        size="small" 
-                        style="width: 200px;"
-                      />
+                      <div v-if="!item.pass" class="item-image">
+                        <el-input
+                          v-model="item.image"
+                          placeholder="异常图片URL"
+                          size="small"
+                          style="width: 200px;"
+                        />
+                        <el-upload
+                          :show-file-list="false"
+                          accept="image/*"
+                          :http-request="(options) => handleInspectionImageUpload(options, item)"
+                        >
+                          <el-button size="small" :icon="Plus">上传</el-button>
+                        </el-upload>
+                        <el-image
+                          v-if="item.image"
+                          class="item-image-thumb"
+                          :src="normalizeToUrl(item.image)"
+                          fit="cover"
+                          @click="openInspectionPreview(item.image)"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -460,13 +501,28 @@
                         <el-option label="正常" :value="true" />
                         <el-option label="异常" :value="false" />
                       </el-select>
-                      <el-input 
-                        v-if="!item.pass" 
-                        v-model="item.image" 
-                        placeholder="异常图片URL" 
-                        size="small" 
-                        style="width: 200px;"
-                      />
+                      <div v-if="!item.pass" class="item-image">
+                        <el-input
+                          v-model="item.image"
+                          placeholder="异常图片URL"
+                          size="small"
+                          style="width: 200px;"
+                        />
+                        <el-upload
+                          :show-file-list="false"
+                          accept="image/*"
+                          :http-request="(options) => handleInspectionImageUpload(options, item)"
+                        >
+                          <el-button size="small" :icon="Plus">上传</el-button>
+                        </el-upload>
+                        <el-image
+                          v-if="item.image"
+                          class="item-image-thumb"
+                          :src="normalizeToUrl(item.image)"
+                          fit="cover"
+                          @click="openInspectionPreview(item.image)"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -484,13 +540,28 @@
                         <el-option label="正常" :value="true" />
                         <el-option label="异常" :value="false" />
                       </el-select>
-                      <el-input 
-                        v-if="!item.pass" 
-                        v-model="item.image" 
-                        placeholder="异常图片URL" 
-                        size="small" 
-                        style="width: 200px;"
-                      />
+                      <div v-if="!item.pass" class="item-image">
+                        <el-input
+                          v-model="item.image"
+                          placeholder="异常图片URL"
+                          size="small"
+                          style="width: 200px;"
+                        />
+                        <el-upload
+                          :show-file-list="false"
+                          accept="image/*"
+                          :http-request="(options) => handleInspectionImageUpload(options, item)"
+                        >
+                          <el-button size="small" :icon="Plus">上传</el-button>
+                        </el-upload>
+                        <el-image
+                          v-if="item.image"
+                          class="item-image-thumb"
+                          :src="normalizeToUrl(item.image)"
+                          fit="cover"
+                          @click="openInspectionPreview(item.image)"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -508,13 +579,28 @@
                         <el-option label="正常" :value="true" />
                         <el-option label="异常" :value="false" />
                       </el-select>
-                      <el-input 
-                        v-if="!item.pass" 
-                        v-model="item.image" 
-                        placeholder="异常图片URL" 
-                        size="small" 
-                        style="width: 200px;"
-                      />
+                      <div v-if="!item.pass" class="item-image">
+                        <el-input
+                          v-model="item.image"
+                          placeholder="异常图片URL"
+                          size="small"
+                          style="width: 200px;"
+                        />
+                        <el-upload
+                          :show-file-list="false"
+                          accept="image/*"
+                          :http-request="(options) => handleInspectionImageUpload(options, item)"
+                        >
+                          <el-button size="small" :icon="Plus">上传</el-button>
+                        </el-upload>
+                        <el-image
+                          v-if="item.image"
+                          class="item-image-thumb"
+                          :src="normalizeToUrl(item.image)"
+                          fit="cover"
+                          @click="openInspectionPreview(item.image)"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -635,6 +721,19 @@
         </el-button>
       </template>
     </el-dialog>
+
+
+    <!-- 参考用户端回收订单详情的全屏预览效果（Teleport 到 body，避免被管理端布局 transform/overflow 限制） -->
+    <teleport to="body">
+      <el-image-viewer
+        v-if="inspectionPreviewVisible"
+        :url-list="inspectionPreviewSrcList"
+        :initial-index="0"
+        teleported
+        show-progress
+        @close="inspectionPreviewVisible = false"
+      />
+    </teleport>
   </div>
 </template>
 
@@ -643,8 +742,10 @@ import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import adminApi from '@/utils/adminApi'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Loading, Clock } from '@element-plus/icons-vue'
+import { Check, Loading, Clock, Plus } from '@element-plus/icons-vue'
 import { useAdminAuthStore } from '@/stores/adminAuth'
+import InspectionReport from '@/components/InspectionReport.vue'
+import { getImageUrl } from '@/utils/image'
 
 const router = useRouter()
 
@@ -674,6 +775,8 @@ const creatingDevice = ref(false)
 const showReportDialog = ref(false)
 const priceDialogVisible = ref(false)
 const showPaymentDialog = ref(false)
+const inspectionPreviewVisible = ref(false)
+const inspectionPreviewSrcList = ref([])
 
 const priceForm = reactive({
   estimated_price: 0,
@@ -686,6 +789,85 @@ const reportForm = reactive({
   checkItemsJson: '{}',
   final_price: 0,
   bonus: 0
+})
+
+const uploadEndpoint = import.meta.env.VITE_ADMIN_UPLOAD_URL || '/uploads/images/'
+const normalizeToUrl = (url) => (url ? getImageUrl(url) || url : '')
+
+const openInspectionPreview = (url) => {
+  const resolved = normalizeToUrl(url)
+  if (!resolved) return
+  inspectionPreviewSrcList.value = [resolved]
+  inspectionPreviewVisible.value = true
+}
+
+const handleInspectionImageUpload = async (options, item) => {
+  const { file, onError, onSuccess } = options
+  const formData = new FormData()
+  formData.append('file', file)
+  try {
+    const res = await adminApi.post(uploadEndpoint, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    const url = res.data?.url || res.data?.image || res.data?.path
+    if (!url) throw new Error('上传返回空URL')
+    item.image = url
+    onSuccess?.(res.data)
+  } catch (err) {
+    ElMessage.error('上传失败')
+    onError?.(err)
+  }
+}
+
+// 检测详情（供 InspectionReport 展示）
+const inspectionReportData = computed(() => {
+  if (!detail.value || !detail.value.report) return null
+  const baseInfo = {
+    model: `${detail.value.brand || ''} ${detail.value.model || ''}`.trim(),
+    level: `外观 ${getConditionText(detail.value.condition) || ''}`,
+    spec: detail.value.storage || '',
+    color: detail.value.selected_color || detail.value.color || '',
+    price: detail.value.final_price || detail.value.estimated_price || '',
+    coverImage: detail.value.cover_image || ''
+  }
+
+  let categories = detail.value.report.categories || []
+  const checkItems = detail.value.report.check_items
+
+  if ((!categories || categories.length === 0) && checkItems) {
+    if (Array.isArray(checkItems) && checkItems.length) {
+      // 若本身是分类结构（带 title / groups），直接使用
+      if (checkItems[0].title || checkItems[0].groups) {
+        categories = checkItems
+      } else {
+        categories = [{
+          title: '检测结果',
+          groups: [{
+            name: '',
+            items: checkItems.map(item => ({
+              label: item.label || item.key || '',
+              value: item.value ?? item.result ?? '',
+              pass: typeof item.pass === 'boolean' ? item.pass : (item.value === 'pass' || item.value === true)
+            }))
+          }]
+        }]
+      }
+    } else if (typeof checkItems === 'object') {
+      categories = [{
+        title: '检测结果',
+        groups: [{
+          name: '',
+          items: Object.entries(checkItems).map(([key, val]) => ({
+            label: key,
+            value: val,
+            pass: val === 'pass' || val === true
+          }))
+        }]
+      }]
+    }
+  }
+
+  return { baseInfo, categories }
 })
 
 // 质检报告数据结构
@@ -930,25 +1112,35 @@ const paymentForm = reactive({
 // 打款按钮显示条件计算属性
 const canShowPaymentButton = computed(() => {
   if (!detail.value) return false
-  
-  const hasCorrectStatus = ['completed', 'inspected'].includes(detail.value.status)
+
+  const isCompleted = detail.value.status === 'completed'
   const notPaid = detail.value.payment_status !== 'paid'
   const hasFinalPrice = !!detail.value.final_price
+  const isConfirmed = !!detail.value.final_price_confirmed
+  const noDispute = !detail.value.price_dispute
   const hasPermission = hasPerm('inspection:payment')
-  
-  // 调试信息
-  console.log('打款按钮条件检查:', {
-    hasCorrectStatus,
-    notPaid,
-    hasFinalPrice,
-    hasPermission,
-    currentStatus: detail.value.status,
-    paymentStatus: detail.value.payment_status,
-    finalPrice: detail.value.final_price,
-    permissions: admin.user?.value?.permissions
-  })
-  
-  return hasCorrectStatus && notPaid && hasFinalPrice && hasPermission
+
+  return (
+    isCompleted &&
+    notPaid &&
+    hasFinalPrice &&
+    isConfirmed &&
+    noDispute &&
+    hasPermission
+  )
+})
+
+const paymentBlockedReason = computed(() => {
+  if (!detail.value) return ''
+  if (detail.value.payment_status === 'paid') return ''
+  if (canShowPaymentButton.value) return ''
+
+  if (!detail.value.final_price) return '未设置最终价格'
+  if (detail.value.price_dispute) return '用户已提交价格异议'
+  if (!detail.value.final_price_confirmed) return '等待用户确认最终价格'
+  if (detail.value.status !== 'completed') return '订单未完成，无法打款'
+  if (!hasPerm('inspection:payment')) return '无打款权限'
+  return '暂无法打款'
 })
 
 // 流程步骤
@@ -1018,13 +1210,14 @@ const canCreateReport = computed(() => {
 })
 
 const canManagePrice = computed(() => {
-  return ['pending', 'quoted', 'shipped', 'inspected'].includes(detail.value.status)
+  return detail.value && ['pending', 'received', 'inspected'].includes(detail.value.status)
 })
+
+const isShippedStage = computed(() => detail.value?.status === 'shipped')
 
 const loadDetail = async () => {
   loading.value = true
   try {
-    detail.value = {}
     const res = await adminApi.get(`/inspection-orders/${props.orderId}`)
     if (res.data?.success) {
       detail.value = res.data.item || {}
@@ -1553,5 +1746,20 @@ onMounted(() => {
   min-width: 120px;
   font-size: 13px;
   color: #606266;
+}
+
+.item-image {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-image-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid #e6e8ee;
+  background: #fff;
+  cursor: pointer;
 }
 </style>

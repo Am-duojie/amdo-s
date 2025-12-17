@@ -323,7 +323,8 @@ const canOperate = (row) => {
 
 const getActionText = (row) => {
   if (row.status === 'pending') return '估价'
-  if (row.status === 'shipped' || row.status === 'received') return '质检'
+  if (row.status === 'shipped') return '确认收货'
+  if (row.status === 'received') return '质检'
   if (row.status === 'inspected') return '完成订单'
   if (row.status === 'completed' && row.payment_status !== 'paid') return '打款'
   return '处理'
@@ -408,6 +409,7 @@ const viewDetail = (row) => {
 }
 
 const closeDetailDialog = () => {
+  detailDialogVisible.value = false
   currentOrder.value = null
 }
 

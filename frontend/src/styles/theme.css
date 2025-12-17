@@ -133,7 +133,16 @@
   box-shadow: 0 0 0 1px #ff6a00 inset;
 }
 
+/* 强制 Element Plus 图片预览全屏（避免被容器 overflow/定位上下文裁剪） */
+.el-image-viewer__wrapper,
+.el-image-viewer__mask {
+  position: fixed !important;
+  inset: 0 !important;
+}
 
+.el-image-viewer__wrapper {
+  z-index: 10000 !important;
+}
 
 
 

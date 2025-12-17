@@ -158,34 +158,22 @@
           </div>
         </el-card>
 
-        <!-- 质检报告 -->
-        <el-card class="info-card" v-if="inspectionReport">
-          <template #header>
-            <span>质检报告</span>
-          </template>
-          <div class="inspection-report">
-            <div class="report-time" v-if="inspectionReport.created_at">
-              <span class="label">质检时间：</span>
-              <span class="value">{{ formatDate(inspectionReport.created_at) }}</span>
-            </div>
-            <div class="report-items" v-if="inspectionReport.check_items">
-              <div 
-                v-for="(value, key) in inspectionReport.check_items" 
-                :key="key"
-                class="check-item"
-              >
-                <span class="check-label">{{ getCheckItemLabel(key) }}：</span>
-                <el-tag :type="value === 'pass' || value === true ? 'success' : 'danger'" size="small">
-                  {{ getCheckItemValue(value) }}
-                </el-tag>
-              </div>
-            </div>
-            <div class="report-remarks" v-if="inspectionReport.remarks">
-              <span class="label">质检备注：</span>
-              <p class="value">{{ inspectionReport.remarks }}</p>
+        <!-- 质检报告（外观对齐「官验商品详情」的验机评估报告区块） -->
+        <div class="inspection-shell" v-if="shouldShowInspectionReport">
+          <div class="detail-block inspection-block">
+            <div class="block-title">质检评估报告</div>
+            <InspectionReport
+              v-if="inspectionReportForUi"
+              :product-id="order.id"
+              :report-data-prop="inspectionReportForUi"
+            />
+            <div v-else class="inspection-report-empty empty-report">
+              <el-empty :description="reportMissing ? '质检报告暂未生成，可联系客服查询' : '质检报告生成中，稍后查看'">
+                <el-button type="primary" plain @click="contactSupport">联系官方客服</el-button>
+              </el-empty>
             </div>
           </div>
-        </el-card>
+        </div>
 
         <!-- 打款信息 -->
         <el-card class="info-card" v-if="order.payment_status !== 'pending' || order.paid_at">
@@ -221,100 +209,67 @@
         <!-- 操作区域 -->
         <el-card class="action-card">
           <div class="action-buttons">
-            <!-- 待估价状态：填写物流信息 -->
             <template v-if="order.status === 'pending'">
-              <el-alert type="info" :closable="false" style="margin-bottom: 16px;">
-                订单已提交，请填写物流信息并寄出设备
-              </el-alert>
-              <el-button type="primary" size="large" @click="showShippingDialog = true">
-                填写物流信息
-              </el-button>
+              <el-alert type="info" :closable="false" style="margin-bottom: 16px;">订单已提交，请填写物流信息并寄出设备</el-alert>
+              <el-button type="primary" size="large" @click="showShippingDialog = true">填写物流信息</el-button>
             </template>
 
-            <!-- 已寄出状态：等待平台收货 -->
-            <template v-if="order.status === 'shipped'">
-              <el-alert type="info" :closable="false" style="margin-bottom: 16px;">
-                订单已提交，设备已寄出，等待平台收货
-              </el-alert>
+            <template v-else-if="order.status === 'shipped'">
+              <el-alert type="info" :closable="false" style="margin-bottom: 16px;">设备已寄出，等待平台收货与质检</el-alert>
             </template>
 
-            <!-- 已寄出状态：等待平台收货 -->
-            <template v-if="order.status === 'shipped'">
-              <el-alert type="info" :closable="false" style="margin-bottom: 16px;">
-                订单已提交，设备已寄出，等待平台收货
-              </el-alert>
+            <template v-else-if="order.status === 'received'">
+              <el-alert type="info" :closable="false" style="margin-bottom: 16px;">平台已收货，等待质检中...</el-alert>
             </template>
-            
-            <!-- 已收货状态：等待质检 -->
-            <template v-if="order.status === 'received'">
-              <el-alert type="info" :closable="false" style="margin-bottom: 16px;">
-                平台已收货，等待质检中
+
+            <template v-else-if="['inspected', 'completed'].includes(order.status) && order.price_dispute">
+              <el-alert type="warning" :closable="false" style="margin-bottom: 16px;">
+                <template #title>已提交最终价格异议，等待平台处理</template>
+                <div v-if="order.price_dispute_reason" style="margin-top: 8px; color: #606266;">
+                  异议原因：{{ order.price_dispute_reason }}
+                </div>
               </el-alert>
+              <el-button type="warning" size="large" @click="showFinalDisputeDialog = true">补充/修改异议</el-button>
+              <el-button type="primary" plain size="large" @click="contactSupport">联系官方客服</el-button>
+              <el-button type="danger" plain size="large" @click="cancelOrder">取消订单</el-button>
             </template>
-            
-            <!-- 已检测状态：等待完成 -->
-            <template v-if="order.status === 'inspected'">
+
+            <template v-else-if="['inspected', 'completed'].includes(order.status) && !order.final_price_confirmed">
               <el-alert type="success" :closable="false" style="margin-bottom: 16px;">
-                质检已完成，等待最终确认
-              </el-alert>
-            </template>
-
-            <!-- 已寄出状态：等待平台检测 -->
-            <template v-if="order.status === 'shipped'">
-              <el-alert type="info" :closable="false">
-                设备已寄出，等待平台收到并检测中...
-              </el-alert>
-            </template>
-
-            <!-- 已检测状态：确认最终价格或提出异议 -->
-            <template v-if="order.status === 'inspected' && !order.final_price_confirmed">
-              <el-alert type="info" :closable="false" style="margin-bottom: 16px;">
-                <template #title>
-                  质检已完成，请确认最终价格
-                </template>
+                <template #title>质检已完成，请确认最终价格</template>
                 <div style="margin-top: 8px;">
                   <div style="font-size: 16px; margin-bottom: 8px;">
                     最终价格: <span style="color: #f56c6c; font-weight: bold; font-size: 20px;">¥{{ order.final_price }}</span>
-                    <span v-if="order.bonus > 0" style="color: #67c23a; font-size: 16px; margin-left: 8px;">
-                      + 加价 ¥{{ order.bonus }}
-                    </span>
+                    <span v-if="order.bonus > 0" style="color: #67c23a; font-size: 16px; margin-left: 8px;">+ 加价 ¥{{ order.bonus }}</span>
                   </div>
-                  <div v-if="order.bonus > 0" style="font-size: 18px; color: #ff6600; font-weight: bold;">
-                    实付金额: ¥{{ (parseFloat(order.final_price) + parseFloat(order.bonus || 0)).toFixed(2) }}
-                  </div>
+                  <div v-if="order.bonus > 0" style="font-size: 18px; color: #ff6600; font-weight: bold;">实付金额: ¥{{ (parseFloat(order.final_price) + parseFloat(order.bonus || 0)).toFixed(2) }}</div>
                 </div>
               </el-alert>
-              <el-button type="primary" size="large" @click="confirmFinalPrice">
-                确认最终价格
-              </el-button>
-              <el-button type="warning" size="large" @click="showFinalDisputeDialog = true">
-                对最终价格有异议
-              </el-button>
-            </template>
-            
-            <!-- 已检测但等待确认 -->
-            <template v-if="order.status === 'inspected' && order.final_price_confirmed">
-              <el-alert type="success" :closable="false">
-                您已确认最终价格，订单正在进入打款阶段...
-              </el-alert>
+              <el-button type="primary" size="large" @click="confirmFinalPrice">确认最终价格</el-button>
+              <el-button type="warning" size="large" @click="showFinalDisputeDialog = true">对最终价格有异议</el-button>
+              <el-button type="primary" plain size="large" @click="contactSupport">联系官方客服</el-button>
+              <el-button type="danger" plain size="large" @click="cancelOrder">取消订单</el-button>
             </template>
 
-            <!-- 已完成状态：等待打款 -->
-            <template v-if="order.status === 'completed'">
-              <el-alert type="success" :closable="false" v-if="order.payment_status === 'paid'">
-                订单已完成，打款已完成！
-              </el-alert>
-              <el-alert type="info" :closable="false" v-else>
-                订单已完成，等待平台打款中...
-              </el-alert>
+            <template v-else-if="showPaymentPending">
+              <el-alert type="warning" :closable="false" style="margin-bottom: 12px;">质检已完成，平台正在安排打款。</el-alert>
+              <div class="cta-row">
+                <el-button type="warning" plain size="large" @click="showFinalDisputeDialog = true">对最终价格有异议</el-button>
+                <el-button type="danger" plain size="large" @click="cancelOrder">取消订单</el-button>
+                <el-button type="primary" plain size="large" @click="contactSupport">联系官方客服</el-button>
+              </div>
             </template>
 
-            <!-- 已取消状态 -->
-            <template v-if="order.status === 'cancelled'">
-              <el-alert type="warning" :closable="false">
-                订单已取消
-                <span v-if="order.reject_reason">：{{ order.reject_reason }}</span>
-              </el-alert>
+            <template v-else-if="order.status === 'completed' && order.payment_status === 'paid'">
+              <el-alert type="success" :closable="false">订单已完成，打款已完成！</el-alert>
+            </template>
+
+            <template v-else-if="order.status === 'cancelled'">
+              <el-alert type="warning" :closable="false">订单已取消，感谢您的支持。</el-alert>
+            </template>
+
+            <template v-else-if="order.payment_status === 'failed'">
+              <el-alert type="error" :closable="false">打款失败，请联系客服处理。</el-alert>
             </template>
           </div>
         </el-card>
@@ -368,13 +323,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import BaseCard from '@/components/BaseCard.vue'
 import OrderSteps from '@/components/OrderSteps.vue'
+import InspectionReport from '@/components/InspectionReport.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -383,6 +339,83 @@ const loading = ref(false)
 const submitting = ref(false)
 const order = ref(null)
 const inspectionReport = ref(null)
+const reportMissing = ref(false)
+const normalizedReport = computed(() => {
+  if (!inspectionReport.value) return {}
+  // 已标准化结构（含 categories）
+  if (inspectionReport.value.categories) return { categories: inspectionReport.value.categories }
+  // 如果 check_items 是数组，可能是分类数组或扁平项数组
+  if (Array.isArray(inspectionReport.value.check_items)) {
+    const arr = inspectionReport.value.check_items
+    // 判断是否包含 title/group 结构
+    if (arr.length && (arr[0].title || arr[0].groups)) {
+      return { categories: arr }
+    }
+    // 否则当作扁平数组，元素里应有 label/value/pass
+    return { items: arr.map(item => ({
+      label: item.label || item.key || '',
+      value: item.value,
+      pass: typeof item.pass === 'boolean' ? item.pass : (item.value === 'pass' || item.value === true)
+    })) }
+  }
+  return {}
+})
+const inspectionReportForUi = computed(() => {
+  if (!inspectionReport.value || !order.value) return null
+
+  const baseInfo = {
+    model: `${order.value.brand || ''} ${order.value.model || ''}`.trim(),
+    level: `外观 ${getConditionText(order.value.condition) || ''}`,
+    spec: order.value.storage || '',
+    color: order.value.selected_color || order.value.color || '',
+    price: order.value.final_price || order.value.estimated_price || '',
+    coverImage: order.value.cover_image || ''
+  }
+
+  const norm = normalizedReport.value || {}
+  let categories = []
+
+  if (norm.categories && norm.categories.length) {
+    categories = norm.categories
+  } else if (Array.isArray(norm.items) && norm.items.length) {
+    categories = [{
+      title: '检测结果',
+      groups: [{
+        name: '',
+        items: norm.items.map(item => ({
+          label: item.label || item.key || '',
+          value: item.value ?? '',
+          pass: typeof item.pass === 'boolean' ? item.pass : (item.value === 'pass' || item.value === true)
+        }))
+      }]
+    }]
+  } else if (inspectionReport.value.check_items) {
+    categories = [{
+      title: '检测结果',
+      groups: [{
+        name: '',
+        items: Object.entries(inspectionReport.value.check_items).map(([key, val]) => ({
+          label: key,
+          value: val,
+          pass: val === 'pass' || val === true
+        }))
+      }]
+    }]
+  }
+
+  if (!categories.length) return null
+  return { baseInfo, categories }
+})
+const showPaymentPending = computed(() => {
+  if (!order.value) return false
+  if (order.value.payment_status === 'paid') return false
+  if (order.value.price_dispute) return false
+  return order.value.status === 'completed' && !!order.value.final_price_confirmed
+})
+const shouldShowInspectionReport = computed(() => {
+  if (!order.value) return false
+  return ['inspected', 'completed'].includes(order.value.status)
+})
 
 const showShippingDialog = ref(false)
 const showFinalDisputeDialog = ref(false)
@@ -397,7 +430,7 @@ const finalDisputeForm = ref({
 })
 
 const statusMap = {
-  pending: '待估价',
+  pending: '待寄出',
   received: '已收货',
   shipped: '已寄出',
   inspected: '已检测',
@@ -519,14 +552,31 @@ const loadOrderDetail = async () => {
     const orderId = route.params.id
     const res = await api.get(`/recycle-orders/${orderId}/`)
     order.value = res.data
+    // 先用订单自带的质检报告字段兜底（不同接口字段名可能不一致）
+    if (order.value?.inspection_report) inspectionReport.value = order.value.inspection_report
+    if (order.value?.inspection_reports) inspectionReport.value = order.value.inspection_reports
+    if (order.value?.report) inspectionReport.value = order.value.report
 
     // 加载质检报告
+    const fetchReport = async (path) => {
+      const res = await api.get(path)
+      const data = res.data?.report || res.data?.data || res.data
+      if (data && Object.keys(data).length > 0) {
+        inspectionReport.value = data
+        reportMissing.value = false
+        return true
+      }
+      return false
+    }
     try {
-      const reportRes = await api.get(`/recycle-orders/${orderId}/inspection-report/`)
-      inspectionReport.value = reportRes.data
+      // 优先尝试后端下划线路径
+      const ok = await fetchReport(`/recycle-orders/${orderId}/inspection_report/`)
+      if (!ok) {
+        await fetchReport(`/recycle-orders/${orderId}/inspection-report/`)
+      }
     } catch (error) {
-      // 如果没有质检报告，忽略错误
-      inspectionReport.value = null
+      if (!inspectionReport.value) inspectionReport.value = null
+      reportMissing.value = true
     }
 
 
@@ -645,6 +695,14 @@ const cancelOrder = async () => {
   }
 }
 
+const contactSupport = () => {
+  ElMessageBox.alert(
+    '请通过右侧客服入口或拨打客服电话 400-000-0000 与官方客服沟通。',
+    '联系客服',
+    { confirmButtonText: '知道了' }
+  )
+}
+
 onMounted(() => {
   loadOrderDetail()
 })
@@ -680,6 +738,36 @@ onMounted(() => {
   flex-direction: column;
   gap: 20px;
 }
+
+/* 强制质检报告分栏，保持与官方验详情一致 */
+.detail-block {
+  margin-top: 24px;
+}
+
+.block-title {
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.inspection-shell {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  padding: 20px;
+}
+
+.inspection-block {
+  background: var(--bg-page, #f5f7fa);
+  padding: 40px 20px;
+  border-radius: 16px;
+  margin-top: 24px;
+}
+
+.inspection-block .block-title {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
 
 .info-card {
   border-radius: 12px;
@@ -773,7 +861,7 @@ onMounted(() => {
   gap: 12px;
 }
 
-.inspection-report {
+.inspection-report-empty {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -875,4 +963,3 @@ onMounted(() => {
   }
 }
 </style>
-

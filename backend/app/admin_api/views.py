@@ -776,14 +776,19 @@ class InspectionOrderPriceView(APIView):
             elif price_type == 'final' and final_price is not None:
                 # 更新最终价格（质检后）
                 try:
+                    if o.payment_status == 'paid':
+                        return Response({'success': False, 'detail': '订单已打款，无法修改最终价格'}, status=400)
+                    if o.status not in ['inspected', 'completed']:
+                        return Response({'success': False, 'detail': f'订单状态必须是已检测/已完成才能设置最终价格，当前状态: {o.status}'}, status=400)
+
                     final_price = float(final_price)
                     bonus = float(bonus) if bonus else 0
                     old_final_price = o.final_price
                     o.final_price = final_price
                     o.bonus = bonus
-                    # 如果订单还未完成，且最终价格已设置，可以标记为已完成
-                    if o.status == 'inspected' and not o.payment_status == 'paid':
-                        o.status = 'completed'
+                    # 最终价格变更后需要用户重新确认
+                    o.final_price_confirmed = False
+                    o.status = 'inspected'
                     # 清除价格异议标记
                     if o.price_dispute:
                         o.price_dispute = False
@@ -829,18 +834,24 @@ class InspectionOrderPaymentView(APIView):
             o = RecycleOrder.objects.get(id=order_id)
             if not o.final_price:
                 return Response({'success': False, 'detail': '订单尚未确定最终价格'}, status=400)
-            # 允许已完成或已检测状态的订单打款（只要有最终价格）
-            if o.status not in ['completed', 'inspected']:
+            # 用户尚未确认/已提交价格异议时，不允许直接打款
+            if getattr(o, 'price_dispute', False):
+                return Response({'success': False, 'detail': '用户已提交价格异议，暂无法打款'}, status=400)
+            if not getattr(o, 'final_price_confirmed', False):
+                return Response({'success': False, 'detail': '用户尚未确认最终价格，暂无法打款'}, status=400)
+
+            # 仅允许已完成的订单打款（由用户确认价格后自动进入 completed）
+            if o.status != 'completed':
                 return Response({
-                    'success': False, 
-                    'detail': f'订单状态必须是已完成或已检测才能打款，当前状态: {o.status}',
+                    'success': False,
+                    'detail': f'订单状态必须是已完成才能打款，当前状态: {o.status}',
                     'current_status': o.status,
-                    'required_status': ['completed', 'inspected']
+                    'required_status': ['completed']
                 }, status=400)
             # 如果已经打款成功，不允许重复打款
             if o.payment_status == 'paid':
                 return Response({
-                    'success': False, 
+                    'success': False,
                     'detail': '订单已打款，无法重复打款',
                     'payment_status': o.payment_status
                 }, status=400)
@@ -1153,6 +1164,8 @@ class AdminVerifiedProductPublishView(APIView):
             obj = VerifiedProduct.objects.get(id=pk)
         except VerifiedProduct.DoesNotExist:
             return Response({'detail': 'Not found'}, status=404)
+        if obj.stock <= 0:
+            return Response({'detail': '库存为0，无法上架'}, status=400)
         obj.status = 'active'
         obj.published_at = timezone.now()
         obj.save()
@@ -1319,9 +1332,9 @@ class AdminVerifiedDeviceListProductView(APIView):
         except VerifiedDevice.DoesNotExist:
             return Response({'detail': '设备不存在'}, status=404)
 
-        # 允许前端覆盖售价/状态，否则用设备建议价，默认草稿
+        # 允许前端覆盖售价/状态，否则用设备建议价，默认上架
         price_override = request.data.get('price')
-        status_override = request.data.get('status', 'draft')
+        status_override = request.data.get('status', 'active')
 
         try:
             product = create_verified_product_from_device(device, status=status_override)
@@ -1571,7 +1584,10 @@ class VerifiedListingsView(APIView):
         try:
             v = VerifiedProduct.objects.get(id=item_id)
             if action == 'publish':
+                if v.stock <= 0:
+                    return Response({'success': False, 'detail': '库存为0，无法上架'}, status=400)
                 v.status = 'active'
+                v.published_at = timezone.now()
             elif action == 'unpublish':
                 v.status = 'removed'
             elif action == 'audit-approve':

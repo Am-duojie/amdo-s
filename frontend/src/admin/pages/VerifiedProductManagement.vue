@@ -502,7 +502,8 @@ const listSelectedDevice = async () => {
   try {
     const payload = {
       price: quickPrice.value,
-      original_price: quickOriginalPrice.value
+      original_price: quickOriginalPrice.value,
+      status: 'active'
     }
     const requests = selectedDeviceIds.value.map(id =>
       adminApi.post(`/verified-devices/${id}/list-product/`, payload)

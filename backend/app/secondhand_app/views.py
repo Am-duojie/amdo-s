@@ -1275,6 +1275,10 @@ class RecycleOrderViewSet(viewsets.ModelViewSet):
         # 检查订单状态是否为已检测
         if order.status != 'inspected':
             return Response({'detail': '订单状态不正确，只有已检测状态的订单才能确认价格'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 已提交价格异议时，不允许直接确认，需等待处理/重新报价
+        if order.price_dispute:
+            return Response({'detail': '已提交价格异议，暂无法确认最终价格'}, status=status.HTTP_400_BAD_REQUEST)
         
         # 检查是否有最终价格
         if not order.final_price:

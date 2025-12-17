@@ -150,13 +150,28 @@
                       <el-option label="正常" :value="true" />
                       <el-option label="异常" :value="false" />
                     </el-select>
-                    <el-input 
-                      v-if="!item.pass" 
-                      v-model="item.image" 
-                      placeholder="异常图片URL" 
-                      size="small" 
-                      style="width: 200px;"
-                    />
+                    <div v-if="!item.pass" class="item-image">
+                      <el-input
+                        v-model="item.image"
+                        placeholder="异常图片URL"
+                        size="small"
+                        style="width: 200px;"
+                      />
+                      <el-upload
+                        :show-file-list="false"
+                        accept="image/*"
+                        :http-request="(options) => handleInspectionImageUpload(options, item)"
+                      >
+                        <el-button size="small" :icon="Plus">上传</el-button>
+                      </el-upload>
+                      <el-image
+                        v-if="item.image"
+                        class="item-image-thumb"
+                        :src="normalizeToUrl(item.image)"
+                        fit="cover"
+                        @click="openInspectionPreview(item.image)"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -174,13 +189,28 @@
                       <el-option label="正常" :value="true" />
                       <el-option label="异常" :value="false" />
                     </el-select>
-                    <el-input 
-                      v-if="!item.pass" 
-                      v-model="item.image" 
-                      placeholder="异常图片URL" 
-                      size="small" 
-                      style="width: 200px;"
-                    />
+                    <div v-if="!item.pass" class="item-image">
+                      <el-input
+                        v-model="item.image"
+                        placeholder="异常图片URL"
+                        size="small"
+                        style="width: 200px;"
+                      />
+                      <el-upload
+                        :show-file-list="false"
+                        accept="image/*"
+                        :http-request="(options) => handleInspectionImageUpload(options, item)"
+                      >
+                        <el-button size="small" :icon="Plus">上传</el-button>
+                      </el-upload>
+                      <el-image
+                        v-if="item.image"
+                        class="item-image-thumb"
+                        :src="normalizeToUrl(item.image)"
+                        fit="cover"
+                        @click="openInspectionPreview(item.image)"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -195,13 +225,28 @@
                       <el-option label="正常" :value="true" />
                       <el-option label="异常" :value="false" />
                     </el-select>
-                    <el-input 
-                      v-if="!item.pass" 
-                      v-model="item.image" 
-                      placeholder="异常图片URL" 
-                      size="small" 
-                      style="width: 200px;"
-                    />
+                    <div v-if="!item.pass" class="item-image">
+                      <el-input
+                        v-model="item.image"
+                        placeholder="异常图片URL"
+                        size="small"
+                        style="width: 200px;"
+                      />
+                      <el-upload
+                        :show-file-list="false"
+                        accept="image/*"
+                        :http-request="(options) => handleInspectionImageUpload(options, item)"
+                      >
+                        <el-button size="small" :icon="Plus">上传</el-button>
+                      </el-upload>
+                      <el-image
+                        v-if="item.image"
+                        class="item-image-thumb"
+                        :src="normalizeToUrl(item.image)"
+                        fit="cover"
+                        @click="openInspectionPreview(item.image)"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -216,13 +261,28 @@
                       <el-option label="正常" :value="true" />
                       <el-option label="异常" :value="false" />
                     </el-select>
-                    <el-input 
-                      v-if="!item.pass" 
-                      v-model="item.image" 
-                      placeholder="异常图片URL" 
-                      size="small" 
-                      style="width: 200px;"
-                    />
+                    <div v-if="!item.pass" class="item-image">
+                      <el-input
+                        v-model="item.image"
+                        placeholder="异常图片URL"
+                        size="small"
+                        style="width: 200px;"
+                      />
+                      <el-upload
+                        :show-file-list="false"
+                        accept="image/*"
+                        :http-request="(options) => handleInspectionImageUpload(options, item)"
+                      >
+                        <el-button size="small" :icon="Plus">上传</el-button>
+                      </el-upload>
+                      <el-image
+                        v-if="item.image"
+                        class="item-image-thumb"
+                        :src="normalizeToUrl(item.image)"
+                        fit="cover"
+                        @click="openInspectionPreview(item.image)"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -240,13 +300,28 @@
                       <el-option label="正常" :value="true" />
                       <el-option label="异常" :value="false" />
                     </el-select>
-                    <el-input 
-                      v-if="!item.pass" 
-                      v-model="item.image" 
-                      placeholder="异常图片URL" 
-                      size="small" 
-                      style="width: 200px;"
-                    />
+                    <div v-if="!item.pass" class="item-image">
+                      <el-input
+                        v-model="item.image"
+                        placeholder="异常图片URL"
+                        size="small"
+                        style="width: 200px;"
+                      />
+                      <el-upload
+                        :show-file-list="false"
+                        accept="image/*"
+                        :http-request="(options) => handleInspectionImageUpload(options, item)"
+                      >
+                        <el-button size="small" :icon="Plus">上传</el-button>
+                      </el-upload>
+                      <el-image
+                        v-if="item.image"
+                        class="item-image-thumb"
+                        :src="normalizeToUrl(item.image)"
+                        fit="cover"
+                        @click="openInspectionPreview(item.image)"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -264,13 +339,28 @@
                       <el-option label="正常" :value="true" />
                       <el-option label="异常" :value="false" />
                     </el-select>
-                    <el-input 
-                      v-if="!item.pass" 
-                      v-model="item.image" 
-                      placeholder="异常图片URL" 
-                      size="small" 
-                      style="width: 200px;"
-                    />
+                    <div v-if="!item.pass" class="item-image">
+                      <el-input
+                        v-model="item.image"
+                        placeholder="异常图片URL"
+                        size="small"
+                        style="width: 200px;"
+                      />
+                      <el-upload
+                        :show-file-list="false"
+                        accept="image/*"
+                        :http-request="(options) => handleInspectionImageUpload(options, item)"
+                      >
+                        <el-button size="small" :icon="Plus">上传</el-button>
+                      </el-upload>
+                      <el-image
+                        v-if="item.image"
+                        class="item-image-thumb"
+                        :src="normalizeToUrl(item.image)"
+                        fit="cover"
+                        @click="openInspectionPreview(item.image)"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -289,17 +379,31 @@
       </el-button>
     </div>
 
-    <el-image-viewer
-      v-if="previewVisible"
-      :url-list="previewImages"
-      :initial-index="previewIndex"
-      @close="previewVisible = false"
+    <teleport to="body">
+      <el-image-viewer
+        v-if="previewVisible"
+        :url-list="previewImages"
+        :initial-index="previewIndex"
+        teleported
+        @close="previewVisible = false"
+      />
+    </teleport>
+
+
+    <!-- 用 el-image 实例的 showPreview() 打开预览（Element Plus 官方方式） -->
+    <el-image
+      ref="inspectionPreviewRef"
+      style="display: none"
+      :src="inspectionPreviewSrcList[0]"
+      :preview-src-list="inspectionPreviewSrcList"
+      show-progress
+      fit="cover"
     />
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, computed, watch } from 'vue'
+import { reactive, ref, computed, watch, nextTick } from 'vue'
 import adminApi from '@/utils/adminApi'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -321,6 +425,8 @@ const detailFileList = ref([])
 const previewVisible = ref(false)
 const previewImages = ref([])
 const previewIndex = ref(0)
+const inspectionPreviewRef = ref(null)
+const inspectionPreviewSrcList = ref([])
 
 const isEdit = computed(() => !!props.product?.id)
 
@@ -790,6 +896,24 @@ const handleUpload = async (options, type) => {
   }
 }
 
+const handleInspectionImageUpload = async (options, item) => {
+  const { file, onError, onSuccess } = options
+  const formData = new FormData()
+  formData.append('file', file)
+  try {
+    const res = await adminApi.post(uploadEndpoint, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    const url = res.data?.url || res.data?.image || res.data?.path
+    if (!url) throw new Error('上传返回空URL')
+    item.image = url
+    onSuccess?.(res.data)
+  } catch (err) {
+    ElMessage.error('上传失败')
+    onError?.(err)
+  }
+}
+
 const handleDetailRemove = (file) => {
   form.detail_images = form.detail_images.filter((u) => u !== file.url)
   detailFileList.value = detailFileList.value.filter((f) => f.url !== file.url)
@@ -808,6 +932,13 @@ const handlePreview = (file) => {
 }
 
 const normalizeToUrl = (url) => (url ? getImageUrl(url) || url : '')
+
+const openInspectionPreview = (url) => {
+  const resolved = normalizeToUrl(url)
+  if (!resolved) return
+  inspectionPreviewSrcList.value = [resolved]
+  nextTick(() => inspectionPreviewRef.value?.showPreview?.())
+}
 
 const fillForm = (data = {}) => {
   form.title = data.title || ''
@@ -1011,12 +1142,22 @@ const unpublish = async () => {
   font-size: 13px;
   color: #606266;
 }
+
+.item-image {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-image-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid #e6e8ee;
+  background: #fff;
+  cursor: pointer;
+}
 </style>
-
-
-
-
-
 
 
 

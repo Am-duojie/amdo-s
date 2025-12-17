@@ -543,6 +543,8 @@ class VerifiedProduct(models.Model):
     inspection_date = models.DateField(null=True, blank=True, verbose_name='质检日期')
     inspection_staff = models.CharField(max_length=100, blank=True, verbose_name='质检员')
     inspection_note = models.TextField(blank=True, verbose_name='质检说明')
+    pricing_coefficient = models.FloatField(default=1.0, verbose_name='定价系数')
+    source_tag = models.CharField(max_length=50, blank=True, default='', verbose_name='来源标签')
     stock = models.IntegerField(default=1, verbose_name='库存')
     tags = models.JSONField(default=list, verbose_name='标签')
     published_at = models.DateTimeField(null=True, blank=True, verbose_name='上架时间')
@@ -702,16 +704,28 @@ def create_verified_device_from_recycle_order(order, status='ready', location='�
     return device
 
 
-def create_verified_product_from_device(device, status='draft'):
+def create_verified_product_from_device(device, status='active'):
     """
     根据库存设备生成官方验商品草稿，用于库存 -> 上架打通。
     """
     if not device:
         return None
 
-    # 已关联商品直接返回
+    # 已关联商品时，允许根据传入 status 强制更新状态/发布时间，避免卡在 draft
     if getattr(device, 'linked_product', None):
-        return device.linked_product
+        product = device.linked_product
+        if status and product.status != status:
+            product.status = status
+            updates = ['status', 'updated_at']
+            if status == 'active':
+                product.published_at = product.published_at or timezone.now()
+                updates.append('published_at')
+                device.status = 'listed'
+            elif status in ['draft', 'pending', 'ready']:
+                device.status = 'ready'
+            product.save(update_fields=updates)
+            device.save(update_fields=['status', 'updated_at'])
+        return product
 
     template = getattr(device, 'template', None)
     if not template or (hasattr(template, 'is_active') and not template.is_active):
@@ -777,10 +791,17 @@ def create_verified_product_from_device(device, status='draft'):
         inspection_date=device.inspection_date,
         inspection_staff=device.inspection_staff,
         inspection_note=device.inspection_note or '',
+        pricing_coefficient=1.0,
+        source_tag='official',
         stock=1,
         tags=[],
         status=status
     )
+
+    # 生成即上架时写入发布时间，避免遗漏 publish 流程
+    if status == 'active':
+        product.published_at = timezone.now()
+        product.save(update_fields=['published_at'])
 
     device.linked_product = product
     if status == 'active':
