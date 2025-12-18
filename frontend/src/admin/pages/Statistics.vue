@@ -5,39 +5,138 @@
       <div class="page-subtitle">回收 / 官方验 / 易淘（三线）核心指标与趋势</div>
     </div>
 
-    <el-row :gutter="20" style="margin-bottom: 20px">
-      <el-col :span="12">
-        <el-card>
-          <template #header>
-            <span>日期范围</span>
-          </template>
-          <el-date-picker
-            v-model="dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            format="YYYY-MM-DD"
-            value-format="YYYY-MM-DD"
-            @change="loadStatistics"
-            style="width: 100%"
-          />
-        </el-card>
-      </el-col>
-      <el-col :span="12">
-        <el-card>
-          <template #header>
-            <span>快捷选择</span>
-          </template>
-          <div class="quick-date-buttons">
-            <el-button @click="setDateRange('today')">今天</el-button>
-            <el-button @click="setDateRange('week')">最近7天</el-button>
-            <el-button @click="setDateRange('month')">最近30天</el-button>
-            <el-button @click="setDateRange('all')">全部</el-button>
+    <el-card class="filters-card" style="margin-bottom: 20px">
+      <template #header>
+        <div class="filters-header">
+          <div class="filters-title">筛选</div>
+          <el-popover placement="bottom-end" :width="360" trigger="hover">
+            <template #reference>
+              <el-button class="rule-button" size="small" round>统计规则</el-button>
+            </template>
+            <div class="methodology-body">
+              <div>时间口径：按创建时间（<code>created_at</code>）统计</div>
+              <div>订单数/趋势：{{ excludeCancelledOrders ? '默认排除已取消（cancelled）' : '包含已取消（cancelled）' }}</div>
+              <div>成交 GMV：仅统计已付款/已完成（<code>paid</code>/<code>completed</code>）</div>
+              <div>下单 GMV：统计全部订单（{{ includeCancelledInOrderGMV ? '包含已取消（cancelled）' : '默认不含已取消（cancelled）' }}）</div>
+              <div>漏斗：始终展示全量状态分布（含已取消），便于解释转化与取消原因</div>
+            </div>
+          </el-popover>
+        </div>
+      </template>
+
+      <el-row :gutter="16" class="filters-grid">
+        <el-col :span="10">
+          <div class="filter-block">
+            <div class="filter-block-title">日期范围</div>
+            <el-date-picker
+              v-model="dateRange"
+              type="daterange"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              format="YYYY-MM-DD"
+              value-format="YYYY-MM-DD"
+              @change="loadStatistics"
+              style="width: 100%"
+            />
           </div>
-        </el-card>
-      </el-col>
-    </el-row>
+        </el-col>
+
+        <el-col :span="7">
+          <div class="filter-block">
+            <div class="filter-block-title">快捷日期</div>
+            <el-segmented
+              v-model="quickDate"
+              :options="quickDateOptions"
+              @change="onQuickDateChange"
+            />
+          </div>
+        </el-col>
+
+        <el-col :span="7">
+          <div class="filter-block">
+            <div class="filter-block-title">口径开关</div>
+            <div class="toggle-list">
+              <div class="toggle-item">
+                <div class="toggle-text">订单数排除已取消</div>
+                <el-switch v-model="excludeCancelledOrders" @change="loadStatistics" />
+              </div>
+              <div class="toggle-item">
+                <div class="toggle-text">下单GMV包含已取消</div>
+                <el-switch v-model="includeCancelledInOrderGMV" @change="loadStatistics" />
+              </div>
+            </div>
+          </div>
+        </el-col>
+      </el-row>
+
+      <el-collapse class="advanced-collapse">
+        <el-collapse-item title="高级：按状态过滤（影响趋势/汇总/维度拆分）">
+          <el-row :gutter="16">
+            <el-col :span="8">
+              <div class="filter-block-title">回收状态</div>
+              <el-select
+                v-model="recycleStatuses"
+                multiple
+                collapse-tags
+                collapse-tags-tooltip
+                clearable
+                placeholder="全部"
+                @change="loadStatistics"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="opt in recycleStatusOptions"
+                  :key="opt.key"
+                  :label="opt.label"
+                  :value="opt.key"
+                />
+              </el-select>
+            </el-col>
+            <el-col :span="8">
+              <div class="filter-block-title">官方验订单状态</div>
+              <el-select
+                v-model="verifiedStatuses"
+                multiple
+                collapse-tags
+                collapse-tags-tooltip
+                clearable
+                placeholder="全部"
+                @change="loadStatistics"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="opt in verifiedStatusOptions"
+                  :key="opt.key"
+                  :label="opt.label"
+                  :value="opt.key"
+                />
+              </el-select>
+            </el-col>
+            <el-col :span="8">
+              <div class="filter-block-title">易淘订单状态</div>
+              <el-select
+                v-model="secondhandStatuses"
+                multiple
+                collapse-tags
+                collapse-tags-tooltip
+                clearable
+                placeholder="全部"
+                @change="loadStatistics"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="opt in secondhandStatusOptions"
+                  :key="opt.key"
+                  :label="opt.label"
+                  :value="opt.key"
+                />
+              </el-select>
+            </el-col>
+          </el-row>
+        </el-collapse-item>
+      </el-collapse>
+    </el-card>
 
     <el-row :gutter="20" style="margin-bottom: 20px">
       <el-col :span="4">
@@ -60,8 +159,8 @@
       </el-col>
       <el-col :span="4">
         <el-card class="stat-card">
-          <div class="stat-label">官方验 GMV</div>
-          <div class="stat-value">￥{{ formatMoney(stats.verifiedGMV ?? stats.totalGMV ?? 0) }}</div>
+          <div class="stat-label">成交 GMV（含易淘）</div>
+          <div class="stat-value">￥{{ formatMoney(stats.totalGMVAllPaid ?? stats.totalGMVAll ?? 0) }}</div>
         </el-card>
       </el-col>
       <el-col :span="4">
@@ -72,8 +171,8 @@
       </el-col>
       <el-col :span="4">
         <el-card class="stat-card">
-          <div class="stat-label">总 GMV（含易淘）</div>
-          <div class="stat-value">￥{{ formatMoney(stats.totalGMVAll ?? stats.totalGMV ?? 0) }}</div>
+          <div class="stat-label">下单 GMV（含易淘）</div>
+          <div class="stat-value">￥{{ formatMoney(stats.totalGMVAllAll ?? stats.totalGMVAll ?? 0) }}</div>
         </el-card>
       </el-col>
     </el-row>
@@ -82,8 +181,22 @@
       <template #header>
         <div class="card-header">
           <span>订单趋势</span>
-          <div class="header-right">
-            <el-tag v-if="stats.startDate && stats.endDate" type="info" effect="plain">
+          <div class="trend-header-right">
+            <el-segmented
+              v-model="gmvTrendScope"
+              :options="gmvScopeOptions"
+              @change="renderTrend"
+              size="small"
+              class="trend-segmented"
+            />
+            <el-tag
+              v-if="stats.startDate && stats.endDate"
+              class="trend-range-tag"
+              size="small"
+              round
+              effect="plain"
+              type="info"
+            >
               {{ stats.startDate }} ～ {{ stats.endDate }}（{{ stats.days || 0 }}天）
             </el-tag>
           </div>
@@ -151,7 +264,13 @@
               v-if="breakdownHasGMV"
               v-model="breakdownMetric"
               :options="breakdownMetricOptions"
-              @change="renderBreakdown"
+              @change="onBreakdownMetricChange"
+            />
+            <el-segmented
+              v-if="breakdownHasGMV && breakdownMetric === 'gmv' && gmvBreakdownActive"
+              v-model="breakdownGMVScope"
+              :options="breakdownGMVScopeOptions"
+              @change="loadStatistics"
             />
             <el-input-number
               v-model="topN"
@@ -201,7 +320,13 @@
         <el-table-column prop="verifiedOrders" label="官方验订单" width="120" />
         <el-table-column prop="secondhandOrders" label="易淘订单" width="100" />
         <el-table-column prop="secondhandSettlementFailed" label="分账失败" width="100" />
-        <el-table-column prop="gmv" label="GMV（含易淘）" width="160">
+        <el-table-column prop="gmvPaid" label="成交GMV" width="160">
+          <template #default="{ row }">￥{{ formatMoney(row.gmvPaid) }}</template>
+        </el-table-column>
+        <el-table-column prop="gmvAll" label="下单GMV" width="160">
+          <template #default="{ row }">￥{{ formatMoney(row.gmvAll) }}</template>
+        </el-table-column>
+        <el-table-column prop="gmvSelected" :label="gmvTrendScope === 'paid' ? 'GMV(成交)' : 'GMV(下单)'" width="160">
           <template #default="{ row }">￥{{ formatMoney(row.gmv) }}</template>
         </el-table-column>
       </el-table>
@@ -219,12 +344,41 @@ const dateRange = ref([])
 const stats = ref({})
 const statsTable = ref([])
 
+const excludeCancelledOrders = ref(true)
+const includeCancelledInOrderGMV = ref(true)
+const recycleStatuses = ref([])
+const verifiedStatuses = ref([])
+const secondhandStatuses = ref([])
+
+const quickDate = ref('month')
+const quickDateOptions = [
+  { label: '今天', value: 'today' },
+  { label: '近7天', value: 'week' },
+  { label: '近30天', value: 'month' },
+  { label: '全部', value: 'all' },
+]
+
+const onQuickDateChange = (v) => {
+  setDateRange(String(v))
+}
+
+const gmvTrendScope = ref('paid')
+const gmvScopeOptions = [
+  { label: '成交GMV', value: 'paid' },
+  { label: '下单GMV', value: 'all' },
+]
+
 const breakdownType = ref('recycle_brand')
 const topN = ref(10)
 const breakdownMetric = ref('count')
 const breakdownMetricOptions = [
   { label: '数量', value: 'count' },
   { label: 'GMV', value: 'gmv' },
+]
+const breakdownGMVScope = ref('paid')
+const breakdownGMVScopeOptions = [
+  { label: '成交GMV', value: 'paid' },
+  { label: '下单GMV', value: 'all' },
 ]
 
 const chartEl = ref(null)
@@ -243,6 +397,10 @@ const funnelOptions = [
   { label: '官方验', value: 'verified' },
   { label: '易淘', value: 'secondhand' },
 ]
+
+const recycleStatusOptions = computed(() => (stats.value?.funnels?.recycle || []).map((r) => ({ key: r.key, label: r.label })))
+const verifiedStatusOptions = computed(() => (stats.value?.funnels?.verified || []).map((r) => ({ key: r.key, label: r.label })))
+const secondhandStatusOptions = computed(() => (stats.value?.funnels?.secondhand || []).map((r) => ({ key: r.key, label: r.label })))
 
 const setDateRange = (type) => {
   const today = new Date()
@@ -286,7 +444,12 @@ const renderChart = (trend) => {
   const recycleOrders = trend.map((r) => Number(r.recycleOrders || 0))
   const verifiedOrders = trend.map((r) => Number(r.verifiedOrders || 0))
   const secondhandOrders = trend.map((r) => Number(r.secondhandOrders || 0))
-  const gmvAll = trend.map((r) => Number(r.verifiedGMV || 0) + Number(r.secondhandGMV || 0))
+  const gmvSeriesName = gmvTrendScope.value === 'paid' ? '成交GMV（含易淘）' : '下单GMV（含易淘）'
+  const gmvAll = trend.map((r) => (
+    gmvTrendScope.value === 'paid'
+      ? (Number(r.verifiedGMVPaid || 0) + Number(r.secondhandGMVPaid || 0))
+      : (Number(r.verifiedGMVAll || 0) + Number(r.secondhandGMVAll || 0))
+  ))
 
   charts.trend.setOption({
     tooltip: {
@@ -309,7 +472,7 @@ const renderChart = (trend) => {
       { name: '回收订单', type: 'bar', stack: 'orders', data: recycleOrders },
       { name: '官方验订单', type: 'bar', stack: 'orders', data: verifiedOrders },
       { name: '易淘订单', type: 'bar', stack: 'orders', data: secondhandOrders },
-      { name: 'GMV（含易淘）', type: 'line', yAxisIndex: 1, smooth: true, data: gmvAll },
+      { name: gmvSeriesName, type: 'line', yAxisIndex: 1, smooth: true, data: gmvAll },
     ],
   })
 }
@@ -377,6 +540,32 @@ const breakdownHasGMV = computed(() => {
   if (b.defaultMetric === 'gmv') return true
   return breakdownRows.value.some((r) => r.gmv != null)
 })
+
+const gmvBreakdownActive = computed(() => breakdownType.value.startsWith('verified_') || breakdownType.value.startsWith('secondhand_'))
+
+const showIncludeCancelledInOrderGMV = computed(() => (
+  gmvTrendScope.value === 'all'
+  || (gmvBreakdownActive.value && breakdownMetric.value === 'gmv' && breakdownGMVScope.value === 'all')
+))
+
+const onBreakdownMetricChange = () => {
+  if (breakdownMetric.value === 'gmv' && gmvBreakdownActive.value) {
+    loadStatistics()
+    return
+  }
+  renderBreakdown()
+}
+
+const renderTrend = () => {
+  const trend = Array.isArray(stats.value?.trend) ? stats.value.trend : []
+  if (statsTable.value?.length) {
+    statsTable.value = statsTable.value.map((r) => ({
+      ...r,
+      gmv: (gmvTrendScope.value === 'paid' ? r.gmvPaid : r.gmvAll),
+    }))
+  }
+  renderChart(trend)
+}
 
 const renderFunnel = () => {
   const funnels = stats.value?.funnels || {}
@@ -464,6 +653,14 @@ const loadStatistics = async () => {
       include: 'trend,funnel,breakdown',
       breakdown: breakdownType.value,
       top_n: topN.value,
+      exclude_cancelled_orders: excludeCancelledOrders.value ? 'true' : 'false',
+      include_cancelled_in_order_gmv: includeCancelledInOrderGMV.value ? 'true' : 'false',
+      recycle_statuses: recycleStatuses.value.join(','),
+      verified_statuses: verifiedStatuses.value.join(','),
+      secondhand_statuses: secondhandStatuses.value.join(','),
+    }
+    if (gmvBreakdownActive.value) {
+      params.breakdown_gmv_scope = breakdownGMVScope.value
     }
     if (dateRange.value && dateRange.value.length === 2) {
       params.start_date = dateRange.value[0]
@@ -489,7 +686,11 @@ const loadStatistics = async () => {
       verifiedOrders: r.verifiedOrders || 0,
       secondhandOrders: r.secondhandOrders || 0,
       secondhandSettlementFailed: r.secondhandSettlementFailed || 0,
-      gmv: Number(r.verifiedGMV || 0) + Number(r.secondhandGMV || 0),
+      gmvPaid: Number(r.verifiedGMVPaid || 0) + Number(r.secondhandGMVPaid || 0),
+      gmvAll: Number(r.verifiedGMVAll || 0) + Number(r.secondhandGMVAll || 0),
+      gmv: (gmvTrendScope.value === 'paid'
+        ? (Number(r.verifiedGMVPaid || 0) + Number(r.secondhandGMVPaid || 0))
+        : (Number(r.verifiedGMVAll || 0) + Number(r.secondhandGMVAll || 0))),
     }))
 
     await nextTick()
@@ -512,7 +713,8 @@ const exportStatistics = () => {
     '官方验订单',
     '易淘订单',
     '分账失败',
-    'GMV（含易淘）',
+    '成交GMV（含易淘）',
+    '下单GMV（含易淘）',
   ]
 
   const rows = statsTable.value.map((r) => ([
@@ -523,7 +725,8 @@ const exportStatistics = () => {
     r.verifiedOrders,
     r.secondhandOrders,
     r.secondhandSettlementFailed,
-    r.gmv,
+    r.gmvPaid,
+    r.gmvAll,
   ]))
 
   const csvEscape = (v) => {
@@ -605,11 +808,116 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
+.methodology-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #606266;
+}
+
+.methodology-body code {
+  background: rgba(64, 158, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 6px;
+  color: #303133;
+}
+
+.filters-card :deep(.el-card__header) {
+  padding: 12px 16px;
+}
+
+.filters-card :deep(.el-card__body) {
+  padding: 14px 16px 16px 16px;
+}
+
+.filters-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.filters-title {
+  font-weight: 600;
+}
+
+.filters-grid {
+  margin-bottom: 10px;
+}
+
+.filter-block-title {
+  font-size: 13px;
+  color: #606266;
+  margin-bottom: 8px;
+}
+
+.toggle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toggle-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(144, 147, 153, 0.06);
+}
+
+.toggle-text {
+  color: #303133;
+  font-size: 13px;
+}
+
+.advanced-collapse :deep(.el-collapse-item__header) {
+  font-weight: 600;
+  color: #303133;
+}
+
+.rule-button {
+  --el-button-bg-color: rgba(144, 147, 153, 0.12);
+  --el-button-border-color: transparent;
+  --el-button-text-color: #606266;
+  --el-button-hover-bg-color: rgba(144, 147, 153, 0.18);
+  --el-button-hover-border-color: transparent;
+  --el-button-hover-text-color: #303133;
+  --el-button-active-bg-color: rgba(144, 147, 153, 0.24);
+  --el-button-active-border-color: transparent;
+  --el-button-active-text-color: #303133;
+}
+
+.rule-button:focus-visible {
+  outline: none;
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+}
+
+.trend-header-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.trend-segmented {
+  --el-segmented-bg-color: rgba(144, 147, 153, 0.12);
+  --el-segmented-item-selected-bg-color: var(--el-color-primary);
+  --el-segmented-item-hover-bg-color: rgba(144, 147, 153, 0.16);
+}
+
+.trend-range-tag {
+  --el-tag-bg-color: rgba(144, 147, 153, 0.10);
+  --el-tag-border-color: transparent;
+  --el-tag-text-color: #606266;
 }
 
 .trend-chart {

@@ -336,6 +336,22 @@ class StatisticsView(APIView):
         include = (request.query_params.get('include') or 'trend,funnel,breakdown').strip()
         include_parts = {p.strip().lower() for p in include.split(',') if p.strip()}
         breakdown_type = (request.query_params.get('breakdown') or '').strip().lower()
+        breakdown_gmv_scope = (request.query_params.get('breakdown_gmv_scope') or request.query_params.get('gmv_scope') or 'paid').strip().lower()
+        exclude_cancelled_orders = (request.query_params.get('exclude_cancelled_orders') or request.query_params.get('exclude_cancelled') or 'true').strip().lower() in ['1', 'true', 'yes', 'y', 'on']
+        include_cancelled_in_order_gmv = (request.query_params.get('include_cancelled_in_order_gmv') or 'false').strip().lower() in ['1', 'true', 'yes', 'y', 'on']
+
+        recycle_statuses_raw = (request.query_params.get('recycle_statuses') or '').strip()
+        verified_statuses_raw = (request.query_params.get('verified_statuses') or '').strip()
+        secondhand_statuses_raw = (request.query_params.get('secondhand_statuses') or '').strip()
+
+        def parse_csv(raw):
+            if not raw:
+                return []
+            return [p.strip() for p in raw.split(',') if p.strip()]
+
+        recycle_statuses = parse_csv(recycle_statuses_raw)
+        verified_statuses = parse_csv(verified_statuses_raw)
+        secondhand_statuses = parse_csv(secondhand_statuses_raw)
         try:
             top_n = int(request.query_params.get('top_n') or 10)
         except Exception:
@@ -360,20 +376,38 @@ class StatisticsView(APIView):
                 cur = cur + timedelta(days=1)
 
         # ==================== Summary（保持向后兼容的 key） ====================
-        recycle_qs = RecycleOrder.objects.filter(created_at__date__gte=start, created_at__date__lte=end)
-        verified_qs = VerifiedOrder.objects.filter(created_at__date__gte=start, created_at__date__lte=end)
-        secondhand_qs = Order.objects.filter(created_at__date__gte=start, created_at__date__lte=end)
+        paid_status = ['paid', 'completed']
+
+        recycle_qs_base = RecycleOrder.objects.filter(created_at__date__gte=start, created_at__date__lte=end)
+        verified_qs_base = VerifiedOrder.objects.filter(created_at__date__gte=start, created_at__date__lte=end)
+        secondhand_qs_base = Order.objects.filter(created_at__date__gte=start, created_at__date__lte=end)
+
+        # 状态过滤：影响趋势/汇总/维度拆分；漏斗始终展示全量状态分布
+        recycle_qs_filtered = recycle_qs_base.filter(status__in=recycle_statuses) if recycle_statuses else recycle_qs_base
+        verified_qs_filtered = verified_qs_base.filter(status__in=verified_statuses) if verified_statuses else verified_qs_base
+        secondhand_qs_filtered = secondhand_qs_base.filter(status__in=secondhand_statuses) if secondhand_statuses else secondhand_qs_base
+
+        # 订单数口径：默认排除取消（可通过 exclude_cancelled_orders=false 开启包含取消）
+        recycle_qs = recycle_qs_filtered.exclude(status='cancelled') if exclude_cancelled_orders else recycle_qs_filtered
+        verified_qs = verified_qs_filtered.exclude(status='cancelled') if exclude_cancelled_orders else verified_qs_filtered
+        secondhand_qs = secondhand_qs_filtered.exclude(status='cancelled') if exclude_cancelled_orders else secondhand_qs_filtered
+
+        # 下单GMV口径：默认不含取消；勾选 include_cancelled_in_order_gmv=true 时纳入取消单金额
+        verified_qs_gmv_all = verified_qs_filtered if include_cancelled_in_order_gmv else verified_qs_filtered.exclude(status='cancelled')
+        secondhand_qs_gmv_all = secondhand_qs_filtered if include_cancelled_in_order_gmv else secondhand_qs_filtered.exclude(status='cancelled')
 
         recycle_total = recycle_qs.count()
         recycle_completed = recycle_qs.filter(status='completed').count()
         verified_total = verified_qs.count()
-        verified_gmv = verified_qs.aggregate(
-            gmv=Sum('total_price', filter=Q(status__in=['paid', 'completed']))
+        verified_gmv_paid = verified_qs.aggregate(
+            gmv=Sum('total_price', filter=Q(status__in=paid_status))
         ).get('gmv') or 0
+        verified_gmv_all = verified_qs_gmv_all.aggregate(gmv=Sum('total_price')).get('gmv') or 0
         secondhand_total = secondhand_qs.count()
-        secondhand_gmv = secondhand_qs.aggregate(
-            gmv=Sum('total_price', filter=Q(status__in=['paid', 'completed']))
+        secondhand_gmv_paid = secondhand_qs.aggregate(
+            gmv=Sum('total_price', filter=Q(status__in=paid_status))
         ).get('gmv') or 0
+        secondhand_gmv_all = secondhand_qs_gmv_all.aggregate(gmv=Sum('total_price')).get('gmv') or 0
         secondhand_settlement_failed = secondhand_qs.filter(settlement_status='failed').count()
 
         # ==================== Trend（按天聚合，给 BI 图表用） ====================
@@ -386,9 +420,11 @@ class StatisticsView(APIView):
                     'recycleCompleted': 0,
                     'recycleDisputes': 0,
                     'verifiedOrders': 0,
-                    'verifiedGMV': 0.0,
+                    'verifiedGMVPaid': 0.0,
+                    'verifiedGMVAll': 0.0,
                     'secondhandOrders': 0,
-                    'secondhandGMV': 0.0,
+                    'secondhandGMVPaid': 0.0,
+                    'secondhandGMVAll': 0.0,
                     'secondhandSettlementFailed': 0,
                 }
                 for d in date_iter(start, end)
@@ -414,28 +450,46 @@ class StatisticsView(APIView):
                 .values('day')
                 .annotate(
                     orders=Count('id'),
-                    gmv=Sum('total_price', filter=Q(status__in=['paid', 'completed'])),
+                    gmv_paid=Sum('total_price', filter=Q(status__in=paid_status)),
                 )
             ):
                 day = row['day']
                 if day in trend_map:
                     trend_map[day]['verifiedOrders'] = int(row['orders'] or 0)
-                    trend_map[day]['verifiedGMV'] = float(row['gmv'] or 0)
+                    trend_map[day]['verifiedGMVPaid'] = float(row['gmv_paid'] or 0)
+
+            for row in (
+                verified_qs_gmv_all.annotate(day=TruncDate('created_at'))
+                .values('day')
+                .annotate(gmv_all=Sum('total_price'))
+            ):
+                day = row['day']
+                if day in trend_map:
+                    trend_map[day]['verifiedGMVAll'] = float(row['gmv_all'] or 0)
 
             for row in (
                 secondhand_qs.annotate(day=TruncDate('created_at'))
                 .values('day')
                 .annotate(
                     orders=Count('id'),
-                    gmv=Sum('total_price', filter=Q(status__in=['paid', 'completed'])),
+                    gmv_paid=Sum('total_price', filter=Q(status__in=paid_status)),
                     settlement_failed=Count('id', filter=Q(settlement_status='failed')),
                 )
             ):
                 day = row['day']
                 if day in trend_map:
                     trend_map[day]['secondhandOrders'] = int(row['orders'] or 0)
-                    trend_map[day]['secondhandGMV'] = float(row['gmv'] or 0)
+                    trend_map[day]['secondhandGMVPaid'] = float(row['gmv_paid'] or 0)
                     trend_map[day]['secondhandSettlementFailed'] = int(row['settlement_failed'] or 0)
+
+            for row in (
+                secondhand_qs_gmv_all.annotate(day=TruncDate('created_at'))
+                .values('day')
+                .annotate(gmv_all=Sum('total_price'))
+            ):
+                day = row['day']
+                if day in trend_map:
+                    trend_map[day]['secondhandGMVAll'] = float(row['gmv_all'] or 0)
 
             trend = [trend_map[d] for d in sorted(trend_map.keys())]
 
@@ -454,9 +508,9 @@ class StatisticsView(APIView):
             secondhand_status_choices = list(getattr(Order._meta.get_field('status'), 'choices', []))
 
             funnels = {
-                'recycle': build_funnel(recycle_qs, recycle_status_choices),
-                'verified': build_funnel(verified_qs, verified_status_choices),
-                'secondhand': build_funnel(secondhand_qs, secondhand_status_choices),
+                'recycle': build_funnel(recycle_qs_base, recycle_status_choices),
+                'verified': build_funnel(verified_qs_base, verified_status_choices),
+                'secondhand': build_funnel(secondhand_qs_base, secondhand_status_choices),
             }
 
         # ==================== Breakdown（维度拆分 TopN） ====================
@@ -465,8 +519,6 @@ class StatisticsView(APIView):
             def norm_dim(v):
                 s = (v or '').strip()
                 return s if s else '未知'
-
-            paid_status = ['paid', 'completed']
 
             if breakdown_type == 'recycle_brand':
                 rows = list(
@@ -517,12 +569,16 @@ class StatisticsView(APIView):
                     ],
                 }
             elif breakdown_type == 'verified_brand':
+                base = verified_qs_filtered
+                count_agg = Count('id', filter=~Q(status='cancelled')) if exclude_cancelled_orders else Count('id')
+                gmv_agg = (
+                    Sum('total_price', filter=Q(status__in=paid_status))
+                    if breakdown_gmv_scope == 'paid'
+                    else (Sum('total_price') if include_cancelled_in_order_gmv else Sum('total_price', filter=~Q(status='cancelled')))
+                )
                 rows = list(
-                    verified_qs.values('product__brand')
-                    .annotate(
-                        count=Count('id'),
-                        gmv=Sum('total_price', filter=Q(status__in=paid_status)),
-                    )
+                    base.values('product__brand')
+                    .annotate(count=count_agg, gmv=gmv_agg)
                     .order_by('-gmv', '-count')[:top_n]
                 )
                 breakdown = {
@@ -539,12 +595,16 @@ class StatisticsView(APIView):
                     ],
                 }
             elif breakdown_type == 'verified_model':
+                base = verified_qs_filtered
+                count_agg = Count('id', filter=~Q(status='cancelled')) if exclude_cancelled_orders else Count('id')
+                gmv_agg = (
+                    Sum('total_price', filter=Q(status__in=paid_status))
+                    if breakdown_gmv_scope == 'paid'
+                    else (Sum('total_price') if include_cancelled_in_order_gmv else Sum('total_price', filter=~Q(status='cancelled')))
+                )
                 rows = list(
-                    verified_qs.values('product__brand', 'product__model')
-                    .annotate(
-                        count=Count('id'),
-                        gmv=Sum('total_price', filter=Q(status__in=paid_status)),
-                    )
+                    base.values('product__brand', 'product__model')
+                    .annotate(count=count_agg, gmv=gmv_agg)
                     .order_by('-gmv', '-count')[:top_n]
                 )
                 breakdown = {
@@ -561,12 +621,16 @@ class StatisticsView(APIView):
                     ],
                 }
             elif breakdown_type == 'secondhand_category':
+                base = secondhand_qs_filtered
+                count_agg = Count('id', filter=~Q(status='cancelled')) if exclude_cancelled_orders else Count('id')
+                gmv_agg = (
+                    Sum('total_price', filter=Q(status__in=paid_status))
+                    if breakdown_gmv_scope == 'paid'
+                    else (Sum('total_price') if include_cancelled_in_order_gmv else Sum('total_price', filter=~Q(status='cancelled')))
+                )
                 rows = list(
-                    secondhand_qs.values('product__category__name')
-                    .annotate(
-                        count=Count('id'),
-                        gmv=Sum('total_price', filter=Q(status__in=paid_status)),
-                    )
+                    base.values('product__category__name')
+                    .annotate(count=count_agg, gmv=gmv_agg)
                     .order_by('-gmv', '-count')[:top_n]
                 )
                 breakdown = {
@@ -583,12 +647,16 @@ class StatisticsView(APIView):
                     ],
                 }
             elif breakdown_type == 'secondhand_shop':
+                base = secondhand_qs_filtered
+                count_agg = Count('id', filter=~Q(status='cancelled')) if exclude_cancelled_orders else Count('id')
+                gmv_agg = (
+                    Sum('total_price', filter=Q(status__in=paid_status))
+                    if breakdown_gmv_scope == 'paid'
+                    else (Sum('total_price') if include_cancelled_in_order_gmv else Sum('total_price', filter=~Q(status='cancelled')))
+                )
                 rows = list(
-                    secondhand_qs.values('product__shop__name')
-                    .annotate(
-                        count=Count('id'),
-                        gmv=Sum('total_price', filter=Q(status__in=paid_status)),
-                    )
+                    base.values('product__shop__name')
+                    .annotate(count=count_agg, gmv=gmv_agg)
                     .order_by('-gmv', '-count')[:top_n]
                 )
                 breakdown = {
@@ -605,12 +673,16 @@ class StatisticsView(APIView):
                     ],
                 }
             elif breakdown_type == 'secondhand_product':
+                base = secondhand_qs_filtered
+                count_agg = Count('id', filter=~Q(status='cancelled')) if exclude_cancelled_orders else Count('id')
+                gmv_agg = (
+                    Sum('total_price', filter=Q(status__in=paid_status))
+                    if breakdown_gmv_scope == 'paid'
+                    else (Sum('total_price') if include_cancelled_in_order_gmv else Sum('total_price', filter=~Q(status='cancelled')))
+                )
                 rows = list(
-                    secondhand_qs.values('product__title')
-                    .annotate(
-                        count=Count('id'),
-                        gmv=Sum('total_price', filter=Q(status__in=paid_status)),
-                    )
+                    base.values('product__title')
+                    .annotate(count=count_agg, gmv=gmv_agg)
                     .order_by('-gmv', '-count')[:top_n]
                 )
                 breakdown = {
@@ -690,19 +762,38 @@ class StatisticsView(APIView):
             'startDate': start.isoformat(),
             'endDate': end.isoformat(),
             'days': len(trend),
+            'methodology': {
+                'timeField': 'created_at',
+                'excludeCancelledOrders': exclude_cancelled_orders,
+                'includeCancelledInOrderGMV': include_cancelled_in_order_gmv,
+                'gmvPaidStatuses': paid_status,
+                'note': '趋势/汇总/维度拆分支持状态过滤；漏斗始终展示全量状态分布（便于解释转化与取消）。',
+                'filters': {
+                    'recycle_statuses': recycle_statuses,
+                    'verified_statuses': verified_statuses,
+                    'secondhand_statuses': secondhand_statuses,
+                },
+                'breakdownGMVScope': breakdown_gmv_scope,
+            },
 
             # 旧字段（Statistics.vue 已在使用）
             'recycleOrdersTotal': recycle_total,
             'recycleCompleted': recycle_completed,
             'verifiedOrdersTotal': verified_total,
-            'totalGMV': float(verified_gmv),
+            'totalGMV': float(verified_gmv_paid),
 
             # 新增字段（BI）
-            'verifiedGMV': float(verified_gmv),
+            'verifiedGMV': float(verified_gmv_paid),
+            'verifiedGMVPaid': float(verified_gmv_paid),
+            'verifiedGMVAll': float(verified_gmv_all),
             'secondhandOrdersTotal': secondhand_total,
-            'secondhandGMV': float(secondhand_gmv),
+            'secondhandGMV': float(secondhand_gmv_paid),
+            'secondhandGMVPaid': float(secondhand_gmv_paid),
+            'secondhandGMVAll': float(secondhand_gmv_all),
             'secondhandSettlementFailed': secondhand_settlement_failed,
-            'totalGMVAll': float(verified_gmv) + float(secondhand_gmv),
+            'totalGMVAll': float(verified_gmv_paid) + float(secondhand_gmv_paid),
+            'totalGMVAllPaid': float(verified_gmv_paid) + float(secondhand_gmv_paid),
+            'totalGMVAllAll': float(verified_gmv_all) + float(secondhand_gmv_all),
 
             'trend': trend,
             'funnels': funnels,
