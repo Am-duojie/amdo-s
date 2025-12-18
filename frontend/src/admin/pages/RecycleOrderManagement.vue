@@ -125,11 +125,11 @@
         </el-table-column>
         <el-table-column prop="status" label="状态" width="140" align="center">
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)" size="small">
-              {{ getStatusText(row.status) }}
+            <el-tag :type="displayStatusTag(row).type" size="small">
+              {{ displayStatusTag(row).text }}
             </el-tag>
-            <el-tag v-if="row.payment_status === 'paid'" type="success" size="small" style="margin-left: 4px">
-              已打款
+            <el-tag v-if="row.payment_status === 'failed'" type="danger" size="small" style="margin-left: 4px">
+              打款失败
             </el-tag>
           </template>
         </el-table-column>
@@ -146,7 +146,7 @@
                 }"
               >
                 <div class="step-dot"></div>
-                <div class="step-label">{{ step.label }}</div>
+                <div class="step-label">{{ getProcessStepLabel(row, step.value) }}</div>
               </div>
             </div>
           </template>
@@ -213,6 +213,7 @@ import RecycleOrderDetail from './components/RecycleOrderDetail.vue'
 import BatchActions from './components/BatchActions.vue'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import { Search, Refresh } from '@element-plus/icons-vue'
+import { getRecycleProcessSteps, getRecycleStatusTag, getRecycleStage, isRecycleStepActive, isRecycleStepCompleted } from '@/utils/recycleFlow'
 
 const admin = useAdminAuthStore()
 const hasPerm = (p) => admin.hasPerm(p)
@@ -281,40 +282,20 @@ const getPaymentStatusText = (status) => {
   return map[status] || status
 }
 
+const getProgressStage = (row) => getRecycleStage(row)
+
+const displayStatusTag = (row) => getRecycleStatusTag(row)
+
+const getProcessStepLabel = (row, stepValue) => {
+  return getRecycleProcessSteps(row).find(s => s.value === stepValue)?.label || stepValue
+}
+
 const isStepCompleted = (row, stepValue) => {
-  // 支付完成单独判断
-  if (stepValue === 'paid') return row.payment_status === 'paid'
-  
-  // 根据实际完成情况判断，而不是简单的状态索引比较
-  if (stepValue === 'pending') {
-    // 提交订单：只要订单存在就已完成
-    return true
-  }
-  if (stepValue === 'shipped') {
-    // 已寄出：状态为 shipped 或之后的状态
-    return ['shipped', 'received', 'inspected', 'completed'].includes(row.status)
-  }
-  if (stepValue === 'received') {
-    // 已收货：状态为 received 或之后的状态（只有平台确认收货后才完成）
-    return ['received', 'inspected', 'completed'].includes(row.status)
-  }
-  if (stepValue === 'inspected') {
-    // 已检测：状态为 inspected 或之后的状态
-    return ['inspected', 'completed'].includes(row.status)
-  }
-  if (stepValue === 'completed') {
-    // 已完成：状态为 completed
-    return row.status === 'completed'
-  }
-  
-  return false
+  return isRecycleStepCompleted(row, stepValue)
 }
 
 const isStepActive = (row, stepValue) => {
-  // 如果已完成/已付款，保持绿色，不再突出为“进行中”
-  if (row.status === 'completed') return false
-  if (stepValue === 'paid') return row.payment_status === 'paid' && row.status !== 'completed'
-  return row.status === stepValue
+  return isRecycleStepActive(row, stepValue)
 }
 
 const canOperate = (row) => {
@@ -326,7 +307,11 @@ const getActionText = (row) => {
   if (row.status === 'shipped') return '确认收货'
   if (row.status === 'received') return '质检'
   if (row.status === 'inspected') return '完成订单'
-  if (row.status === 'completed' && row.payment_status !== 'paid') return '打款'
+  if (row.status === 'completed' && row.payment_status !== 'paid') {
+    if (row.price_dispute) return '处理异议'
+    if (row.final_price && row.final_price_confirmed !== true) return '等待确认'
+    return '打款'
+  }
   return '处理'
 }
 

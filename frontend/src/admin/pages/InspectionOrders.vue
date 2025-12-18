@@ -85,16 +85,8 @@
         </el-table-column>
         <el-table-column label="状态" width="160" align="center">
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)" size="small">{{ getStatusText(row.status) }}</el-tag>
-            <el-tag 
-              v-if="row.payment_status" 
-              :type="getPaymentStatusType(row.payment_status)" 
-              size="small" 
-              style="margin-left: 4px"
-            >
-              {{ getPaymentStatusText(row.payment_status) }}
-            </el-tag>
-            <el-tag v-if="row.price_dispute" type="warning" size="small" style="margin-left: 4px">价格异议</el-tag>
+            <el-tag :type="displayStatusTag(row).type" size="small">{{ displayStatusTag(row).text }}</el-tag>
+            <el-tag v-if="row.payment_status === 'failed'" type="danger" size="small" style="margin-left: 4px">打款失败</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="物流" width="180" show-overflow-tooltip>
@@ -137,6 +129,7 @@ import { useRouter } from 'vue-router'
 import adminApi from '@/utils/adminApi'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh } from '@element-plus/icons-vue'
+import { getRecycleStatusTag } from '@/utils/recycleFlow'
 
 const router = useRouter()
 const items = ref([])
@@ -166,6 +159,8 @@ const conditionMap = {
 const getStatusText = (status) => statusMap[status]?.text || status
 const getStatusType = (status) => statusMap[status]?.type || 'info'
 const getConditionText = (condition) => conditionMap[condition] || condition
+
+const displayStatusTag = (row) => getRecycleStatusTag(row)
 
 const paymentStatusMap = {
   pending: { text: '待打款', type: 'info' },

@@ -410,8 +410,8 @@
                     <span class="recycle-id">回收单号：{{ order.id }}</span>
                     <span class="recycle-device">{{ order.brand }} {{ order.model }}</span>
                   </div>
-                  <div class="recycle-status" :class="getRecycleStatusClass(order.status)">
-                    {{ getRecycleStatusText(order.status) }}
+                  <div class="recycle-status" :class="getRecycleStatusClass(order)">
+                    {{ getRecycleStatusText(order) }}
                   </div>
                 </div>
                 <div class="recycle-body">
@@ -544,6 +544,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
 import { useAuthStore } from '@/stores/auth'
+import { getRecycleStatusTag } from '@/utils/recycleFlow'
 
 const route = useRoute()
 const router = useRouter()
@@ -660,28 +661,21 @@ const getStatusClass = (status) => {
   return map[status] || ''
 }
 
-const getRecycleStatusText = (status) => {
-  const map = {
-    'pending': '待处理',
-    'quoted': '已报价',
-    'accepted': '已接受',
-    'shipped': '已寄出',
-    'completed': '已完成',
-    'cancelled': '已取消',
-  }
-  return map[status] || status
+const getRecycleStatusText = (order) => {
+  return getRecycleStatusTag(order).text
 }
 
-const getRecycleStatusClass = (status) => {
+const getRecycleStatusClass = (order) => {
+  const type = getRecycleStatusTag(order).type
   const map = {
-    'pending': 'status-warning',
-    'quoted': 'status-info',
-    'accepted': 'status-primary',
-    'shipped': 'status-primary',
-    'completed': 'status-success',
-    'cancelled': 'status-danger',
+    success: 'status-success',
+    warning: 'status-warning',
+    danger: 'status-danger',
+    primary: 'status-primary',
+    info: 'status-info',
+    '': 'status-info',
   }
-  return map[status] || ''
+  return map[type] || ''
 }
 
 const formatDate = (date) => {

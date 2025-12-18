@@ -9,9 +9,8 @@
         <div style="display: flex; justify-content: space-between; align-items: center">
           <span>回收订单详情 #{{ detail.id }}</span>
           <div>
-            <el-tag :type="getStatusType(detail.status)" size="large">{{ getStatusText(detail.status) }}</el-tag>
-            <el-tag v-if="detail.payment_status === 'paid'" type="success" size="large" style="margin-left: 8px">已打款</el-tag>
-            <el-tag v-if="detail.price_dispute" type="warning" size="large" style="margin-left: 8px">价格异议</el-tag>
+            <el-tag :type="statusTag.type" size="large">{{ statusTag.text }}</el-tag>
+            <el-tag v-if="detail.payment_status === 'failed'" type="danger" size="large" style="margin-left: 8px">打款失败</el-tag>
           </div>
         </div>
       </template>
@@ -19,36 +18,13 @@
       <!-- 订单流程进度 -->
       <el-divider content-position="left">订单流程</el-divider>
       <div style="margin-bottom: 30px; padding: 20px; background: #f5f7fa; border-radius: 8px">
-        <el-steps :active="getProcessStepIndex()" finish-status="success" align-center>
-          <el-step 
-            title="提交订单" 
-            :description="formatTime(detail.created_at)"
-            :status="getStepStatus('pending')"
-          />
-          <el-step 
-            title="已收货"
-            :description="formatTime(detail.status === 'received' ? detail.received_at : null)"
-            :status="getStepStatus('received')"
-          />
-          <el-step 
-            title="已寄出" 
-            :description="formatTime(detail.shipped_at)"
-            :status="getStepStatus('shipped')"
-          />
-          <el-step 
-            title="已检测" 
-            :description="formatTime(detail.inspected_at)"
-            :status="getStepStatus('inspected')"
-          />
-          <el-step 
-            title="已完成" 
-            :description="getCompletedStepDescription()"
-            :status="getStepStatus('completed')"
-          />
-          <el-step 
-            title="已打款" 
-            :description="getPaidStepDescription()"
-            :status="getStepStatus('paid')"
+        <el-steps :active="activeStep" finish-status="success" align-center>
+          <el-step
+            v-for="step in processSteps"
+            :key="step.value"
+            :title="step.label"
+            :description="getStepDescription(step.value)"
+            :status="getStepStatus(step.value)"
           />
         </el-steps>
       </div>
@@ -163,10 +139,10 @@
           <el-alert type="info" :closable="false">
             <template #title>
               <div v-if="detail.payment_status === 'failed'">
-                上次打款失败，可以重新执行打款操作。打款金额将存入用户的易淘账户钱包中。
+                用户已确认最终价格，上次打款失败，可以重新执行打款操作。打款金额将存入用户的易淘账户钱包中。
               </div>
               <div v-else>
-                订单已完成，可以执行打款操作。打款金额将存入用户的易淘账户钱包中。
+                用户已确认最终价格，订单待打款。打款金额将存入用户的易淘账户钱包中。
               </div>
             </template>
           </el-alert>
@@ -420,6 +396,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import adminApi from '@/utils/adminApi'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getRecycleElementStepStatus, getRecycleProcessSteps, getRecycleStageIndex, getRecycleStatusTag } from '@/utils/recycleFlow'
 
 const route = useRoute()
 const router = useRouter()
@@ -428,6 +405,10 @@ const orderId = parseInt(route.params.id)
 const loading = ref(false)
 const detail = ref({})
 const publishing = ref(false)
+
+const statusTag = computed(() => getRecycleStatusTag(detail.value))
+const processSteps = computed(() => getRecycleProcessSteps(detail.value))
+const activeStep = computed(() => getRecycleStageIndex(detail.value))
 
 // 价格对话框
 const priceDialogVisible = ref(false)
@@ -486,15 +467,6 @@ const openPaymentDialog = () => {
   showPaymentDialog.value = true
 }
 
-const statusMap = {
-  pending: { text: '待估价', type: 'info' },
-  received: { text: '已收货', type: 'success' },
-  shipped: { text: '已寄出', type: 'primary' },
-  inspected: { text: '已检测', type: 'success' },
-  completed: { text: '已完成', type: 'success' },
-  cancelled: { text: '已取消', type: 'info' }
-}
-
 const conditionMap = {
   new: '全新',
   like_new: '几乎全新',
@@ -503,8 +475,6 @@ const conditionMap = {
   poor: '较差'
 }
 
-const getStatusText = (status) => statusMap[status]?.text || status
-const getStatusType = (status) => statusMap[status]?.type || 'info'
 const getConditionText = (condition) => conditionMap[condition] || condition
 
 const paymentStatusMap = {
@@ -524,24 +494,16 @@ const canShowPaymentButton = computed(() => {
   
   const status = detail.value.status
   const paymentStatus = detail.value.payment_status
-  const finalPrice = detail.value.final_price
-  
-  // 订单状态必须是已完成或已检测
-  if (status !== 'completed' && status !== 'inspected') {
-    return false
-  }
-  
-  // 必须有最终价格
-  if (!finalPrice || finalPrice <= 0) {
-    return false
-  }
-  
-  // 打款状态不能是已打款
-  if (paymentStatus === 'paid') {
-    return false
-  }
-  
-  // 其他情况（pending、failed、null、undefined）都可以显示
+  const finalPrice = Number(detail.value.final_price || 0)
+  const confirmed = detail.value.final_price_confirmed === true
+  const dispute = detail.value.price_dispute === true
+
+  if (status !== 'completed') return false
+  if (!confirmed) return false
+  if (dispute) return false
+  if (!finalPrice || finalPrice <= 0) return false
+  if (paymentStatus === 'paid') return false
+
   return true
 })
 
@@ -550,130 +512,18 @@ const formatTime = (time) => {
   return new Date(time).toLocaleString('zh-CN')
 }
 
-// 获取流程步骤索引
-const getProcessStepIndex = () => {
-  const status = detail.value.status
-  const paymentStatus = detail.value.payment_status
-  
-  // 根据订单状态确定当前步骤
-  const statusMap = {
-    'pending': 0,
-    'quoted': 1,
-    'confirmed': 2,
-    'shipped': 3,
-    'inspected': 4,
-    'completed': 5,
-  }
-  
-  let index = statusMap[status] ?? 0
-  
-  // 如果订单已完成
-  if (status === 'completed') {
-    // 如果已打款，显示最后一个步骤（已打款）
-    if (paymentStatus === 'paid') {
-      index = 6
-    }
-    // 如果未打款，显示已完成步骤（步骤5），但"已打款"步骤会显示为process状态
-    else {
-      index = 5
-    }
-  }
-  
-  return index
-}
+const getStepStatus = (stepValue) => getRecycleElementStepStatus(detail.value, stepValue)
 
-// 获取步骤状态
-const getStepStatus = (step) => {
-  const status = detail.value.status
-  const paymentStatus = detail.value.payment_status
-  
-  // 提交订单 - 总是完成
-  if (step === 'pending') {
-    return 'success'
-  }
-  
-  
-  // 已寄出
-  if (step === 'shipped') {
-    if (['shipped', 'received', 'inspected', 'completed'].includes(status)) {
-      return 'success'
-    }
-    return 'wait'
-  }
-  
-  // 已收货
-  if (step === 'received') {
-    if (['received', 'inspected', 'completed'].includes(status)) {
-      return 'success'
-    }
-    return 'wait'
-  }
-  
-  // 已检测
-  if (step === 'inspected') {
-    if (['inspected', 'completed'].includes(status)) {
-      return 'success'
-    }
-    return 'wait'
-  }
-  
-  // 已完成
-  if (step === 'completed') {
-    // 订单状态为已完成时，已完成步骤显示为成功
-    if (status === 'completed') {
-      return 'success'
-    }
-    // 如果订单状态在已完成之前，已完成步骤等待
-    return 'wait'
-  }
-  
-  // 已打款
-  if (step === 'paid') {
-    // 如果已打款，显示为成功
-    if (paymentStatus === 'paid') {
-      return 'success'
-    }
-    // 如果订单已完成但未打款，显示为进行中（待处理）
-    if (status === 'completed' && !paymentStatus) {
-      return 'process' // 当前待处理步骤，高亮显示
-    }
-    // 其他情况等待
-    return 'wait'
-  }
-  
-  return 'wait'
-}
-
-// 获取"已完成"步骤的描述
-const getCompletedStepDescription = () => {
-  const status = detail.value.status
-  // 如果订单已完成，显示完成时间
-  if (status === 'completed') {
-    return formatTime(detail.value.updated_at)
-  }
-  // 如果订单已检测，显示检测时间（即将完成）
-  if (status === 'inspected' && detail.value.inspected_at) {
-    return formatTime(detail.value.inspected_at)
-  }
-  return '-'
-}
-
-// 获取"已打款"步骤的描述
-const getPaidStepDescription = () => {
-  const paymentStatus = detail.value.payment_status
-  const status = detail.value.status
-  
-  // 如果已打款，显示打款时间
-  if (paymentStatus === 'paid' && detail.value.paid_at) {
-    return formatTime(detail.value.paid_at)
-  }
-  // 如果订单已完成但未打款，显示提示信息
-  if (status === 'completed' && !paymentStatus) {
-    return '待打款'
-  }
-  // 如果打款失败，显示失败提示
-  if (paymentStatus === 'failed') {
-    return '打款失败'
+const getStepDescription = (stepValue) => {
+  if (stepValue === 'pending') return formatTime(detail.value.created_at)
+  if (stepValue === 'shipped') return formatTime(detail.value.shipped_at)
+  if (stepValue === 'received') return formatTime(detail.value.received_at)
+  if (stepValue === 'inspected') return formatTime(detail.value.inspected_at)
+  if (stepValue === 'completed') return detail.value.updated_at ? formatTime(detail.value.updated_at) : '-'
+  if (stepValue === 'paid') {
+    if (detail.value.payment_status === 'paid') return formatTime(detail.value.paid_at)
+    if (detail.value.payment_status === 'failed') return '打款失败'
+    return '-'
   }
   return '-'
 }

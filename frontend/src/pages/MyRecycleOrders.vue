@@ -42,11 +42,8 @@
               <span class="order-device">{{ order.brand }} {{ order.model }}</span>
             </div>
             <div class="order-status">
-              <el-tag :type="getStatusType(order.status)" size="large">
-                {{ getStatusText(order.status) }}
-              </el-tag>
-              <el-tag v-if="order.payment_status === 'paid'" type="success" size="large" style="margin-left: 8px">
-                已打款
+              <el-tag :type="displayStatusTag(order).type" size="large">
+                {{ displayStatusTag(order).text }}
               </el-tag>
             </div>
           </div>
@@ -120,6 +117,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Clock } from '@element-plus/icons-vue'
 import api from '@/utils/api'
+import { getRecycleStatusTag } from '@/utils/recycleFlow'
 
 const router = useRouter()
 
@@ -132,15 +130,6 @@ const pagination = ref({
   total: 0
 })
 
-const statusMap = {
-  pending: '待估价',
-  received: '已收货',
-  shipped: '已寄出',
-  inspected: '已检测',
-  completed: '已完成',
-  cancelled: '已取消'
-}
-
 const conditionMap = {
   new: '全新',
   like_new: '几乎全新',
@@ -149,22 +138,7 @@ const conditionMap = {
   poor: '较差'
 }
 
-const getStatusText = (status) => {
-  return statusMap[status] || status
-}
-
-const getStatusType = (status) => {
-  const typeMap = {
-    pending: 'info',
-    quoted: 'warning',
-    confirmed: 'primary',
-    shipped: '',
-    inspected: 'success',
-    completed: 'success',
-    cancelled: 'danger'
-  }
-  return typeMap[status] || ''
-}
+const displayStatusTag = (order) => getRecycleStatusTag(order)
 
 const getConditionText = (condition) => {
   return conditionMap[condition] || condition
@@ -392,8 +366,6 @@ onMounted(() => {
   }
 }
 </style>
-
-
 
 
 

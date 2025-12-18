@@ -578,6 +578,16 @@ class RecycleOrderSerializer(serializers.ModelSerializer):
         # 获取当前状态和新状态
         current_status = instance.status
         new_status = validated_data.get('status', current_status)
+
+        request = self.context.get('request')
+        is_user_update = bool(request and getattr(request, 'user', None) and request.user.is_authenticated)
+
+        # 用户确认价格后，不允许再提交异议或取消订单（避免已进入打款流程后回退）
+        if is_user_update and instance.final_price_confirmed:
+          if validated_data.get('price_dispute') is True or 'price_dispute_reason' in validated_data:
+            raise serializers.ValidationError({'price_dispute': '已确认最终价格，无法再提交价格异议'})
+          if validated_data.get('status') == 'cancelled':
+            raise serializers.ValidationError({'status': '已确认最终价格，无法取消订单'})
         
         # 如果用户填写了物流信息，自动将状态从 pending 变为 shipped
         if current_status == 'pending' and 'shipping_carrier' in validated_data and 'tracking_number' in validated_data:
@@ -592,7 +602,7 @@ class RecycleOrderSerializer(serializers.ModelSerializer):
         allowed_transitions = {
             'pending': ['cancelled'],
             'shipped': ['cancelled'],  # 用户可以在已寄出状态取消订单
-            'inspected': ['completed'],  # 已检测 -> 已完成
+            # 已检测/已完成需通过“确认最终价格”接口完成，不允许直接改状态
         }
         
         # 如果状态发生变化，检查是否允许

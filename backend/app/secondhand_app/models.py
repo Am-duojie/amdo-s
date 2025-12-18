@@ -701,6 +701,49 @@ def create_verified_device_from_recycle_order(order, status='ready', location='�
         cost_price=cost_price,
         inspection_note=order.note or ''
     )
+
+    # 同步回收订单的最新质检报告到库存，保证“官方验库存/商品详情”展示一致
+    try:
+        from app.admin_api.models import AdminInspectionReport
+
+        report = AdminInspectionReport.objects.filter(order=order).order_by('-created_at').first()
+        if report and report.check_items:
+            check_items = report.check_items
+            categories = []
+            if isinstance(check_items, list):
+                if len(check_items) and isinstance(check_items[0], dict) and ('title' in check_items[0] or 'groups' in check_items[0]):
+                    categories = check_items
+                else:
+                    categories = [{
+                        'title': '检测结果',
+                        'groups': [{
+                            'name': '',
+                            'items': [{
+                                'label': (item.get('label') or item.get('key') or ''),
+                                'value': item.get('value', ''),
+                                'pass': bool(item.get('pass')) if isinstance(item.get('pass'), bool) else (item.get('value') in ['pass', True])
+                            } for item in check_items if isinstance(item, dict)]
+                        }]
+                    }]
+            elif isinstance(check_items, dict):
+                categories = [{
+                    'title': '检测结果',
+                    'groups': [{
+                        'name': '',
+                        'items': [{
+                            'label': str(k),
+                            'value': v,
+                            'pass': (v == 'pass' or v is True)
+                        } for k, v in check_items.items()]
+                    }]
+                }]
+
+            if categories:
+                device.inspection_reports = categories
+                device.save(update_fields=['inspection_reports', 'updated_at'])
+    except Exception:
+        # 不影响主流程
+        pass
     return device
 
 

@@ -12,9 +12,7 @@
           <template #header>
             <div class="card-header">
               <span>订单信息</span>
-              <el-tag :type="getStatusType(order.status)" size="large">
-                {{ getStatusText(order.status) }}
-              </el-tag>
+              <el-tag :type="statusTag.type" size="large">{{ statusTag.text }}</el-tag>
             </div>
           </template>
           <div class="order-info-grid">
@@ -254,8 +252,6 @@
             <template v-else-if="showPaymentPending">
               <el-alert type="warning" :closable="false" style="margin-bottom: 12px;">质检已完成，平台正在安排打款。</el-alert>
               <div class="cta-row">
-                <el-button type="warning" plain size="large" @click="showFinalDisputeDialog = true">对最终价格有异议</el-button>
-                <el-button type="danger" plain size="large" @click="cancelOrder">取消订单</el-button>
                 <el-button type="primary" plain size="large" @click="contactSupport">联系官方客服</el-button>
               </div>
             </template>
@@ -331,6 +327,7 @@ import api from '@/utils/api'
 import BaseCard from '@/components/BaseCard.vue'
 import OrderSteps from '@/components/OrderSteps.vue'
 import InspectionReport from '@/components/InspectionReport.vue'
+import { getRecycleStatusTag } from '@/utils/recycleFlow'
 
 const route = useRoute()
 const router = useRouter()
@@ -406,6 +403,8 @@ const inspectionReportForUi = computed(() => {
   if (!categories.length) return null
   return { baseInfo, categories }
 })
+
+const statusTag = computed(() => getRecycleStatusTag(order.value))
 const showPaymentPending = computed(() => {
   if (!order.value) return false
   if (order.value.payment_status === 'paid') return false

@@ -28,6 +28,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import {
   Odometer,
+  TrendCharts,
   Tickets,
   Goods,
   ShoppingCart,
@@ -54,6 +55,7 @@ const props = defineProps({
 
 const iconComponents = {
   Odometer,
+  TrendCharts,
   Tickets,
   Goods,
   ShoppingCart,

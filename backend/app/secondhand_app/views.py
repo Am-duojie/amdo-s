@@ -1272,9 +1272,13 @@ class RecycleOrderViewSet(viewsets.ModelViewSet):
         if order.user != request.user:
             return Response({'detail': '无权访问'}, status=status.HTTP_403_FORBIDDEN)
         
-        # 检查订单状态是否为已检测
-        if order.status != 'inspected':
+        # 检查订单状态（兼容历史数据：曾经可能在设置最终价时被置为 completed，但未确认）
+        if order.status not in ['inspected', 'completed']:
             return Response({'detail': '订单状态不正确，只有已检测状态的订单才能确认价格'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 已打款后不允许再确认价格
+        if getattr(order, 'payment_status', None) == 'paid' or getattr(order, 'paid_at', None):
+            return Response({'detail': '订单已打款，无法确认最终价格'}, status=status.HTTP_400_BAD_REQUEST)
 
         # 已提交价格异议时，不允许直接确认，需等待处理/重新报价
         if order.price_dispute:
@@ -1601,11 +1605,46 @@ class VerifiedProductViewSet(viewsets.ModelViewSet):
     def inspection_report(self, request, pk=None):
         """获取商品质检报告详情"""
         product = self.get_object()
-        
+
+        def normalize_check_items_to_categories(check_items):
+            if not check_items:
+                return []
+            if isinstance(check_items, list):
+                if len(check_items) and isinstance(check_items[0], dict) and ('title' in check_items[0] or 'groups' in check_items[0]):
+                    return check_items
+                # 扁平数组
+                items = []
+                for item in check_items:
+                    if not isinstance(item, dict):
+                        continue
+                    value = item.get('value', '')
+                    pass_value = item.get('pass')
+                    items.append({
+                        'label': item.get('label') or item.get('key') or '',
+                        'value': value,
+                        'pass': pass_value if isinstance(pass_value, bool) else (value in ['pass', True]),
+                        **({'image': item.get('image')} if item.get('image') else {})
+                    })
+                return [{
+                    'title': '检测结果',
+                    'groups': [{'name': '', 'items': items}]
+                }] if items else []
+            if isinstance(check_items, dict):
+                items = [{
+                    'label': str(k),
+                    'value': v,
+                    'pass': (v == 'pass' or v is True)
+                } for k, v in check_items.items()]
+                return [{
+                    'title': '检测结果',
+                    'groups': [{'name': '', 'items': items}]
+                }] if items else []
+            return []
+
         # 从数据库获取质检报告数据
         # 如果 inspection_reports 字段存储的是完整的报告数据，直接返回
         # 否则，构建默认的报告结构
-        
+
         # 基本信息
         base_info = {
             'model': f"{product.brand} {product.model}",
@@ -1624,7 +1663,25 @@ class VerifiedProductViewSet(viewsets.ModelViewSet):
                     'baseInfo': base_info,
                     'categories': product.inspection_reports
                 })
-        
+
+        # 如果商品未存储结构化报告，且来源于回收订单，则优先使用该订单的最新质检报告
+        try:
+            from app.admin_api.models import AdminInspectionReport
+
+            device = getattr(product, 'devices', None)
+            device = device.first() if device and hasattr(device, 'first') else None
+            order = getattr(device, 'recycle_order', None) if device else None
+            if order:
+                report = AdminInspectionReport.objects.filter(order=order).order_by('-created_at').first()
+                categories = normalize_check_items_to_categories(getattr(report, 'check_items', None))
+                if categories:
+                    return Response({
+                        'baseInfo': base_info,
+                        'categories': categories
+                    })
+        except Exception:
+            pass
+
         # 否则返回默认的质检报告结构（基于用户提供的HTML模板）
         default_categories = [
             {

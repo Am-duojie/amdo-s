@@ -160,6 +160,7 @@ const routes = [
     children: [
       { path: '', redirect: { name: 'AdminLogin' }, meta: { hideSearch: true, admin: true, hidden: true } },
       { path: 'dashboard', name: 'AdminDashboard', component: () => import('@/admin/pages/AdminDashboard.vue'), meta: { requiresAdminAuth: true, hideSearch: true, title: '数据总览', icon: 'Odometer', group: 'dashboard', affix: true } },
+      { path: 'statistics', name: 'AdminStatistics', component: () => import('@/admin/pages/Statistics.vue'), meta: { requiresAdminAuth: true, hideSearch: true, title: '统计分析', icon: 'TrendCharts', group: 'dashboard', perm: 'dashboard:view' } },
       // 回收业务
       { path: 'recycle-orders', name: 'RecycleOrderManagement', component: () => import('@/admin/pages/RecycleOrderManagement.vue'), meta: { requiresAdminAuth: true, title: '回收订单', icon: 'Tickets', group: 'recycle' } },
       { path: 'recycle-templates', name: 'RecycleTemplates', component: () => import('@/admin/pages/RecycleTemplates.vue'), meta: { requiresAdminAuth: true, title: '机型模板', icon: 'List', group: 'recycle', perm: 'recycle_template:view' } },

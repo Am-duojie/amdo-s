@@ -22,7 +22,7 @@
             <span v-else>{{ index + 1 }}</span>
           </div>
           <div class="timeline-content">
-            <div class="step-title">{{ step.label }}</div>
+            <div class="step-title">{{ getProcessStepLabel(step.value) }}</div>
             <div class="step-time">{{ getStepTime(step.value) }}</div>
           </div>
           <div v-if="index < processSteps.length - 1" class="timeline-line"></div>
@@ -46,9 +46,8 @@
             >
               生成官方验库存
             </el-button>
-            <el-tag :type="getStatusType(detail.status)" size="large">{{ getStatusText(detail.status) }}</el-tag>
-            <el-tag v-if="detail.payment_status === 'paid'" type="success" size="large" style="margin-left: 8px">已打款</el-tag>
-            <el-tag v-if="detail.price_dispute" type="warning" size="large" style="margin-left: 8px">价格异议</el-tag>
+             <el-tag :type="displayStatusTag.type" size="large">{{ displayStatusTag.text }}</el-tag>
+            <el-tag v-if="detail.payment_status === 'failed'" type="danger" size="large" style="margin-left: 8px">打款失败</el-tag>
           </div>
         </div>
       </template>
@@ -746,6 +745,7 @@ import { Check, Loading, Clock, Plus } from '@element-plus/icons-vue'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import InspectionReport from '@/components/InspectionReport.vue'
 import { getImageUrl } from '@/utils/image'
+import { getRecycleProcessSteps, getRecycleStatusTag, getRecycleStage, isRecycleStepActive, isRecycleStepCompleted } from '@/utils/recycleFlow'
 
 const router = useRouter()
 
@@ -1135,10 +1135,10 @@ const paymentBlockedReason = computed(() => {
   if (detail.value.payment_status === 'paid') return ''
   if (canShowPaymentButton.value) return ''
 
-  if (!detail.value.final_price) return '未设置最终价格'
+  if (detail.value.status !== 'completed' && detail.value.payment_status !== 'failed') return ''
+  if (!detail.value.final_price) return ''
   if (detail.value.price_dispute) return '用户已提交价格异议'
   if (!detail.value.final_price_confirmed) return '等待用户确认最终价格'
-  if (detail.value.status !== 'completed') return '订单未完成，无法打款'
   if (!hasPerm('inspection:payment')) return '无打款权限'
   return '暂无法打款'
 })
@@ -1182,14 +1182,16 @@ const getStatusType = (status) => statusMap[status]?.type || 'info'
 const getConditionText = (condition) => conditionMap[condition]?.text || condition
 const getConditionType = (condition) => conditionMap[condition]?.type || 'info'
 
+const progressStage = computed(() => getRecycleStage(detail.value))
+const displayStatusTag = computed(() => getRecycleStatusTag(detail.value))
+const getProcessStepLabel = (stepValue) => getRecycleProcessSteps(detail.value).find(s => s.value === stepValue)?.label || stepValue
+
 const isStepCompleted = (stepValue) => {
-  const stepIndex = processSteps.findIndex(s => s.value === stepValue)
-  const currentIndex = processSteps.findIndex(s => s.value === detail.value.status)
-  return currentIndex > stepIndex || (detail.value.payment_status === 'paid' && stepValue === 'paid')
+  return isRecycleStepCompleted(detail.value, stepValue)
 }
 
 const isStepActive = (stepValue) => {
-  return detail.value.status === stepValue || (detail.value.payment_status === 'paid' && stepValue === 'paid')
+  return isRecycleStepActive(detail.value, stepValue)
 }
 
 const getStepTime = (stepValue) => {

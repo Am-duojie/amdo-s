@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import json
 from django.utils import timezone
 from django.db.models import Count, Q, Sum
+from django.db.models.functions import TruncDate
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
@@ -332,6 +333,14 @@ class StatisticsView(APIView):
             return Response({'detail': 'Forbidden'}, status=403)
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
+        include = (request.query_params.get('include') or 'trend,funnel,breakdown').strip()
+        include_parts = {p.strip().lower() for p in include.split(',') if p.strip()}
+        breakdown_type = (request.query_params.get('breakdown') or '').strip().lower()
+        try:
+            top_n = int(request.query_params.get('top_n') or 10)
+        except Exception:
+            top_n = 10
+        top_n = max(1, min(50, top_n))
         
         if start_date and end_date:
             start = datetime.strptime(start_date, '%Y-%m-%d').date()
@@ -339,18 +348,249 @@ class StatisticsView(APIView):
         else:
             end = timezone.now().date()
             start = end - timedelta(days=30)
-        
-        recycle_total = RecycleOrder.objects.filter(created_at__date__gte=start, created_at__date__lte=end).count()
-        recycle_completed = RecycleOrder.objects.filter(status='completed', created_at__date__gte=start, created_at__date__lte=end).count()
-        verified_total = VerifiedOrder.objects.filter(created_at__date__gte=start, created_at__date__lte=end).count()
-        gmv_qs = VerifiedOrder.objects.filter(created_at__date__gte=start, created_at__date__lte=end, status__in=['paid','completed']).values_list('total_price', flat=True)
-        total_gmv = sum([float(x) for x in gmv_qs]) if gmv_qs else 0.0
-        
+
+        # 保护：避免 end < start
+        if end < start:
+            start, end = end, start
+
+        def date_iter(start_d, end_d):
+            cur = start_d
+            while cur <= end_d:
+                yield cur
+                cur = cur + timedelta(days=1)
+
+        # ==================== Summary（保持向后兼容的 key） ====================
+        recycle_qs = RecycleOrder.objects.filter(created_at__date__gte=start, created_at__date__lte=end)
+        verified_qs = VerifiedOrder.objects.filter(created_at__date__gte=start, created_at__date__lte=end)
+        secondhand_qs = Order.objects.filter(created_at__date__gte=start, created_at__date__lte=end)
+
+        recycle_total = recycle_qs.count()
+        recycle_completed = recycle_qs.filter(status='completed').count()
+        verified_total = verified_qs.count()
+        verified_gmv = verified_qs.aggregate(
+            gmv=Sum('total_price', filter=Q(status__in=['paid', 'completed']))
+        ).get('gmv') or 0
+        secondhand_total = secondhand_qs.count()
+        secondhand_gmv = secondhand_qs.aggregate(
+            gmv=Sum('total_price', filter=Q(status__in=['paid', 'completed']))
+        ).get('gmv') or 0
+        secondhand_settlement_failed = secondhand_qs.filter(settlement_status='failed').count()
+
+        # ==================== Trend（按天聚合，给 BI 图表用） ====================
+        trend = []
+        if 'trend' in include_parts:
+            trend_map = {
+                d: {
+                    'date': d.isoformat(),
+                    'recycleOrders': 0,
+                    'recycleCompleted': 0,
+                    'recycleDisputes': 0,
+                    'verifiedOrders': 0,
+                    'verifiedGMV': 0.0,
+                    'secondhandOrders': 0,
+                    'secondhandGMV': 0.0,
+                    'secondhandSettlementFailed': 0,
+                }
+                for d in date_iter(start, end)
+            }
+
+            for row in (
+                recycle_qs.annotate(day=TruncDate('created_at'))
+                .values('day')
+                .annotate(
+                    orders=Count('id'),
+                    completed=Count('id', filter=Q(status='completed')),
+                    disputes=Count('id', filter=Q(price_dispute=True)),
+                )
+            ):
+                day = row['day']
+                if day in trend_map:
+                    trend_map[day]['recycleOrders'] = int(row['orders'] or 0)
+                    trend_map[day]['recycleCompleted'] = int(row['completed'] or 0)
+                    trend_map[day]['recycleDisputes'] = int(row['disputes'] or 0)
+
+            for row in (
+                verified_qs.annotate(day=TruncDate('created_at'))
+                .values('day')
+                .annotate(
+                    orders=Count('id'),
+                    gmv=Sum('total_price', filter=Q(status__in=['paid', 'completed'])),
+                )
+            ):
+                day = row['day']
+                if day in trend_map:
+                    trend_map[day]['verifiedOrders'] = int(row['orders'] or 0)
+                    trend_map[day]['verifiedGMV'] = float(row['gmv'] or 0)
+
+            for row in (
+                secondhand_qs.annotate(day=TruncDate('created_at'))
+                .values('day')
+                .annotate(
+                    orders=Count('id'),
+                    gmv=Sum('total_price', filter=Q(status__in=['paid', 'completed'])),
+                    settlement_failed=Count('id', filter=Q(settlement_status='failed')),
+                )
+            ):
+                day = row['day']
+                if day in trend_map:
+                    trend_map[day]['secondhandOrders'] = int(row['orders'] or 0)
+                    trend_map[day]['secondhandGMV'] = float(row['gmv'] or 0)
+                    trend_map[day]['secondhandSettlementFailed'] = int(row['settlement_failed'] or 0)
+
+            trend = [trend_map[d] for d in sorted(trend_map.keys())]
+
+        # ==================== Funnel（订单状态漏斗） ====================
+        funnels = None
+        if 'funnel' in include_parts:
+            def build_funnel(qs, choices):
+                data = []
+                for key, label in choices:
+                    c = qs.filter(status=key).count()
+                    data.append({'key': key, 'label': label, 'count': c})
+                return data
+
+            recycle_status_choices = list(getattr(RecycleOrder._meta.get_field('status'), 'choices', []))
+            verified_status_choices = list(getattr(VerifiedOrder._meta.get_field('status'), 'choices', []))
+            secondhand_status_choices = list(getattr(Order._meta.get_field('status'), 'choices', []))
+
+            funnels = {
+                'recycle': build_funnel(recycle_qs, recycle_status_choices),
+                'verified': build_funnel(verified_qs, verified_status_choices),
+                'secondhand': build_funnel(secondhand_qs, secondhand_status_choices),
+            }
+
+        # ==================== Breakdown（维度拆分 TopN） ====================
+        breakdown = None
+        if 'breakdown' in include_parts and breakdown_type:
+            def norm_dim(v):
+                s = (v or '').strip()
+                return s if s else '未知'
+
+            if breakdown_type == 'recycle_brand':
+                rows = list(
+                    recycle_qs.values('brand')
+                    .annotate(
+                        count=Count('id'),
+                        completed=Count('id', filter=Q(status='completed')),
+                        disputes=Count('id', filter=Q(price_dispute=True)),
+                    )
+                    .order_by('-count')[:top_n]
+                )
+                breakdown = {
+                    'type': breakdown_type,
+                    'label': '回收 - 品牌 Top',
+                    'rows': [
+                        {
+                            'dim': norm_dim(r.get('brand')),
+                            'count': int(r.get('count') or 0),
+                            'completed': int(r.get('completed') or 0),
+                            'disputes': int(r.get('disputes') or 0),
+                        }
+                        for r in rows
+                    ],
+                }
+            elif breakdown_type == 'recycle_model':
+                rows = list(
+                    recycle_qs.values('brand', 'model')
+                    .annotate(
+                        count=Count('id'),
+                        completed=Count('id', filter=Q(status='completed')),
+                        disputes=Count('id', filter=Q(price_dispute=True)),
+                    )
+                    .order_by('-count')[:top_n]
+                )
+                breakdown = {
+                    'type': breakdown_type,
+                    'label': '回收 - 机型 Top',
+                    'rows': [
+                        {
+                            'dim': f"{norm_dim(r.get('brand'))} {norm_dim(r.get('model'))}".strip(),
+                            'count': int(r.get('count') or 0),
+                            'completed': int(r.get('completed') or 0),
+                            'disputes': int(r.get('disputes') or 0),
+                        }
+                        for r in rows
+                    ],
+                }
+            elif breakdown_type == 'inventory_brand':
+                inv_qs = VerifiedDevice.objects.all()
+                rows = list(
+                    inv_qs.values('brand')
+                    .annotate(
+                        count=Count('id'),
+                        ready=Count('id', filter=Q(status='ready')),
+                        listed=Count('id', filter=Q(status='listed')),
+                        locked=Count('id', filter=Q(status='locked')),
+                        sold=Count('id', filter=Q(status='sold')),
+                    )
+                    .order_by('-count')[:top_n]
+                )
+                breakdown = {
+                    'type': breakdown_type,
+                    'label': '库存 - 品牌 Top',
+                    'rows': [
+                        {
+                            'dim': norm_dim(r.get('brand')),
+                            'count': int(r.get('count') or 0),
+                            'ready': int(r.get('ready') or 0),
+                            'listed': int(r.get('listed') or 0),
+                            'locked': int(r.get('locked') or 0),
+                            'sold': int(r.get('sold') or 0),
+                        }
+                        for r in rows
+                    ],
+                }
+            elif breakdown_type == 'inventory_model':
+                inv_qs = VerifiedDevice.objects.all()
+                rows = list(
+                    inv_qs.values('brand', 'model')
+                    .annotate(
+                        count=Count('id'),
+                        ready=Count('id', filter=Q(status='ready')),
+                        listed=Count('id', filter=Q(status='listed')),
+                        locked=Count('id', filter=Q(status='locked')),
+                        sold=Count('id', filter=Q(status='sold')),
+                    )
+                    .order_by('-count')[:top_n]
+                )
+                breakdown = {
+                    'type': breakdown_type,
+                    'label': '库存 - 机型 Top',
+                    'rows': [
+                        {
+                            'dim': f"{norm_dim(r.get('brand'))} {norm_dim(r.get('model'))}".strip(),
+                            'count': int(r.get('count') or 0),
+                            'ready': int(r.get('ready') or 0),
+                            'listed': int(r.get('listed') or 0),
+                            'locked': int(r.get('locked') or 0),
+                            'sold': int(r.get('sold') or 0),
+                        }
+                        for r in rows
+                    ],
+                }
+
         return Response({
+            # 口径/范围
+            'startDate': start.isoformat(),
+            'endDate': end.isoformat(),
+            'days': len(trend),
+
+            # 旧字段（Statistics.vue 已在使用）
             'recycleOrdersTotal': recycle_total,
             'recycleCompleted': recycle_completed,
             'verifiedOrdersTotal': verified_total,
-            'totalGMV': total_gmv
+            'totalGMV': float(verified_gmv),
+
+            # 新增字段（BI）
+            'verifiedGMV': float(verified_gmv),
+            'secondhandOrdersTotal': secondhand_total,
+            'secondhandGMV': float(secondhand_gmv),
+            'secondhandSettlementFailed': secondhand_settlement_failed,
+            'totalGMVAll': float(verified_gmv) + float(secondhand_gmv),
+
+            'trend': trend,
+            'funnels': funnels,
+            'breakdown': breakdown,
         })
 
 # 质检订单相关视图
@@ -385,6 +625,7 @@ class InspectionOrdersView(APIView):
             'user': {'id': o.user.id, 'username': o.user.username},
             'status': o.status,
             'payment_status': o.payment_status,
+            'paid_at': o.paid_at.isoformat() if o.paid_at else None,
             'device_type': o.device_type,
             'brand': o.brand,
             'model': o.model,
@@ -397,6 +638,8 @@ class InspectionOrdersView(APIView):
             'shipping_carrier': o.shipping_carrier or '',
             'tracking_number': o.tracking_number or '',
             'price_dispute': o.price_dispute,
+            'price_dispute_reason': o.price_dispute_reason or '',
+            'final_price_confirmed': bool(getattr(o, 'final_price_confirmed', False)),
             'created_at': o.created_at.isoformat(),
             'updated_at': o.updated_at.isoformat()
         } for o in items]

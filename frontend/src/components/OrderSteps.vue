@@ -25,6 +25,7 @@
 <script setup>
 import { computed } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
+import { getRecycleProcessSteps, getRecycleStageIndex } from '@/utils/recycleFlow'
 
 const props = defineProps({
   // 订单数据
@@ -57,40 +58,42 @@ const formatTime = (dateString) => {
 // 回收订单步骤配置
 const recycleSteps = computed(() => {
   const order = props.order
-  return [
-    {
-      title: '提交订单',
-      time: formatTime(order.created_at),
-      status: 'pending'
-    },
-    {
-      title: '已寄出',
-      time: order.shipped_at ? formatTime(order.shipped_at) : '',
-      status: 'shipped',
-      loading: order.status === 'shipped' && !order.received_at
-    },
-    {
-      title: '已收货',
-      time: order.received_at ? formatTime(order.received_at) : '',
-      status: 'received'
-    },
-    {
-      title: '已检测',
-      time: order.inspected_at ? formatTime(order.inspected_at) : '',
-      status: 'inspected',
-      loading: order.status === 'inspected' && !order.completed_at
-    },
-    {
-      title: '已完成',
-      time: order.completed_at ? formatTime(order.completed_at) : '',
-      status: 'completed'
-    },
-    {
-      title: '已打款',
-      time: order.paid_at ? formatTime(order.paid_at) : '',
-      status: 'paid'
+  const steps = getRecycleProcessSteps(order)
+  return steps.map(s => {
+    if (s.value === 'pending') {
+      return { title: s.label, time: formatTime(order.created_at), status: s.value }
     }
-  ]
+    if (s.value === 'shipped') {
+      return {
+        title: s.label,
+        time: order.shipped_at ? formatTime(order.shipped_at) : '',
+        status: s.value,
+        loading: order.status === 'shipped' && !order.received_at
+      }
+    }
+    if (s.value === 'received') {
+      return { title: s.label, time: order.received_at ? formatTime(order.received_at) : '', status: s.value }
+    }
+    if (s.value === 'inspected') {
+      return {
+        title: s.label,
+        time: order.inspected_at ? formatTime(order.inspected_at) : '',
+        status: s.value,
+        loading:
+          ['inspected', 'completed'].includes(order.status) &&
+          !!order.final_price &&
+          !order.final_price_confirmed &&
+          !order.price_dispute
+      }
+    }
+    if (s.value === 'completed') {
+      return { title: s.label, time: order.completed_at ? formatTime(order.completed_at) : '', status: s.value }
+    }
+    if (s.value === 'paid') {
+      return { title: s.label, time: order.paid_at ? formatTime(order.paid_at) : '', status: s.value }
+    }
+    return { title: s.label, time: '', status: s.value }
+  })
 })
 
 // 二手交易订单步骤配置
@@ -171,24 +174,7 @@ const activeStep = computed(() => {
   const status = order.status
   
   if (props.type === 'recycle') {
-    // 回收订单状态映射
-    const statusMap = {
-      'pending': 0,      // 提交订单
-      'quoted': 1,       // 已报价（算作已寄出前）
-      'confirmed': 1,    // 已确认（算作已寄出前）
-      'shipped': 2,      // 已寄出（进行中）
-      'received': 3,     // 已收货（进行中）
-      'inspected': 4,    // 已检测（进行中）
-      'completed': 5,    // 已完成（进行中）
-      'cancelled': 0     // 已取消
-    }
-    
-    // 如果已打款，显示到最后一步
-    if (order.payment_status === 'paid' || order.paid_at) {
-      return 6
-    }
-    
-    return statusMap[status] ?? 0
+    return getRecycleStageIndex(order) + 1
   } else {
     // 二手交易和官翻商品订单状态映射
     const statusMap = {
