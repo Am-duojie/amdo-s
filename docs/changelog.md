@@ -9,6 +9,16 @@
   - Added placeholder doc `docs/amdo_1.md` for additional documentation sync testing.
   - Verification: open the new doc and confirm placeholder text renders.
 
+## 2025-12-18
+
+- **Documentation: add admin statistics onepager**
+  - Added one-page brief for admin analytics dashboard: `docs/00-overview/admin-statistics-dashboard-onepager.md`
+  - Verification: open the doc and confirm it describes metrics, methodology, and data flow.
+- **Documentation: add recycle ML onepager + align workflow doc**
+  - Added ML plan onepager: `docs/00-overview/recycle-ml-mainline-onepager.md`
+  - Aligned recycle workflow doc with implementation (`payment_status=paid` vs `status`): `docs/40-dev-guide/recycle-order-complete-workflow.md`
+  - Verification: open both docs and confirm wording matches current API and state fields.
+
 ## 2025-12-14
 
 - **功能完善：官方验商品规格字段扩展** ✅ 已完成

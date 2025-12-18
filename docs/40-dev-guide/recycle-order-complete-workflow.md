@@ -13,7 +13,7 @@
    ↓
 4. 用户确认价格 (completed)
    ↓
-5. 管理员打款 (paid)
+5. 管理员打款（payment_status=paid）
 ```
 
 ## 详细流程
@@ -36,7 +36,7 @@
 7. 确认提交
 8. 订单创建成功，跳转到订单详情页
 
-**状态变化**: 
+**状态变化**:
 - 订单创建，状态为 `pending`（待寄出）
 - `estimated_price` 字段保存预估价格
 
@@ -121,7 +121,7 @@ if current_status == 'pending' and 'shipping_carrier' in validated_data and 'tra
 - 订单状态从 `shipped` 变为 `received`（已收货）
 - `received_at` 字段设置为当前时间
 
-**API端点**: `POST /admin-api/inspection-orders/{id}/logistics/received`
+**API端点**: `POST /admin-api/inspection-orders/{id}/received`
 
 #### 3.2 质检并设置价格
 
@@ -260,7 +260,7 @@ if current_status == 'pending' and 'shipping_carrier' in validated_data and 'tra
 4. 填写打款备注（可选）
 5. 确认打款
 
-**状态变化**: 
+**状态变化**:
 - `payment_status` 从 `pending` 变为 `paid`（已打款）
 - `paid_at` 字段设置为当前时间
 - `payment_method` 字段保存打款方式
@@ -308,12 +308,12 @@ if current_status == 'pending' and 'shipping_carrier' in validated_data and 'tra
 ┌───────────┐
 │ completed │ 订单完成，等待打款
 └────┬──────┘
-     │ 管理员打款
-     ↓
-┌──────┐
-│ paid │ 打款完成
-└──────┘
+      │ 管理员打款
+      ↓
+payment_status = paid（打款完成）
 ```
+
+> 说明：当前实现里，“打款完成”通过字段 `payment_status=paid` 表示，订单 `status` 仍保持为 `completed`（便于区分“业务流程完成”和“资金处理完成”两层状态）。
 
 ## 异常流程
 

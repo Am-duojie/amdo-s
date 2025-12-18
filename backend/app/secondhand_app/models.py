@@ -307,7 +307,7 @@ class WalletTransaction(models.Model):
 class RecycleOrder(models.Model):
     """回收订单"""
     STATUS_CHOICES = [
-        ('pending', '待估价'),
+        ('pending', '待寄出'),
         ('shipped', '已寄出'),
         ('received', '已收货'),
         ('inspected', '已检测'),
