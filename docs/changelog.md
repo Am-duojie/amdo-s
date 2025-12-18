@@ -18,6 +18,20 @@
   - Added ML plan onepager: `docs/00-overview/recycle-ml-mainline-onepager.md`
   - Aligned recycle workflow doc with implementation (`payment_status=paid` vs `status`): `docs/40-dev-guide/recycle-order-complete-workflow.md`
   - Verification: open both docs and confirm wording matches current API and state fields.
+- **Feature: add recycle online inference to admin**
+  - Added baseline online inference (suggested price + dispute/cancel risk) and surfaced it in admin recycle order detail: `GET /admin-api/inspection-orders/{id}`
+  - Added prediction endpoint: `GET /admin-api/recycle-ml/predict?order_id={id}`
+  - Added dashboard entry page: `/admin/intelligent-analysis`
+  - Verification: open admin “数据看板 > 智能分析” and confirm results load.
+- **Feature: add fake data seeding + batch ML analysis**
+  - Added seeding command for realistic recycle orders and inspection reports: `python backend/manage.py seed_recycle_orders --count 2000 --days 60 --ensure-templates`
+  - Added batch endpoints: `GET /admin-api/recycle-ml/summary` and `GET /admin-api/recycle-ml/batch`
+  - Verification: open admin “数据看板 > 智能分析” → “批量分析” and confirm charts/tables render.
+
+- **Feature: import recycle device templates from JSON**
+  - Added JSON import command: `python backend/manage.py import_recycle_templates_json --file <path> --ensure-questions`
+  - Added sample template data file: `backend/data/recycle_templates_user.json`
+  - Verification: import and confirm new templates appear in admin.
 
 ## 2025-12-14
 

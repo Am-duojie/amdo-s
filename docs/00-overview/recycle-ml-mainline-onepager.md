@@ -91,3 +91,17 @@
    - 质检后调价率、异议率、打款失败率
    - 分品牌/机型 TopN（找“模型偏差最大”的分组）
 
+## 7. 已实现的最小闭环（在线推理）
+
+- 管理端回收订单详情接口会返回 `ml` 字段（建议价/风险/因素），用于“随时打开就能分析”：`GET /admin-api/inspection-orders/{id}`
+- 也可单独调用预测接口：`GET /admin-api/recycle-ml/predict?order_id={id}`
+- 管理端详情页已展示“智能分析（在线推理）”区块：`frontend/src/admin/pages/InspectionOrderDetail.vue`
+- 数据看板增加“智能分析”入口页面：`/admin/intelligent-analysis`（`frontend/src/admin/pages/IntelligentAnalysis.vue`）
+
+## 8. 无历史数据的演示：拟真造数 + 批量分析
+
+- 拟真造数命令（生成回收订单+质检报告，便于演示分布与TopN）：`python backend/manage.py seed_recycle_orders --count 2000 --days 60 --ensure-templates`
+- 如需重新生成“时间趋势”（不重造数据）：`python backend/manage.py seed_recycle_orders --retime-by-tag --tag FAKE_RECYCLE --days 60`
+- 批量分析接口：
+  - `GET /admin-api/recycle-ml/summary`（分布/TopN）
+  - `GET /admin-api/recycle-ml/batch`（分页列表）

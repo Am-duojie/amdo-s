@@ -70,6 +70,31 @@
         </el-descriptions-item>
       </el-descriptions>
 
+      <!-- 智能分析（在线推理） -->
+      <el-divider v-if="detail.ml" content-position="left">智能分析（在线推理）</el-divider>
+      <el-descriptions v-if="detail.ml" :column="3" border style="margin-bottom: 20px">
+        <el-descriptions-item label="建议回收价">
+          <span style="font-size: 18px; font-weight: bold">¥{{ detail.ml.suggested_final_price }}</span>
+          <el-tag size="small" type="info" style="margin-left: 8px">{{ detail.ml.model_version }}</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="建议区间">
+          <span v-if="detail.ml.suggested_range?.length === 2">¥{{ detail.ml.suggested_range[0] }} ~ ¥{{ detail.ml.suggested_range[1] }}</span>
+          <span v-else style="color: #909399">-</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="异议风险">
+          <el-tag :type="getRiskTagType(detail.ml.risk_dispute)">{{ formatRisk(detail.ml.risk_dispute) }}</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="取消风险">
+          <el-tag :type="getRiskTagType(detail.ml.risk_cancel)">{{ formatRisk(detail.ml.risk_cancel) }}</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="关键因素" :span="2">
+          <span v-if="detail.ml.top_factors?.length">
+            {{ detail.ml.top_factors.map((f) => `${f.label}：${f.value}`).join('；') }}
+          </span>
+          <span v-else style="color: #909399">-</span>
+        </el-descriptions-item>
+      </el-descriptions>
+
       <!-- 物流信息 -->
       <el-divider content-position="left">物流信息</el-divider>
       <el-descriptions :column="2" border style="margin-bottom: 20px">
@@ -485,6 +510,18 @@ const paymentStatusMap = {
 
 const getPaymentStatusText = (status) => paymentStatusMap[status]?.text || (status ? '未知' : '待打款')
 const getPaymentStatusType = (status) => paymentStatusMap[status]?.type || 'info'
+
+const getRiskTagType = (risk) => {
+  const r = Number(risk || 0)
+  if (r >= 0.7) return 'danger'
+  if (r >= 0.4) return 'warning'
+  return 'success'
+}
+
+const formatRisk = (risk) => {
+  const r = Math.round(Number(risk || 0) * 100)
+  return `${r}%`
+}
 
 // 计算是否可以显示打款按钮
 const canShowPaymentButton = computed(() => {
