@@ -466,6 +466,8 @@ class StatisticsView(APIView):
                 s = (v or '').strip()
                 return s if s else '未知'
 
+            paid_status = ['paid', 'completed']
+
             if breakdown_type == 'recycle_brand':
                 rows = list(
                     recycle_qs.values('brand')
@@ -479,6 +481,7 @@ class StatisticsView(APIView):
                 breakdown = {
                     'type': breakdown_type,
                     'label': '回收 - 品牌 Top',
+                    'defaultMetric': 'count',
                     'rows': [
                         {
                             'dim': norm_dim(r.get('brand')),
@@ -502,12 +505,123 @@ class StatisticsView(APIView):
                 breakdown = {
                     'type': breakdown_type,
                     'label': '回收 - 机型 Top',
+                    'defaultMetric': 'count',
                     'rows': [
                         {
                             'dim': f"{norm_dim(r.get('brand'))} {norm_dim(r.get('model'))}".strip(),
                             'count': int(r.get('count') or 0),
                             'completed': int(r.get('completed') or 0),
                             'disputes': int(r.get('disputes') or 0),
+                        }
+                        for r in rows
+                    ],
+                }
+            elif breakdown_type == 'verified_brand':
+                rows = list(
+                    verified_qs.values('product__brand')
+                    .annotate(
+                        count=Count('id'),
+                        gmv=Sum('total_price', filter=Q(status__in=paid_status)),
+                    )
+                    .order_by('-gmv', '-count')[:top_n]
+                )
+                breakdown = {
+                    'type': breakdown_type,
+                    'label': '官方验订单 - 品牌 Top（按 GMV）',
+                    'defaultMetric': 'gmv',
+                    'rows': [
+                        {
+                            'dim': norm_dim(r.get('product__brand')),
+                            'count': int(r.get('count') or 0),
+                            'gmv': float(r.get('gmv') or 0),
+                        }
+                        for r in rows
+                    ],
+                }
+            elif breakdown_type == 'verified_model':
+                rows = list(
+                    verified_qs.values('product__brand', 'product__model')
+                    .annotate(
+                        count=Count('id'),
+                        gmv=Sum('total_price', filter=Q(status__in=paid_status)),
+                    )
+                    .order_by('-gmv', '-count')[:top_n]
+                )
+                breakdown = {
+                    'type': breakdown_type,
+                    'label': '官方验订单 - 机型 Top（按 GMV）',
+                    'defaultMetric': 'gmv',
+                    'rows': [
+                        {
+                            'dim': f"{norm_dim(r.get('product__brand'))} {norm_dim(r.get('product__model'))}".strip(),
+                            'count': int(r.get('count') or 0),
+                            'gmv': float(r.get('gmv') or 0),
+                        }
+                        for r in rows
+                    ],
+                }
+            elif breakdown_type == 'secondhand_category':
+                rows = list(
+                    secondhand_qs.values('product__category__name')
+                    .annotate(
+                        count=Count('id'),
+                        gmv=Sum('total_price', filter=Q(status__in=paid_status)),
+                    )
+                    .order_by('-gmv', '-count')[:top_n]
+                )
+                breakdown = {
+                    'type': breakdown_type,
+                    'label': '易淘订单 - 分类 Top（按 GMV）',
+                    'defaultMetric': 'gmv',
+                    'rows': [
+                        {
+                            'dim': norm_dim(r.get('product__category__name')),
+                            'count': int(r.get('count') or 0),
+                            'gmv': float(r.get('gmv') or 0),
+                        }
+                        for r in rows
+                    ],
+                }
+            elif breakdown_type == 'secondhand_shop':
+                rows = list(
+                    secondhand_qs.values('product__shop__name')
+                    .annotate(
+                        count=Count('id'),
+                        gmv=Sum('total_price', filter=Q(status__in=paid_status)),
+                    )
+                    .order_by('-gmv', '-count')[:top_n]
+                )
+                breakdown = {
+                    'type': breakdown_type,
+                    'label': '易淘订单 - 店铺 Top（按 GMV）',
+                    'defaultMetric': 'gmv',
+                    'rows': [
+                        {
+                            'dim': norm_dim(r.get('product__shop__name')),
+                            'count': int(r.get('count') or 0),
+                            'gmv': float(r.get('gmv') or 0),
+                        }
+                        for r in rows
+                    ],
+                }
+            elif breakdown_type == 'secondhand_product':
+                rows = list(
+                    secondhand_qs.values('product__title')
+                    .annotate(
+                        count=Count('id'),
+                        gmv=Sum('total_price', filter=Q(status__in=paid_status)),
+                    )
+                    .order_by('-gmv', '-count')[:top_n]
+                )
+                breakdown = {
+                    'type': breakdown_type,
+                    'label': '易淘订单 - 商品 Top（按 GMV）',
+                    'defaultMetric': 'gmv',
+                    'rows': [
+                        {
+                            'dim': norm_dim(r.get('product__title')),
+                            'count': int(r.get('count') or 0),
+                            'gmv': float(r.get('gmv') or 0),
                         }
                         for r in rows
                     ],
@@ -528,6 +642,7 @@ class StatisticsView(APIView):
                 breakdown = {
                     'type': breakdown_type,
                     'label': '库存 - 品牌 Top',
+                    'defaultMetric': 'count',
                     'rows': [
                         {
                             'dim': norm_dim(r.get('brand')),
@@ -556,6 +671,7 @@ class StatisticsView(APIView):
                 breakdown = {
                     'type': breakdown_type,
                     'label': '库存 - 机型 Top',
+                    'defaultMetric': 'count',
                     'rows': [
                         {
                             'dim': f"{norm_dim(r.get('brand'))} {norm_dim(r.get('model'))}".strip(),

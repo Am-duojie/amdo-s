@@ -110,6 +110,22 @@
           <el-table :data="funnelTable" border size="small">
             <el-table-column prop="label" label="状态" />
             <el-table-column prop="count" label="数量" width="110" />
+            <el-table-column label="转化率" width="110">
+              <template #default="{ row }">
+                <span v-if="row.key === 'cancelled'">
+                  {{ row.conversion != null ? (row.conversion * 100).toFixed(1) + '%' : '-' }}
+                </span>
+                <span v-else>
+                  {{ row.conversion != null ? (row.conversion * 100).toFixed(1) + '%' : '-' }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="流失" width="90">
+              <template #default="{ row }">
+                <span v-if="row.dropOff != null">{{ row.dropOff }}</span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
           </el-table>
         </el-col>
       </el-row>
@@ -123,9 +139,20 @@
             <el-select v-model="breakdownType" style="width: 220px" @change="loadStatistics">
               <el-option label="回收-品牌 Top" value="recycle_brand" />
               <el-option label="回收-机型 Top" value="recycle_model" />
+              <el-option label="官方验订单-品牌 GMV Top" value="verified_brand" />
+              <el-option label="官方验订单-机型 GMV Top" value="verified_model" />
+              <el-option label="易淘订单-分类 GMV Top" value="secondhand_category" />
+              <el-option label="易淘订单-店铺 GMV Top" value="secondhand_shop" />
+              <el-option label="易淘订单-商品 GMV Top" value="secondhand_product" />
               <el-option label="库存-品牌 Top" value="inventory_brand" />
               <el-option label="库存-机型 Top" value="inventory_model" />
             </el-select>
+            <el-segmented
+              v-if="breakdownHasGMV"
+              v-model="breakdownMetric"
+              :options="breakdownMetricOptions"
+              @change="renderBreakdown"
+            />
             <el-input-number
               v-model="topN"
               :min="1"
@@ -145,6 +172,9 @@
           <el-table :data="breakdownRows" border size="small">
             <el-table-column prop="dim" label="维度" min-width="160" />
             <el-table-column prop="count" label="数量" width="90" />
+            <el-table-column v-if="breakdownHasGMV" prop="gmv" label="GMV" width="140">
+              <template #default="{ row }">￥{{ formatMoney(row.gmv || 0) }}</template>
+            </el-table-column>
             <el-table-column v-if="breakdownType.startsWith('recycle_')" prop="completed" label="完成" width="90" />
             <el-table-column v-if="breakdownType.startsWith('recycle_')" prop="disputes" label="异议" width="90" />
             <el-table-column v-if="breakdownType.startsWith('inventory_')" prop="ready" label="待上架" width="90" />
@@ -191,6 +221,11 @@ const statsTable = ref([])
 
 const breakdownType = ref('recycle_brand')
 const topN = ref(10)
+const breakdownMetric = ref('count')
+const breakdownMetricOptions = [
+  { label: '数量', value: 'count' },
+  { label: 'GMV', value: 'gmv' },
+]
 
 const chartEl = ref(null)
 const funnelChartEl = ref(null)
@@ -282,7 +317,52 @@ const renderChart = (trend) => {
 const funnelTable = computed(() => {
   const funnels = stats.value?.funnels || {}
   const list = Array.isArray(funnels?.[activeFunnelKey.value]) ? funnels[activeFunnelKey.value] : []
-  return list.map((r) => ({ label: r.label, count: r.count }))
+  const labelByKey = {}
+  const countByKey = {}
+  for (const item of list) {
+    labelByKey[item.key] = item.label
+    countByKey[item.key] = Number(item.count || 0)
+  }
+
+  const statusOrder = {
+    recycle: ['pending', 'shipped', 'received', 'inspected', 'completed', 'cancelled'],
+    verified: ['pending', 'paid', 'shipped', 'completed', 'cancelled'],
+    secondhand: ['pending', 'paid', 'shipped', 'completed', 'cancelled'],
+  }
+
+  const order = statusOrder[activeFunnelKey.value] || list.map((x) => x.key)
+
+  const mainOrder = order.filter((k) => k !== 'cancelled')
+  const totalMain = mainOrder.length ? (countByKey[mainOrder[0]] ?? 0) : 0
+  const cancelled = countByKey.cancelled ?? 0
+
+  const rows = []
+  let prev = null
+  for (const key of mainOrder) {
+    const count = countByKey[key] ?? 0
+    const conv = prev && prev > 0 ? count / prev : null
+    const drop = prev != null ? Math.max(0, prev - count) : null
+    rows.push({
+      key,
+      label: labelByKey[key] || key,
+      count,
+      conversion: conv,
+      dropOff: drop,
+    })
+    prev = count
+  }
+
+  if (order.includes('cancelled')) {
+    rows.push({
+      key: 'cancelled',
+      label: labelByKey.cancelled || '已取消',
+      count: cancelled,
+      conversion: totalMain > 0 ? cancelled / totalMain : null,
+      dropOff: null,
+    })
+  }
+
+  return rows
 })
 
 const breakdownRows = computed(() => {
@@ -291,15 +371,49 @@ const breakdownRows = computed(() => {
   return b.rows
 })
 
+const breakdownHasGMV = computed(() => {
+  const b = stats.value?.breakdown
+  if (!b) return false
+  if (b.defaultMetric === 'gmv') return true
+  return breakdownRows.value.some((r) => r.gmv != null)
+})
+
 const renderFunnel = () => {
   const funnels = stats.value?.funnels || {}
   const list = Array.isArray(funnels?.[activeFunnelKey.value]) ? funnels[activeFunnelKey.value] : []
   if (!funnelChartEl.value) return
   if (!charts.funnel) charts.funnel = echarts.init(funnelChartEl.value)
 
-  const data = list.map((r) => ({ name: r.label, value: Number(r.count || 0) }))
+  const orderByKey = {
+    recycle: ['pending', 'shipped', 'received', 'inspected', 'completed', 'cancelled'],
+    verified: ['pending', 'paid', 'shipped', 'completed', 'cancelled'],
+    secondhand: ['pending', 'paid', 'shipped', 'completed', 'cancelled'],
+  }
+
+  const map = new Map(list.map((r) => [r.key, r]))
+  const ordered = (orderByKey[activeFunnelKey.value] || list.map((x) => x.key))
+    .filter((k) => map.has(k))
+    .map((k) => map.get(k))
+
+  const main = ordered.filter((r) => r.key !== 'cancelled')
+  let prev = null
+  const data = ordered.map((r) => {
+    const value = Number(r.count || 0)
+    const conv = prev && prev > 0 ? value / prev : null
+    if (r.key !== 'cancelled') prev = value
+    return { name: r.label, value, conv }
+  })
+
   charts.funnel.setOption({
-    tooltip: { trigger: 'item' },
+    tooltip: {
+      trigger: 'item',
+      formatter: (p) => {
+        const v = Number(p?.data?.value || 0)
+        const conv = p?.data?.conv
+        const convText = typeof conv === 'number' ? `<br/>转化率：${(conv * 100).toFixed(1)}%` : ''
+        return `${p.name}<br/>数量：${v}${convText}`
+      },
+    },
     series: [
       {
         type: 'funnel',
@@ -309,7 +423,7 @@ const renderFunnel = () => {
         bottom: 10,
         left: '8%',
         width: '84%',
-        label: { formatter: '{b}: {c}' },
+        label: { formatter: (p) => `${p.name}: ${Number(p.value || 0)}` },
         data,
       },
     ],
@@ -322,14 +436,25 @@ const renderBreakdown = () => {
   if (!charts.breakdown) charts.breakdown = echarts.init(breakdownChartEl.value)
 
   const dims = rows.map((r) => r.dim)
-  const counts = rows.map((r) => Number(r.count || 0))
+  const values = rows.map((r) => {
+    const metric = breakdownHasGMV.value ? breakdownMetric.value : 'count'
+    if (metric === 'gmv') return Number(r.gmv || 0)
+    return Number(r.count || 0)
+  })
+  const metricLabel = breakdownHasGMV.value && breakdownMetric.value === 'gmv' ? 'GMV' : '数量'
 
   charts.breakdown.setOption({
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
     grid: { left: 10, right: 10, top: 10, bottom: 10, containLabel: true },
-    xAxis: { type: 'value', minInterval: 1 },
+    xAxis: {
+      type: 'value',
+      minInterval: breakdownHasGMV.value && breakdownMetric.value === 'gmv' ? 0 : 1,
+      axisLabel: breakdownHasGMV.value && breakdownMetric.value === 'gmv'
+        ? { formatter: (v) => `￥${Number(v).toLocaleString('zh-CN')}` }
+        : undefined,
+    },
     yAxis: { type: 'category', data: dims, axisLabel: { interval: 0 } },
-    series: [{ type: 'bar', data: counts, itemStyle: { color: '#409EFF' } }],
+    series: [{ name: metricLabel, type: 'bar', data: values, itemStyle: { color: '#409EFF' } }],
   })
 }
 
@@ -348,6 +473,12 @@ const loadStatistics = async () => {
     const res = await adminApi.get('/statistics', { params })
     const data = res.data || {}
     stats.value = data
+
+    if (data?.breakdown?.defaultMetric) {
+      breakdownMetric.value = data.breakdown.defaultMetric
+    } else if (!breakdownHasGMV.value) {
+      breakdownMetric.value = 'count'
+    }
 
     const trend = Array.isArray(data.trend) ? data.trend : []
     statsTable.value = trend.map((r) => ({
