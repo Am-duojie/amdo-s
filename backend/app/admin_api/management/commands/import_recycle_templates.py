@@ -178,18 +178,25 @@ DEFAULT_QUESTIONS = [
     {
         'step_order': 13,
         'key': 'functional',
-        'title': '功能检测',
+        'title': '功能性问题（非必选，可多选）',
         'helper': '',
         'question_type': 'multi',
-        'is_required': True,
+        'is_required': False,
         'options': [
-            {'value': 'wifi-ok', 'label': 'WiFi正常', 'desc': '', 'impact': '', 'option_order': 0},
-            {'value': 'bluetooth-ok', 'label': '蓝牙正常', 'desc': '', 'impact': '', 'option_order': 1},
-            {'value': 'gps-ok', 'label': 'GPS正常', 'desc': '', 'impact': '', 'option_order': 2},
-            {'value': 'nfc-ok', 'label': 'NFC正常', 'desc': '', 'impact': '', 'option_order': 3},
-            {'value': 'fingerprint-ok', 'label': '指纹/面容正常', 'desc': '', 'impact': '', 'option_order': 4},
-            {'value': 'speaker-ok', 'label': '扬声器正常', 'desc': '', 'impact': '', 'option_order': 5},
-            {'value': 'mic-ok', 'label': '麦克风正常', 'desc': '', 'impact': '', 'option_order': 6},
+            {'value': 'all_ok', 'label': '全部正常', 'desc': '未发现功能异常', 'impact': 'positive', 'option_order': 0},
+            {'value': 'touch_issue', 'label': '触摸失灵/延迟', 'desc': '', 'impact': 'critical', 'option_order': 1},
+            {'value': 'vibration_flash_issue', 'label': '振动/闪光灯异常', 'desc': '', 'impact': 'major', 'option_order': 2},
+            {'value': 'biometric_issue', 'label': '指纹/面部识别异常', 'desc': '', 'impact': 'major', 'option_order': 3},
+            {'value': 'audio_issue', 'label': '听筒/麦克风/扬声器异常', 'desc': '', 'impact': 'major', 'option_order': 4},
+            {'value': 'sensor_issue', 'label': '重力/指南针等感应器异常', 'desc': '', 'impact': 'minor', 'option_order': 5},
+            {'value': 'apple_battery_camera_popup', 'label': '有Apple电池/摄像头正品弹窗', 'desc': '', 'impact': 'minor', 'option_order': 6},
+            {'value': 'apple_screen_popup', 'label': '有Apple显示屏正品弹窗', 'desc': '', 'impact': 'minor', 'option_order': 7},
+            {'value': 'wifi_baseband_issue', 'label': 'WIFI异常/信号异常/不读卡/无基带', 'desc': '', 'impact': 'critical', 'option_order': 8},
+            {'value': 'nfc_transit_issue', 'label': 'NFC异常/公交卡无法退出', 'desc': '', 'impact': 'major', 'option_order': 9},
+            {'value': 'button_issue', 'label': '按键无反馈/失灵', 'desc': '', 'impact': 'major', 'option_order': 10},
+            {'value': 'light_distance_sensor_issue', 'label': '光线、距离感应器异常', 'desc': '', 'impact': 'minor', 'option_order': 11},
+            {'value': 'cannot_charge', 'label': '无法充电', 'desc': '', 'impact': 'critical', 'option_order': 12},
+            {'value': 'water_damage', 'label': '机身进水', 'desc': '', 'impact': 'critical', 'option_order': 13},
         ]
     },
 ]
@@ -353,7 +360,6 @@ class Command(BaseCommand):
         if m:
             return f"{m.group(1)}系列"
         return ''
-
 
 
 

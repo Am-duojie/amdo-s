@@ -136,11 +136,20 @@ def _ensure_templates(rng: random.Random) -> None:
                 ]
             elif key == "functional":
                 options = [
-                    ("none", "都没有问题", "positive"),
-                    ("touch", "触控异常", "major"),
-                    ("biometric", "指纹/FaceID异常", "critical"),
-                    ("charge", "无法充电或接触不良", "critical"),
-                    ("water", "进水/潮湿腐蚀", "critical"),
+                    ("all_ok", "全部正常", "positive"),
+                    ("touch_issue", "触摸失灵/延迟", "critical"),
+                    ("vibration_flash_issue", "振动/闪光灯异常", "major"),
+                    ("biometric_issue", "指纹/面部识别异常", "major"),
+                    ("audio_issue", "听筒/麦克风/扬声器异常", "major"),
+                    ("sensor_issue", "重力/指南针等感应器异常", "minor"),
+                    ("apple_battery_camera_popup", "有Apple电池/摄像头正品弹窗", "minor"),
+                    ("apple_screen_popup", "有Apple显示屏正品弹窗", "minor"),
+                    ("wifi_baseband_issue", "WIFI异常/信号异常/不读卡/无基带", "critical"),
+                    ("nfc_transit_issue", "NFC异常/公交卡无法退出", "major"),
+                    ("button_issue", "按键无反馈/失灵", "major"),
+                    ("light_distance_sensor_issue", "光线、距离感应器异常", "minor"),
+                    ("cannot_charge", "无法充电", "critical"),
+                    ("water_damage", "机身进水", "critical"),
                 ]
 
             for idx, (value, label, impact) in enumerate(options, start=1):
@@ -196,14 +205,18 @@ def _build_questionnaire_answers(
             continue
 
         if q.question_type == "multi":
-            # mostly 0~2 problems; "none" dominates
+            # mostly 0~2 problems; exclusive "all_ok"/"none" dominates
+            exclusive_value = "all_ok" if q.key == "functional" else "none"
             if rng.random() < 0.65:
-                none = next((o for o in opts if o.value == "none"), None)
+                none = next((o for o in opts if o.value == exclusive_value), None)
                 if none:
                     answers[q.key] = [{"value": none.value, "label": none.label, "impact": none.impact or ""}]
                 continue
             k = rng.randint(1, 2)
-            chosen_list = rng.sample([o for o in opts if o.value != "none"], k=min(k, max(1, len(opts) - 1)))
+            chosen_list = rng.sample(
+                [o for o in opts if o.value != exclusive_value],
+                k=min(k, max(1, len(opts) - 1)),
+            )
             answers[q.key] = [{"value": o.value, "label": o.label, "impact": o.impact or ""} for o in chosen_list]
         else:
             chosen = rng.choice(opts)

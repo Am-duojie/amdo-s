@@ -442,6 +442,16 @@ function selectOption(step: StepItem, option: StepOption) {
     let next = current.some((x) => x.value === option.value)
       ? current.filter((x) => x.value !== option.value)
       : [...current, option];
+    // Special exclusives:
+    // - "none": used by some multi questions as "no issues"
+    // - "all_ok": used by functional question as "全部正常"
+    if (step.key === "functional") {
+      if (option.value === "all_ok") {
+        next = [option];
+      } else {
+        next = next.filter((x) => x.value !== "all_ok");
+      }
+    }
     if (option.value === "none") {
       next = [option];
     } else {

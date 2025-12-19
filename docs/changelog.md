@@ -33,6 +33,14 @@
   - Added sample template data file: `backend/data/recycle_templates_user.json`
   - Verification: import and confirm new templates appear in admin.
 
+- **Feature: reset recycle + official-verified dataset**
+  - Added reset command to clear recycle orders + official verified products/orders: `python backend/manage.py reset_recycle_official_data --yes`
+  - Verification: run `--dry-run` then `--yes` and confirm counts drop to 0; re-import templates with `--templates-file`.
+
+- **Feature: unify recycle functional questionnaire**
+  - Updated the shared functional question to include “全部正常” and remove unused items; synced via `python backend/manage.py sync_recycle_functional_question`
+  - Verification: open recycle wizard step 13 and confirm selection logic.
+
 ## 2025-12-14
 
 - **功能完善：官方验商品规格字段扩展** ✅ 已完成
