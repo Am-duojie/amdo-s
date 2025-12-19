@@ -247,6 +247,61 @@
     <el-card style="margin-bottom: 20px">
       <template #header>
         <div class="card-header">
+          <span>回收履约效率与异常</span>
+          <el-tag class="trend-range-tag" size="small" round effect="plain" type="info">回收主线</el-tag>
+        </div>
+      </template>
+
+      <el-row :gutter="16" class="flow-grid">
+        <el-col :span="14" class="flow-left">
+          <el-table :data="flowTimingRows" border size="small" class="flow-table">
+            <el-table-column prop="label" label="环节耗时" min-width="180" />
+            <el-table-column prop="sample" label="样本量" width="90" />
+            <el-table-column prop="median" label="中位数" width="120" />
+            <el-table-column prop="p90" label="P90" width="120" />
+            <el-table-column prop="p95" label="P95" width="120" />
+          </el-table>
+        </el-col>
+        <el-col :span="10" class="flow-right">
+          <div class="exception-grid">
+            <div v-for="item in exceptionCards" :key="item.key" class="exception-card">
+              <div class="exception-title">{{ item.title }}</div>
+              <div class="exception-value">{{ item.value }}</div>
+              <div class="exception-meta">{{ item.meta }}</div>
+            </div>
+          </div>
+        </el-col>
+      </el-row>
+      <el-row :gutter="16" class="flow-grid-sla">
+        <el-col :span="24">
+          <div class="sla-block">
+            <div class="sla-title">超时占比（SLA）</div>
+            <el-table :data="slaRows" border size="small" class="sla-table">
+              <el-table-column prop="label" label="环节" min-width="160" />
+              <el-table-column prop="threshold" label="阈值" width="120" />
+              <el-table-column prop="rate" label="超时占比" width="120" />
+              <el-table-column prop="count" label="超时/样本" width="140" />
+            </el-table>
+            <div v-if="slaInsight" class="sla-insight">{{ slaInsight }}</div>
+          </div>
+        </el-col>
+      </el-row>
+    </el-card>
+
+    <el-card style="margin-bottom: 20px">
+      <template #header>
+        <div class="card-header">
+          <span>调价幅度分布（估价偏差）</span>
+          <el-tag class="trend-range-tag" size="small" round effect="plain" type="info">回收主线</el-tag>
+        </div>
+      </template>
+      <div ref="priceGapChartEl" class="gap-chart"></div>
+      <div class="gap-note">说明：按 |final - estimated| / estimated 分桶，越集中在低区间代表估价越稳定。</div>
+    </el-card>
+
+    <el-card style="margin-bottom: 20px">
+      <template #header>
+        <div class="card-header">
           <span>维度拆分（TopN）</span>
           <div class="header-right breakdown-controls">
             <el-select v-model="breakdownType" style="width: 220px" @change="loadStatistics">
@@ -384,11 +439,13 @@ const breakdownGMVScopeOptions = [
 const chartEl = ref(null)
 const funnelChartEl = ref(null)
 const breakdownChartEl = ref(null)
+const priceGapChartEl = ref(null)
 
 const charts = {
   trend: null,
   funnel: null,
   breakdown: null,
+  gap: null,
 }
 
 const activeFunnelKey = ref('recycle')
@@ -435,6 +492,103 @@ const formatMoney = (amount) => {
   if (Number.isNaN(num)) return '0.00'
   return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
+
+const formatDuration = (hours) => {
+  if (hours == null) return '-'
+  const h = Number(hours)
+  if (!Number.isFinite(h)) return '-'
+  if (h >= 24) {
+    const days = h / 24
+    return `${days.toFixed(1)} 天`
+  }
+  return `${h.toFixed(1)} 小时`
+}
+
+const formatRate = (rate) => {
+  if (rate == null) return '-'
+  const r = Number(rate)
+  if (!Number.isFinite(r)) return '-'
+  return `${(r * 100).toFixed(1)}%`
+}
+
+const flowTimingRows = computed(() => {
+  const timings = stats.value?.recycle_flow?.timings || {}
+  const items = [
+    { key: 'created_to_shipped', label: '创建 → 寄出' },
+    { key: 'shipped_to_received', label: '寄出 → 收货' },
+    { key: 'received_to_inspected', label: '收货 → 质检' },
+    { key: 'inspected_to_paid', label: '质检 → 打款' },
+    { key: 'created_to_paid', label: '创建 → 打款' },
+  ]
+  return items.map((item) => {
+    const stat = timings[item.key] || {}
+    return {
+      label: item.label,
+      sample: stat.sample ?? '-',
+      median: formatDuration(stat.median_hours),
+      p90: formatDuration(stat.p90_hours),
+      p95: formatDuration(stat.p95_hours),
+    }
+  })
+})
+
+const exceptionCards = computed(() => {
+  const ex = stats.value?.recycle_flow?.exceptions || {}
+  const counts = ex.counts || {}
+  return [
+    {
+      key: 'cancelled',
+      title: '取消率',
+      value: formatRate(ex.cancelled_rate),
+      meta: `${counts.cancelled ?? 0} / ${counts.total ?? 0}`,
+    },
+    {
+      key: 'dispute',
+      title: '价格异议率',
+      value: formatRate(ex.dispute_rate),
+      meta: `${counts.dispute ?? 0} / ${counts.total ?? 0}`,
+    },
+    {
+      key: 'payment_failed',
+      title: '打款失败率',
+      value: formatRate(ex.payment_failed_rate),
+      meta: `${counts.payment_failed ?? 0} / ${counts.total ?? 0}`,
+    },
+    {
+      key: 'unconfirmed',
+      title: '质检后未确认',
+      value: formatRate(ex.unconfirmed_rate),
+      meta: `${counts.unconfirmed ?? 0} / ${counts.total ?? 0}`,
+    },
+  ]
+})
+
+const slaRows = computed(() => {
+  const items = stats.value?.recycle_flow?.sla || []
+  return items.map((item) => ({
+    key: item.key,
+    label: item.label,
+    threshold: formatDuration(item.threshold_hours),
+    rate: formatRate(item.overtime_rate),
+    count: `${item.overtime_count ?? 0} / ${item.total ?? 0}`,
+    rawRate: item.overtime_rate ?? 0,
+    overtimeCount: item.overtime_count ?? 0,
+    total: item.total ?? 0,
+  }))
+})
+
+const slaInsight = computed(() => {
+  const rows = slaRows.value || []
+  if (!rows.length) return ''
+  const top = [...rows].sort((a, b) => (b.rawRate || 0) - (a.rawRate || 0))[0]
+  if (!top || top.total === 0) return ''
+  const rateText = formatRate(top.rawRate)
+  const countText = `${top.overtimeCount} / ${top.total}`
+  if ((top.rawRate || 0) >= 0.3) {
+    return `提示：${top.label} 超时率 ${rateText}（${countText}）偏高，建议优先关注该环节。`
+  }
+  return `提示：${top.label} 超时率最高（${rateText}，${countText}），可作为优化优先级参考。`
+})
 
 const renderChart = (trend) => {
   if (!chartEl.value) return
@@ -647,10 +801,35 @@ const renderBreakdown = () => {
   })
 }
 
+const renderGapChart = () => {
+  if (!priceGapChartEl.value) return
+  if (!charts.gap) charts.gap = echarts.init(priceGapChartEl.value)
+
+  const bins = stats.value?.price_gap_distribution?.bins || []
+  const labels = bins.map((b) => b.label)
+  const values = bins.map((b) => Number(b.count || 0))
+
+  charts.gap.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 10, right: 10, top: 10, bottom: 20, containLabel: true },
+    xAxis: { type: 'category', data: labels },
+    yAxis: { type: 'value', minInterval: 1 },
+    series: [
+      {
+        name: '订单数',
+        type: 'bar',
+        data: values,
+        itemStyle: { color: '#6B8EF7' },
+        barWidth: 32,
+      },
+    ],
+  })
+}
+
 const loadStatistics = async () => {
   try {
     const params = {
-      include: 'trend,funnel,breakdown',
+      include: 'trend,funnel,breakdown,flow,gap',
       breakdown: breakdownType.value,
       top_n: topN.value,
       exclude_cancelled_orders: excludeCancelledOrders.value ? 'true' : 'false',
@@ -697,6 +876,7 @@ const loadStatistics = async () => {
     renderChart(trend)
     renderFunnel()
     renderBreakdown()
+    renderGapChart()
   } catch (error) {
     ElMessage.error('加载统计数据失败')
   }
@@ -753,6 +933,7 @@ const onResize = () => {
   if (charts.trend) charts.trend.resize()
   if (charts.funnel) charts.funnel.resize()
   if (charts.breakdown) charts.breakdown.resize()
+  if (charts.gap) charts.gap.resize()
 }
 
 onMounted(() => {
@@ -765,6 +946,7 @@ onUnmounted(() => {
   if (charts.trend) charts.trend.dispose()
   if (charts.funnel) charts.funnel.dispose()
   if (charts.breakdown) charts.breakdown.dispose()
+  if (charts.gap) charts.gap.dispose()
 })
 </script>
 
@@ -935,9 +1117,101 @@ onUnmounted(() => {
   width: 100%;
 }
 
+.gap-chart {
+  height: 260px;
+  width: 100%;
+}
+
+.gap-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #909399;
+}
+
 .breakdown-controls {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.exception-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.exception-card {
+  padding: 14px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #eef0f3;
+  box-shadow: 0 8px 20px rgba(31, 41, 55, 0.06);
+}
+
+.exception-title {
+  font-size: 13px;
+  color: #606266;
+  margin-bottom: 8px;
+}
+
+.exception-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.exception-meta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.sla-block {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #eef0f3;
+  box-shadow: 0 6px 16px rgba(31, 41, 55, 0.05);
+}
+
+.sla-title {
+  font-size: 13px;
+  color: #606266;
+  margin-bottom: 8px;
+}
+
+.sla-insight {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: #f6f7fb;
+  border-radius: 8px;
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.flow-grid {
+  align-items: flex-start;
+}
+
+.flow-grid-sla {
+  margin-top: 12px;
+}
+
+.flow-left :deep(.el-table__inner-wrapper),
+.flow-right :deep(.el-table__inner-wrapper) {
+  border-radius: 10px;
+}
+
+.flow-table :deep(.el-table__header-wrapper th),
+.sla-table :deep(.el-table__header-wrapper th) {
+  background: #f6f7fb;
+  color: #4b5563;
+  font-weight: 600;
+}
+
+.flow-table :deep(.el-table__row td),
+.sla-table :deep(.el-table__row td) {
+  padding: 10px 8px;
 }
 </style>

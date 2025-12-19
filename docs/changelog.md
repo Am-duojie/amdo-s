@@ -7,6 +7,11 @@
 - **Remove: intelligent analysis module**
   - Removed admin “智能分析” page/route and the ML display block from recycle order detail.
   - Verification: open admin sidebar and recycle order detail to confirm the section is gone.
+- **Feature: recycle flow efficiency metrics**
+  - Added recycle flow timing distribution and exception rates to statistics, with a new “回收履约效率与异常” section on the admin statistics page.
+  - Verification: open admin “统计分析” and confirm the new section renders.
+  - Added SLA overtime rates for key steps (created→shipped, shipped→received).
+  - Added price-gap distribution (|final - estimated| / estimated) to explain estimation accuracy.
 ## 2025-12-15
 
 - **Documentation: add Amdo test note**

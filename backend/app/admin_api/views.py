@@ -1,4 +1,5 @@
 import time
+import math
 from datetime import datetime, timedelta
 import json
 from django.utils import timezone
@@ -513,6 +514,169 @@ class StatisticsView(APIView):
                 'secondhand': build_funnel(secondhand_qs_base, secondhand_status_choices),
             }
 
+        # ==================== Recycle Flow（履约效率/异常） ====================
+        recycle_flow = None
+        if 'flow' in include_parts or 'efficiency' in include_parts:
+            def percentile(sorted_vals, p):
+                if not sorted_vals:
+                    return None
+                k = (len(sorted_vals) - 1) * p
+                f = math.floor(k)
+                c = math.ceil(k)
+                if f == c:
+                    return sorted_vals[int(k)]
+                return sorted_vals[f] + (sorted_vals[c] - sorted_vals[f]) * (k - f)
+
+            def summarize_durations(values):
+                if not values:
+                    return None
+                values_sorted = sorted(values)
+                n = len(values_sorted)
+                avg = sum(values_sorted) / n
+                return {
+                    'sample': n,
+                    'avg_hours': round(avg, 2),
+                    'median_hours': round(percentile(values_sorted, 0.5), 2),
+                    'p90_hours': round(percentile(values_sorted, 0.9), 2),
+                    'p95_hours': round(percentile(values_sorted, 0.95), 2),
+                }
+
+            created_to_shipped = []
+            shipped_to_received = []
+            received_to_inspected = []
+            inspected_to_paid = []
+            created_to_paid = []
+            sla_rules = [
+                {'key': 'created_to_shipped', 'label': '创建 → 寄出', 'threshold_hours': 72},
+                {'key': 'shipped_to_received', 'label': '寄出 → 收货', 'threshold_hours': 48},
+            ]
+            sla_stats = {r['key']: {'label': r['label'], 'threshold_hours': r['threshold_hours'], 'overtime': 0, 'total': 0} for r in sla_rules}
+
+            for o in recycle_qs_filtered.iterator():
+                if o.shipped_at:
+                    delta = o.shipped_at - o.created_at
+                    if delta.total_seconds() >= 0:
+                        hours = delta.total_seconds() / 3600.0
+                        created_to_shipped.append(hours)
+                        sla_stats['created_to_shipped']['total'] += 1
+                        if hours > sla_stats['created_to_shipped']['threshold_hours']:
+                            sla_stats['created_to_shipped']['overtime'] += 1
+                if o.shipped_at and o.received_at:
+                    delta = o.received_at - o.shipped_at
+                    if delta.total_seconds() >= 0:
+                        hours = delta.total_seconds() / 3600.0
+                        shipped_to_received.append(hours)
+                        sla_stats['shipped_to_received']['total'] += 1
+                        if hours > sla_stats['shipped_to_received']['threshold_hours']:
+                            sla_stats['shipped_to_received']['overtime'] += 1
+                if o.received_at and o.inspected_at:
+                    delta = o.inspected_at - o.received_at
+                    if delta.total_seconds() >= 0:
+                        received_to_inspected.append(delta.total_seconds() / 3600.0)
+                if o.inspected_at and o.paid_at:
+                    delta = o.paid_at - o.inspected_at
+                    if delta.total_seconds() >= 0:
+                        inspected_to_paid.append(delta.total_seconds() / 3600.0)
+                if o.paid_at:
+                    delta = o.paid_at - o.created_at
+                    if delta.total_seconds() >= 0:
+                        created_to_paid.append(delta.total_seconds() / 3600.0)
+
+            recycle_total_all = recycle_qs_filtered.count()
+            cancelled_count = recycle_qs_filtered.filter(status='cancelled').count()
+            dispute_count = recycle_qs_filtered.filter(price_dispute=True).count()
+            payment_failed_count = recycle_qs_filtered.filter(payment_status='failed').count()
+            unconfirmed_count = recycle_qs_filtered.filter(status='inspected', final_price_confirmed=False).count()
+
+            def safe_rate(num, denom):
+                return (float(num) / float(denom)) if denom else 0.0
+
+            recycle_flow = {
+                'timings': {
+                    'created_to_shipped': summarize_durations(created_to_shipped),
+                    'shipped_to_received': summarize_durations(shipped_to_received),
+                    'received_to_inspected': summarize_durations(received_to_inspected),
+                    'inspected_to_paid': summarize_durations(inspected_to_paid),
+                    'created_to_paid': summarize_durations(created_to_paid),
+                },
+                'sla': [
+                    {
+                        'key': key,
+                        'label': stat['label'],
+                        'threshold_hours': stat['threshold_hours'],
+                        'overtime_count': stat['overtime'],
+                        'total': stat['total'],
+                        'overtime_rate': safe_rate(stat['overtime'], stat['total']),
+                    }
+                    for key, stat in sla_stats.items()
+                ],
+                'exceptions': {
+                    'cancelled_rate': safe_rate(cancelled_count, recycle_total_all),
+                    'dispute_rate': safe_rate(dispute_count, recycle_total_all),
+                    'payment_failed_rate': safe_rate(payment_failed_count, recycle_total_all),
+                    'unconfirmed_rate': safe_rate(unconfirmed_count, recycle_total_all),
+                    'counts': {
+                        'total': recycle_total_all,
+                        'cancelled': cancelled_count,
+                        'dispute': dispute_count,
+                        'payment_failed': payment_failed_count,
+                        'unconfirmed': unconfirmed_count,
+                    },
+                },
+            }
+
+        # ==================== Price Gap Distribution（估价偏差） ====================
+        price_gap_distribution = None
+        if 'gap' in include_parts or 'price_gap' in include_parts:
+            bins = [
+                {'label': '0-5%', 'min': 0.0, 'max': 0.05},
+                {'label': '5-10%', 'min': 0.05, 'max': 0.10},
+                {'label': '10-20%', 'min': 0.10, 'max': 0.20},
+                {'label': '20-30%', 'min': 0.20, 'max': 0.30},
+                {'label': '30%+', 'min': 0.30, 'max': None},
+            ]
+            counts = [0 for _ in bins]
+            total = 0
+            for o in recycle_qs_filtered.iterator():
+                if o.estimated_price is None or o.final_price is None:
+                    continue
+                try:
+                    estimated = float(o.estimated_price)
+                    final = float(o.final_price)
+                except Exception:
+                    continue
+                if estimated <= 0:
+                    continue
+                gap = abs(final - estimated) / estimated
+                total += 1
+                placed = False
+                for idx, b in enumerate(bins):
+                    lo = float(b['min'])
+                    hi = b['max']
+                    if hi is None:
+                        if gap >= lo:
+                            counts[idx] += 1
+                            placed = True
+                            break
+                    else:
+                        if gap >= lo and gap < float(hi):
+                            counts[idx] += 1
+                            placed = True
+                            break
+                if not placed:
+                    counts[-1] += 1
+
+            price_gap_distribution = {
+                'total': total,
+                'bins': [
+                    {
+                        'label': b['label'],
+                        'count': counts[i],
+                    }
+                    for i, b in enumerate(bins)
+                ],
+            }
+
         # ==================== Breakdown（维度拆分 TopN） ====================
         breakdown = None
         if 'breakdown' in include_parts and breakdown_type:
@@ -767,14 +931,15 @@ class StatisticsView(APIView):
                 'excludeCancelledOrders': exclude_cancelled_orders,
                 'includeCancelledInOrderGMV': include_cancelled_in_order_gmv,
                 'gmvPaidStatuses': paid_status,
-                'note': '趋势/汇总/维度拆分支持状态过滤；漏斗始终展示全量状态分布（便于解释转化与取消）。',
-                'filters': {
-                    'recycle_statuses': recycle_statuses,
-                    'verified_statuses': verified_statuses,
-                    'secondhand_statuses': secondhand_statuses,
-                },
-                'breakdownGMVScope': breakdown_gmv_scope,
+            'note': '趋势/汇总/维度拆分支持状态过滤；漏斗始终展示全量状态分布（便于解释转化与取消）。',
+            'filters': {
+                'recycle_statuses': recycle_statuses,
+                'verified_statuses': verified_statuses,
+                'secondhand_statuses': secondhand_statuses,
             },
+            'breakdownGMVScope': breakdown_gmv_scope,
+            'flowScope': '回收履约效率/异常基于回收订单筛选结果（recycle_statuses）统计，时间字段为 created_at/shipped_at/received_at/inspected_at/paid_at。',
+        },
 
             # 旧字段（Statistics.vue 已在使用）
             'recycleOrdersTotal': recycle_total,
@@ -797,6 +962,8 @@ class StatisticsView(APIView):
 
             'trend': trend,
             'funnels': funnels,
+            'recycle_flow': recycle_flow,
+            'price_gap_distribution': price_gap_distribution,
             'breakdown': breakdown,
         })
 
