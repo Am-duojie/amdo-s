@@ -29,7 +29,6 @@ import { useAdminAuthStore } from '@/stores/adminAuth'
 import {
   Odometer,
   TrendCharts,
-  MagicStick,
   Tickets,
   Goods,
   ShoppingCart,
@@ -57,7 +56,6 @@ const props = defineProps({
 const iconComponents = {
   Odometer,
   TrendCharts,
-  MagicStick,
   Tickets,
   Goods,
   ShoppingCart,

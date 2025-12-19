@@ -92,22 +92,6 @@
           </span>
           <span v-else>-</span>
         </el-descriptions-item>
-        <el-descriptions-item v-if="detail.ml" label="智能建议价">
-          <span style="font-size: 18px; font-weight: bold">¥{{ detail.ml.suggested_final_price }}</span>
-          <el-tag size="small" type="info" style="margin-left: 8px">{{ detail.ml.model_version }}</el-tag>
-          <div style="margin-top: 6px; color: #909399; font-size: 12px" v-if="detail.ml.suggested_range?.length === 2">
-            区间：¥{{ detail.ml.suggested_range[0] }} ~ ¥{{ detail.ml.suggested_range[1] }}
-          </div>
-        </el-descriptions-item>
-        <el-descriptions-item v-if="detail.ml" label="风险提示">
-          <div style="display: flex; gap: 8px; flex-wrap: wrap">
-            <el-tag :type="getRiskTagType(detail.ml.risk_dispute)">异议 {{ formatRisk(detail.ml.risk_dispute) }}</el-tag>
-            <el-tag :type="getRiskTagType(detail.ml.risk_cancel)">取消 {{ formatRisk(detail.ml.risk_cancel) }}</el-tag>
-          </div>
-          <div style="margin-top: 6px; color: #909399; font-size: 12px" v-if="detail.ml.top_factors?.length">
-            {{ detail.ml.top_factors.map((f) => `${f.label}：${f.value}`).join('；') }}
-          </div>
-        </el-descriptions-item>
         <el-descriptions-item label="联系人">{{ detail.contact_name }}</el-descriptions-item>
         <el-descriptions-item label="联系电话">{{ detail.contact_phone }}</el-descriptions-item>
         <el-descriptions-item label="收货地址" :span="2">{{ detail.address }}</el-descriptions-item>
@@ -1560,17 +1544,6 @@ const formatTime = (time) => {
   return new Date(time).toLocaleString('zh-CN')
 }
 
-const getRiskTagType = (risk) => {
-  const r = Number(risk || 0)
-  if (r >= 0.7) return 'danger'
-  if (r >= 0.4) return 'warning'
-  return 'success'
-}
-
-const formatRisk = (risk) => {
-  const r = Math.round(Number(risk || 0) * 100)
-  return `${r}%`
-}
 
 // 格式化问卷问题的 key 为可读文本
 const formatQuestionKey = (key) => {

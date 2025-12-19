@@ -142,8 +142,6 @@ def _ensure_templates(rng: random.Random) -> None:
                     ("biometric_issue", "指纹/面部识别异常", "major"),
                     ("audio_issue", "听筒/麦克风/扬声器异常", "major"),
                     ("sensor_issue", "重力/指南针等感应器异常", "minor"),
-                    ("apple_battery_camera_popup", "有Apple电池/摄像头正品弹窗", "minor"),
-                    ("apple_screen_popup", "有Apple显示屏正品弹窗", "minor"),
                     ("wifi_baseband_issue", "WIFI异常/信号异常/不读卡/无基带", "critical"),
                     ("nfc_transit_issue", "NFC异常/公交卡无法退出", "major"),
                     ("button_issue", "按键无反馈/失灵", "major"),

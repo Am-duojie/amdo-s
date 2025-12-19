@@ -1,8 +1,6 @@
 from django.urls import path
 from .views import (
     LoginView, RefreshTokenView, LogoutView, DashboardMetricsView, StatisticsView,
-    RecycleMLPredictView,
-    RecycleMLBatchView, RecycleMLSummaryView,
     InspectionOrdersView, InspectionOrderDetailView, InspectionOrderLogisticsView, InspectionOrderPriceView,
     InspectionOrderPaymentView, InspectionOrderPublishVerifiedView, InspectionOrdersBatchUpdateView,
     RecycledProductsView, VerifiedListingsView, AuditQueueView, UsersView, AuditLogsView, RolesView,
@@ -32,9 +30,6 @@ urlpatterns = [
     path('menus', MenusView.as_view()),
     path('dashboard/metrics', DashboardMetricsView.as_view()),
     path('statistics', StatisticsView.as_view()),
-    path('recycle-ml/predict', RecycleMLPredictView.as_view()),
-    path('recycle-ml/batch', RecycleMLBatchView.as_view()),
-    path('recycle-ml/summary', RecycleMLSummaryView.as_view()),
     path('inspection-orders', InspectionOrdersView.as_view()),
     path('inspection-orders/<int:order_id>', InspectionOrderDetailView.as_view()),
     path('inspection-orders/<int:order_id>/status', InspectionOrderDetailView.as_view()),

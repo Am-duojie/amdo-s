@@ -22,7 +22,7 @@ except ImportError:
     RecycleDeviceTemplate = None
     RecycleQuestionTemplate = None
     RecycleQuestionOption = None
-from .price_service import price_service, LOCAL_PRICE_TABLE
+from .price_service import price_service
 from .serializers import (
     UserSerializer, UserRegisterSerializer, UserUpdateSerializer,
     CategorySerializer, ProductSerializer, OrderSerializer,
@@ -994,6 +994,11 @@ class RecycleCatalogView(APIView):
         if cached:
             return Response(cached)
 
+        # 仅从数据库模板系统加载（主口径）；不再使用本地价目表回退
+        payload = self._build_catalog_from_templates(device_type, brand, model, q)
+        cache.set(cache_key, payload, 900)  # 15分钟缓存
+        return Response(payload)
+
         # 优先从模板系统加载
         payload = self._build_catalog_from_templates(device_type, brand, model, q)
         
@@ -1086,73 +1091,7 @@ class RecycleCatalogView(APIView):
             'models': models_payload,
         }
     
-    def _build_catalog_from_price_table(self, device_type: str | None, brand: str | None, model: str | None, q: str):
-        """从本地价目表构建目录（向后兼容）"""
-        return self._build_catalog(device_type, brand, model, q)
-
-    def _build_catalog(self, device_type: str | None, brand: str | None, model: str | None, q: str):
-        device_types = list(LOCAL_PRICE_TABLE.keys())
-        if device_type:
-            device_types = [dt for dt in device_types if dt == device_type]
-
-        brands_payload = {}
-        models_payload = {}
-
-        for dt in device_types:
-            dt_data = LOCAL_PRICE_TABLE.get(dt, {}) or {}
-            brand_items = dt_data.items()
-
-            if brand:
-                brand_items = [(brand, dt_data.get(brand, {}))] if brand in dt_data else []
-
-            current_brands = []
-            for brand_name, model_dict in brand_items:
-                model_list = []
-                for model_name, storage_map in (model_dict or {}).items():
-                    if model and model_name != model:
-                        continue
-                    if q and q not in f"{brand_name} {model_name}".lower():
-                        continue
-
-                    storages = sorted(storage_map.keys(), key=self._storage_weight)
-                    model_list.append({
-                        "name": model_name,
-                        "storages": storages,
-                        "series": self._derive_series(model_name),
-                    })
-
-                if model_list:
-                    current_brands.append(brand_name)
-                    models_payload.setdefault(dt, {})[brand_name] = sorted(model_list, key=lambda x: x["name"])
-
-            if current_brands:
-                brands_payload[dt] = sorted(current_brands)
-
-        return {
-            "device_types": list(LOCAL_PRICE_TABLE.keys()),
-            "brands": brands_payload,
-            "models": models_payload,
-        }
-
-    @staticmethod
-    def _derive_series(model_name: str) -> str | None:
-        m = re.search(r'(\d{2})', model_name)
-        if m:
-            return f"{m.group(1)}系列"
-        return None
-
-    @staticmethod
-    def _storage_weight(s: str) -> float:
-        """
-        将容量字符串转为可比较的数字，便于排序
-        256GB -> 256, 1TB -> 1024
-        """
-        m = re.match(r'(\d+(?:\.\d+)?)(TB|GB)', s.upper())
-        if not m:
-            return 0
-        num = float(m.group(1))
-        unit = m.group(2)
-        return num * (1024 if unit == 'TB' else 1)
+    # 已移除本地价目表回退逻辑：目录统一以数据库模板为准
 
 
 class RecycleQuestionTemplateView(APIView):
@@ -1319,7 +1258,7 @@ class RecycleOrderViewSet(viewsets.ModelViewSet):
             return Response({'error': '缺少必要参数'}, status=status.HTTP_400_BAD_REQUEST)
 
         base_price = None
-        price_source = 'template'  # 价格来源：template/api/model/local
+        price_source = 'template'  # ?????template/api/model
         
         # 优先从机型模板获取基础价格
         try:
@@ -1344,16 +1283,6 @@ class RecycleOrderViewSet(viewsets.ModelViewSet):
         if base_price is None or base_price == 0:
             estimated_price, from_api = price_service.estimate(device_type, brand, model, storage, condition)
             price_source = 'api' if from_api else 'model'
-            
-            # 如果价格服务返回0，尝试使用智能估价模型
-            if estimated_price == 0 and device_type == '手机':
-                try:
-                    from .price_model import price_model
-                    estimated_price = price_model.estimate(brand, model, storage, condition, release_year)
-                    price_source = 'local_model'
-                except Exception as e:
-                    logger.warning(f"智能估价模型失败: {e}")
-            
             base_price = estimated_price
         
         # 根据成色调整价格
@@ -1380,7 +1309,7 @@ class RecycleOrderViewSet(viewsets.ModelViewSet):
             'estimated_price': float(estimated_price),  # 根据成色调整后的价格
             'bonus': float(bonus),  # 额外加价
             'total_price': float(estimated_price + bonus),  # 总价
-            'price_source': price_source,  # 价格来源：template/api/model/local_model
+            'price_source': price_source,  # ?????template/api/model
             'condition': condition,  # 成色
             'currency': 'CNY',
             'unit': '元'

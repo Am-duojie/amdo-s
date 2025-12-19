@@ -4,7 +4,7 @@
 
 - 将问卷最后一步统一为“功能性问题（非必选，可多选）”
   - 新增“全部正常”选项（与其它异常项互斥）。
-  - 移除“无法连接电脑”等不需要项。
+  - 移除“无法连接电脑”“有Apple电池/摄像头正品弹窗”“有Apple显示屏正品弹窗”等不需要项。
 - 作为公共默认模板应用到所有机型：
   - 默认问卷来源更新：`backend/app/admin_api/management/commands/import_recycle_templates.py`
   - 提供同步命令：`python backend/manage.py sync_recycle_functional_question`
@@ -24,4 +24,3 @@
   - `python backend/manage.py sync_recycle_functional_question --dry-run`
   - `python backend/manage.py sync_recycle_functional_question`
 - 打开回收估价问卷，进入最后一步，确认选项与交互符合预期。
-

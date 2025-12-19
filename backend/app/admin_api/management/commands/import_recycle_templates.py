@@ -189,14 +189,12 @@ DEFAULT_QUESTIONS = [
             {'value': 'biometric_issue', 'label': '指纹/面部识别异常', 'desc': '', 'impact': 'major', 'option_order': 3},
             {'value': 'audio_issue', 'label': '听筒/麦克风/扬声器异常', 'desc': '', 'impact': 'major', 'option_order': 4},
             {'value': 'sensor_issue', 'label': '重力/指南针等感应器异常', 'desc': '', 'impact': 'minor', 'option_order': 5},
-            {'value': 'apple_battery_camera_popup', 'label': '有Apple电池/摄像头正品弹窗', 'desc': '', 'impact': 'minor', 'option_order': 6},
-            {'value': 'apple_screen_popup', 'label': '有Apple显示屏正品弹窗', 'desc': '', 'impact': 'minor', 'option_order': 7},
-            {'value': 'wifi_baseband_issue', 'label': 'WIFI异常/信号异常/不读卡/无基带', 'desc': '', 'impact': 'critical', 'option_order': 8},
-            {'value': 'nfc_transit_issue', 'label': 'NFC异常/公交卡无法退出', 'desc': '', 'impact': 'major', 'option_order': 9},
-            {'value': 'button_issue', 'label': '按键无反馈/失灵', 'desc': '', 'impact': 'major', 'option_order': 10},
-            {'value': 'light_distance_sensor_issue', 'label': '光线、距离感应器异常', 'desc': '', 'impact': 'minor', 'option_order': 11},
-            {'value': 'cannot_charge', 'label': '无法充电', 'desc': '', 'impact': 'critical', 'option_order': 12},
-            {'value': 'water_damage', 'label': '机身进水', 'desc': '', 'impact': 'critical', 'option_order': 13},
+            {'value': 'wifi_baseband_issue', 'label': 'WIFI异常/信号异常/不读卡/无基带', 'desc': '', 'impact': 'critical', 'option_order': 6},
+            {'value': 'nfc_transit_issue', 'label': 'NFC异常/公交卡无法退出', 'desc': '', 'impact': 'major', 'option_order': 7},
+            {'value': 'button_issue', 'label': '按键无反馈/失灵', 'desc': '', 'impact': 'major', 'option_order': 8},
+            {'value': 'light_distance_sensor_issue', 'label': '光线、距离感应器异常', 'desc': '', 'impact': 'minor', 'option_order': 9},
+            {'value': 'cannot_charge', 'label': '无法充电', 'desc': '', 'impact': 'critical', 'option_order': 10},
+            {'value': 'water_damage', 'label': '机身进水', 'desc': '', 'impact': 'critical', 'option_order': 11},
         ]
     },
 ]
@@ -360,7 +358,6 @@ class Command(BaseCommand):
         if m:
             return f"{m.group(1)}系列"
         return ''
-
 
 
 
