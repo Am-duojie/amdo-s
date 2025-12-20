@@ -5,7 +5,7 @@
       <div class="page-subtitle">回收 / 官方验 / 易淘（三线）核心指标与趋势</div>
     </div>
 
-    <el-card class="filters-card" style="margin-bottom: 20px">
+    <el-card class="filters-card" style="margin-bottom: 14px">
       <template #header>
         <div class="filters-header">
           <div class="filters-title">筛选</div>
@@ -19,6 +19,8 @@
               <div>成交 GMV：仅统计已付款/已完成（<code>paid</code>/<code>completed</code>）</div>
               <div>下单 GMV：统计全部订单（{{ includeCancelledInOrderGMV ? '包含已取消（cancelled）' : '默认不含已取消（cancelled）' }}）</div>
               <div>漏斗：始终展示全量状态分布（含已取消），便于解释转化与取消原因</div>
+              <div>履约/异常/SLA/调价分布：基于回收订单筛选结果（recycle_statuses）</div>
+              <div>易淘价格分布：基于已付款/已完成订单统计</div>
             </div>
           </el-popover>
         </div>
@@ -177,6 +179,54 @@
       </el-col>
     </el-row>
 
+    <el-row :gutter="16" class="kpi-row">
+      <el-col :span="8">
+        <el-card class="kpi-card">
+          <div class="kpi-title">回收完成率</div>
+          <div class="kpi-value">{{ formatRate(recycleCompletionRate) }}</div>
+          <div class="kpi-meta">{{ recycleCompletedCount }} / {{ recycleTotalAllCount }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="8">
+        <el-card class="kpi-card">
+          <div class="kpi-title">回收取消率</div>
+          <div class="kpi-value">{{ formatRate(recycleCancelRate) }}</div>
+          <div class="kpi-meta">{{ recycleCancelledCount }} / {{ recycleTotalAllCount }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="8">
+        <el-card class="kpi-card">
+          <div class="kpi-title">回收均值单价</div>
+          <div class="kpi-value">￥{{ formatMoney(recycleAvgPrice) }}</div>
+          <div class="kpi-meta">成交 GMV / 完成单</div>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="16" class="kpi-row">
+      <el-col :span="8">
+        <el-card class="kpi-card">
+          <div class="kpi-title">易淘完成率</div>
+          <div class="kpi-value">{{ formatRate(secondhandCompletionRate) }}</div>
+          <div class="kpi-meta">{{ secondhandCompletedCount }} / {{ secondhandTotalAllCount }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="8">
+        <el-card class="kpi-card">
+          <div class="kpi-title">易淘取消率</div>
+          <div class="kpi-value">{{ formatRate(secondhandCancelRate) }}</div>
+          <div class="kpi-meta">{{ secondhandCancelledCount }} / {{ secondhandTotalAllCount }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="8">
+        <el-card class="kpi-card">
+          <div class="kpi-title">易淘均值单价</div>
+          <div class="kpi-value">￥{{ formatMoney(secondhandAvgPrice) }}</div>
+          <div class="kpi-meta">成交 GMV / 已付款单</div>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <el-card style="margin-bottom: 20px">
       <template #header>
         <div class="card-header">
@@ -264,7 +314,7 @@
         </el-col>
         <el-col :span="10" class="flow-right">
           <div class="exception-grid">
-            <div v-for="item in exceptionCards" :key="item.key" class="exception-card">
+            <div v-for="item in exceptionCards" :key="item.key" class="exception-card" :class="`is-${item.level}`">
               <div class="exception-title">{{ item.title }}</div>
               <div class="exception-value">{{ item.value }}</div>
               <div class="exception-meta">{{ item.meta }}</div>
@@ -276,6 +326,12 @@
         <el-col :span="24">
           <div class="sla-block">
             <div class="sla-title">超时占比（SLA）</div>
+            <div class="sla-attribution">
+              <div v-for="item in slaAttribution" :key="item.key" class="sla-pill" :class="`is-${item.level}`">
+                <span class="sla-pill-title">{{ item.owner }}</span>
+                <span class="sla-pill-value">{{ item.rate }}</span>
+              </div>
+            </div>
             <el-table :data="slaRows" border size="small" class="sla-table">
               <el-table-column prop="label" label="环节" min-width="160" />
               <el-table-column prop="threshold" label="阈值" width="120" />
@@ -296,7 +352,21 @@
         </div>
       </template>
       <div ref="priceGapChartEl" class="gap-chart"></div>
-      <div class="gap-note">说明：按 |final - estimated| / estimated 分桶，越集中在低区间代表估价越稳定。</div>
+      <div class="gap-note">
+        说明：按 |final - estimated| / estimated 分桶，越集中在低区间代表估价越稳定。
+        <span v-if="gapSummary"> {{ gapSummary }}</span>
+      </div>
+    </el-card>
+
+    <el-card style="margin-bottom: 20px">
+      <template #header>
+        <div class="card-header">
+          <span>易淘价格区间分布</span>
+          <el-tag class="trend-range-tag" size="small" round effect="plain" type="info">易淘主线</el-tag>
+        </div>
+      </template>
+      <div ref="secondhandPriceChartEl" class="gap-chart"></div>
+      <div class="gap-note">说明：统计已付款订单的价格区间分布。</div>
     </el-card>
 
     <el-card style="margin-bottom: 20px">
@@ -310,7 +380,6 @@
               <el-option label="官方验订单-品牌 GMV Top" value="verified_brand" />
               <el-option label="官方验订单-机型 GMV Top" value="verified_model" />
               <el-option label="易淘订单-分类 GMV Top" value="secondhand_category" />
-              <el-option label="易淘订单-店铺 GMV Top" value="secondhand_shop" />
               <el-option label="易淘订单-商品 GMV Top" value="secondhand_product" />
               <el-option label="库存-品牌 Top" value="inventory_brand" />
               <el-option label="库存-机型 Top" value="inventory_model" />
@@ -440,12 +509,14 @@ const chartEl = ref(null)
 const funnelChartEl = ref(null)
 const breakdownChartEl = ref(null)
 const priceGapChartEl = ref(null)
+const secondhandPriceChartEl = ref(null)
 
 const charts = {
   trend: null,
   funnel: null,
   breakdown: null,
   gap: null,
+  secondhandPrice: null,
 }
 
 const activeFunnelKey = ref('recycle')
@@ -511,6 +582,61 @@ const formatRate = (rate) => {
   return `${(r * 100).toFixed(1)}%`
 }
 
+const recycleTotalAllCount = computed(() => (
+  stats.value?.recycleOrdersTotalAll
+  ?? (stats.value?.funnels?.recycle || []).reduce((sum, r) => sum + Number(r.count || 0), 0)
+))
+
+const recycleCompletedCount = computed(() => Number(stats.value?.recycleCompleted || 0))
+const recycleCancelledCount = computed(() => Number(stats.value?.recycleCancelledTotal || 0))
+
+const recycleCompletionRate = computed(() => {
+  const total = Number(recycleTotalAllCount.value || 0)
+  if (!total) return 0
+  return recycleCompletedCount.value / total
+})
+
+const recycleCancelRate = computed(() => {
+  const total = Number(recycleTotalAllCount.value || 0)
+  if (!total) return 0
+  return recycleCancelledCount.value / total
+})
+
+const recycleAvgPrice = computed(() => {
+  const completed = Number(recycleCompletedCount.value || 0)
+  if (!completed) return 0
+  const gmv = Number(stats.value?.recycleGMVCompleted || 0)
+  return gmv / completed
+})
+
+const secondhandTotalAllCount = computed(() => (
+  stats.value?.secondhandOrdersTotalAll
+  ?? (stats.value?.funnels?.secondhand || []).reduce((sum, r) => sum + Number(r.count || 0), 0)
+))
+
+const secondhandCompletedCount = computed(() => Number(stats.value?.secondhandCompleted || 0))
+const secondhandCancelledCount = computed(() => Number(stats.value?.secondhandCancelledTotal || 0))
+const secondhandPaidTotal = computed(() => Number(stats.value?.secondhandPaidTotal || 0))
+
+const secondhandCompletionRate = computed(() => {
+  const total = Number(secondhandTotalAllCount.value || 0)
+  if (!total) return 0
+  return secondhandCompletedCount.value / total
+})
+
+const secondhandCancelRate = computed(() => {
+  const total = Number(secondhandTotalAllCount.value || 0)
+  if (!total) return 0
+  return secondhandCancelledCount.value / total
+})
+
+const secondhandAvgPrice = computed(() => {
+  const paid = Number(secondhandPaidTotal.value || 0)
+  if (!paid) return 0
+  const gmv = Number(stats.value?.secondhandGMVPaid || 0)
+  return gmv / paid
+})
+
 const flowTimingRows = computed(() => {
   const timings = stats.value?.recycle_flow?.timings || {}
   const items = [
@@ -535,32 +661,40 @@ const flowTimingRows = computed(() => {
 const exceptionCards = computed(() => {
   const ex = stats.value?.recycle_flow?.exceptions || {}
   const counts = ex.counts || {}
-  return [
+  const items = [
     {
       key: 'cancelled',
       title: '取消率',
       value: formatRate(ex.cancelled_rate),
       meta: `${counts.cancelled ?? 0} / ${counts.total ?? 0}`,
+      raw: ex.cancelled_rate ?? 0,
     },
     {
       key: 'dispute',
       title: '价格异议率',
       value: formatRate(ex.dispute_rate),
       meta: `${counts.dispute ?? 0} / ${counts.total ?? 0}`,
+      raw: ex.dispute_rate ?? 0,
     },
     {
       key: 'payment_failed',
       title: '打款失败率',
       value: formatRate(ex.payment_failed_rate),
       meta: `${counts.payment_failed ?? 0} / ${counts.total ?? 0}`,
+      raw: ex.payment_failed_rate ?? 0,
     },
     {
       key: 'unconfirmed',
       title: '质检后未确认',
       value: formatRate(ex.unconfirmed_rate),
       meta: `${counts.unconfirmed ?? 0} / ${counts.total ?? 0}`,
+      raw: ex.unconfirmed_rate ?? 0,
     },
   ]
+  return items.map((item) => ({
+    ...item,
+    level: item.raw >= 0.2 ? 'high' : item.raw >= 0.1 ? 'mid' : 'low',
+  }))
 })
 
 const slaRows = computed(() => {
@@ -575,6 +709,19 @@ const slaRows = computed(() => {
     overtimeCount: item.overtime_count ?? 0,
     total: item.total ?? 0,
   }))
+})
+
+const slaAttribution = computed(() => {
+  const items = stats.value?.recycle_flow?.sla_attribution || []
+  return items.map((item) => {
+    const raw = item.overtime_rate ?? 0
+    return {
+      key: item.key,
+      owner: item.owner,
+      rate: formatRate(raw),
+      level: raw >= 0.3 ? 'high' : raw >= 0.15 ? 'mid' : 'low',
+    }
+  })
 })
 
 const slaInsight = computed(() => {
@@ -627,6 +774,18 @@ const renderChart = (trend) => {
       { name: '官方验订单', type: 'bar', stack: 'orders', data: verifiedOrders },
       { name: '易淘订单', type: 'bar', stack: 'orders', data: secondhandOrders },
       { name: gmvSeriesName, type: 'line', yAxisIndex: 1, smooth: true, data: gmvAll },
+    ],
+    graphic: [
+      {
+        type: 'text',
+        right: 10,
+        top: 6,
+        style: {
+          text: '柱=订单数  线=GMV',
+          fill: '#909399',
+          fontSize: 11,
+        },
+      },
     ],
   })
 }
@@ -826,10 +985,45 @@ const renderGapChart = () => {
   })
 }
 
+const renderSecondhandPriceChart = () => {
+  if (!secondhandPriceChartEl.value) return
+  if (!charts.secondhandPrice) charts.secondhandPrice = echarts.init(secondhandPriceChartEl.value)
+
+  const bins = stats.value?.secondhand_price_distribution?.bins || []
+  const labels = bins.map((b) => b.label)
+  const values = bins.map((b) => Number(b.count || 0))
+
+  charts.secondhandPrice.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 10, right: 10, top: 10, bottom: 20, containLabel: true },
+    xAxis: { type: 'category', data: labels },
+    yAxis: { type: 'value', minInterval: 1 },
+    series: [
+      {
+        name: '订单数',
+        type: 'bar',
+        data: values,
+        itemStyle: { color: '#34D399' },
+        barWidth: 32,
+      },
+    ],
+  })
+}
+
+const gapSummary = computed(() => {
+  const bins = stats.value?.price_gap_distribution?.bins || []
+  const total = stats.value?.price_gap_distribution?.total || 0
+  if (!total || !bins.length) return ''
+  const mid = bins.reduce((sum, b) => sum + (Number(b.count || 0) * Number((b.mid || 0))), 0)
+  const avg = mid / total
+  if (!Number.isFinite(avg)) return ''
+  return `样本 ${total} 单，平均误差约 ${(avg * 100).toFixed(1)}%。`
+})
+
 const loadStatistics = async () => {
   try {
     const params = {
-      include: 'trend,funnel,breakdown,flow,gap',
+      include: 'trend,funnel,breakdown,flow,gap,secondhand',
       breakdown: breakdownType.value,
       top_n: topN.value,
       exclude_cancelled_orders: excludeCancelledOrders.value ? 'true' : 'false',
@@ -877,6 +1071,7 @@ const loadStatistics = async () => {
     renderFunnel()
     renderBreakdown()
     renderGapChart()
+    renderSecondhandPriceChart()
   } catch (error) {
     ElMessage.error('加载统计数据失败')
   }
@@ -895,7 +1090,39 @@ const exportStatistics = () => {
     '分账失败',
     '成交GMV（含易淘）',
     '下单GMV（含易淘）',
+    '调价分布样本数',
+    '调价分布(0-5%)',
+    '调价分布(5-10%)',
+    '调价分布(10-20%)',
+    '调价分布(20-30%)',
+    '调价分布(30%+)',
+    'SLA创建→寄出阈值',
+    'SLA创建→寄出超时率',
+    'SLA创建→寄出超时/样本',
+    'SLA寄出→收货阈值',
+    'SLA寄出→收货超时率',
+    'SLA寄出→收货超时/样本',
+    '易淘价格分布样本数',
+    '易淘价格分布(0-500)',
+    '易淘价格分布(500-1000)',
+    '易淘价格分布(1000-2000)',
+    '易淘价格分布(2000-4000)',
+    '易淘价格分布(4000+)',
   ]
+
+  const gapBins = stats.value?.price_gap_distribution?.bins || []
+  const gapCounts = (label) => (gapBins.find((b) => b.label === label)?.count ?? 0)
+  const gapTotal = stats.value?.price_gap_distribution?.total ?? 0
+
+  const slaList = stats.value?.recycle_flow?.sla || []
+  const slaByKey = {}
+  for (const item of slaList) {
+    slaByKey[item.key] = item
+  }
+
+  const shBins = stats.value?.secondhand_price_distribution?.bins || []
+  const shCounts = (label) => (shBins.find((b) => b.label === label)?.count ?? 0)
+  const shTotal = stats.value?.secondhand_price_distribution?.total ?? 0
 
   const rows = statsTable.value.map((r) => ([
     r.date,
@@ -907,6 +1134,24 @@ const exportStatistics = () => {
     r.secondhandSettlementFailed,
     r.gmvPaid,
     r.gmvAll,
+    gapTotal,
+    gapCounts('0-5%'),
+    gapCounts('5-10%'),
+    gapCounts('10-20%'),
+    gapCounts('20-30%'),
+    gapCounts('30%+'),
+    formatDuration(slaByKey.created_to_shipped?.threshold_hours),
+    formatRate(slaByKey.created_to_shipped?.overtime_rate),
+    `${slaByKey.created_to_shipped?.overtime_count ?? 0} / ${slaByKey.created_to_shipped?.total ?? 0}`,
+    formatDuration(slaByKey.shipped_to_received?.threshold_hours),
+    formatRate(slaByKey.shipped_to_received?.overtime_rate),
+    `${slaByKey.shipped_to_received?.overtime_count ?? 0} / ${slaByKey.shipped_to_received?.total ?? 0}`,
+    shTotal,
+    shCounts('0-500'),
+    shCounts('500-1000'),
+    shCounts('1000-2000'),
+    shCounts('2000-4000'),
+    shCounts('4000+'),
   ]))
 
   const csvEscape = (v) => {
@@ -934,6 +1179,7 @@ const onResize = () => {
   if (charts.funnel) charts.funnel.resize()
   if (charts.breakdown) charts.breakdown.resize()
   if (charts.gap) charts.gap.resize()
+  if (charts.secondhandPrice) charts.secondhandPrice.resize()
 }
 
 onMounted(() => {
@@ -947,6 +1193,7 @@ onUnmounted(() => {
   if (charts.funnel) charts.funnel.dispose()
   if (charts.breakdown) charts.breakdown.dispose()
   if (charts.gap) charts.gap.dispose()
+  if (charts.secondhandPrice) charts.secondhandPrice.dispose()
 })
 </script>
 
@@ -956,16 +1203,18 @@ onUnmounted(() => {
 }
 
 .page-header {
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 
 .page-title {
-  margin: 0 0 6px 0;
+  margin: 0 0 4px 0;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .page-subtitle {
   color: #909399;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .stat-card {
@@ -982,6 +1231,40 @@ onUnmounted(() => {
   font-size: 28px;
   font-weight: bold;
   color: #303133;
+}
+
+.kpi-row {
+  margin-bottom: 14px;
+}
+
+.kpi-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #eef0f3;
+  box-shadow: 0 6px 14px rgba(31, 41, 55, 0.05);
+}
+
+.kpi-card :deep(.el-card__body) {
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kpi-title {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.kpi-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.kpi-meta {
+  font-size: 12px;
+  color: #9ca3af;
 }
 
 .quick-date-buttons {
@@ -1006,11 +1289,11 @@ onUnmounted(() => {
 }
 
 .filters-card :deep(.el-card__header) {
-  padding: 12px 16px;
+  padding: 8px 14px;
 }
 
 .filters-card :deep(.el-card__body) {
-  padding: 14px 16px 16px 16px;
+  padding: 10px 14px 12px 14px;
 }
 
 .filters-header {
@@ -1024,34 +1307,34 @@ onUnmounted(() => {
 }
 
 .filters-grid {
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .filter-block-title {
-  font-size: 13px;
+  font-size: 12px;
   color: #606266;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .toggle-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 
 .toggle-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 10px;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
   background: rgba(144, 147, 153, 0.06);
 }
 
 .toggle-text {
   color: #303133;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .advanced-collapse :deep(.el-collapse-item__header) {
@@ -1148,6 +1431,24 @@ onUnmounted(() => {
   box-shadow: 0 8px 20px rgba(31, 41, 55, 0.06);
 }
 
+.exception-card.is-high {
+  border-color: rgba(239, 68, 68, 0.35);
+  box-shadow: 0 10px 24px rgba(239, 68, 68, 0.12);
+}
+
+.exception-card.is-high .exception-value {
+  color: #ef4444;
+}
+
+.exception-card.is-mid {
+  border-color: rgba(245, 158, 11, 0.35);
+  box-shadow: 0 10px 24px rgba(245, 158, 11, 0.12);
+}
+
+.exception-card.is-mid .exception-value {
+  color: #d97706;
+}
+
 .exception-title {
   font-size: 13px;
   color: #606266;
@@ -1179,6 +1480,52 @@ onUnmounted(() => {
   font-size: 13px;
   color: #606266;
   margin-bottom: 8px;
+}
+
+.sla-attribution {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.sla-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f6f7fb;
+  border: 1px solid #eef0f3;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.sla-pill-title {
+  color: #6b7280;
+}
+
+.sla-pill-value {
+  font-weight: 600;
+  color: #111827;
+}
+
+.sla-pill.is-high {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.sla-pill.is-high .sla-pill-value {
+  color: #ef4444;
+}
+
+.sla-pill.is-mid {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.sla-pill.is-mid .sla-pill-value {
+  color: #d97706;
 }
 
 .sla-insight {

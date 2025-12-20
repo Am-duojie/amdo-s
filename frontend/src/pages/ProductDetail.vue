@@ -96,7 +96,6 @@
 
           <!-- 商品描述 -->
           <div class="description-area">
-            <div class="product-title">{{ product.title }}</div>
             <div class="product-desc">{{ product.description }}</div>
           </div>
 
@@ -1291,14 +1290,6 @@ const handleShare = () => {
 /* 商品描述 */
 .description-area {
   margin-bottom: 20px;
-}
-
-.product-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  line-height: 1.5;
-  margin-bottom: 12px;
 }
 
 .product-desc {

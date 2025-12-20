@@ -182,7 +182,6 @@ const routes = [
       // 兼容旧路由
       { path: 'payments', name: 'AdminPayments', component: () => import('@/admin/pages/Payments.vue'), meta: { requiresAdminAuth: true, title: '支付/退款', icon: 'Money', group: 'legacy' } },
       { path: 'verified-orders-old', name: 'AdminVerifiedOrders', component: () => import('@/admin/pages/VerifiedOrdersAdmin.vue'), meta: { requiresAdminAuth: true, title: '官方验订单旧', icon: 'ShoppingCart', group: 'legacy', hidden: true } },
-      { path: 'shops', name: 'AdminShops', component: () => import('@/admin/pages/Shops.vue'), meta: { requiresAdminAuth: true, title: '店铺管理', icon: 'Shop', group: 'secondhand', perm: 'shop:view' } },
       { path: 'categories', name: 'AdminCategories', component: () => import('@/admin/pages/Categories.vue'), meta: { requiresAdminAuth: true, title: '分类管理', icon: 'List', group: 'system', perm: 'category:view' } },
       { path: 'products', name: 'AdminProducts', component: () => import('@/admin/pages/Products.vue'), meta: { requiresAdminAuth: true, title: '商品管理', icon: 'Box', group: 'secondhand', perm: 'product:view' } },
       { path: 'frontend-users', name: 'AdminFrontendUsers', component: () => import('@/admin/pages/FrontendUsers.vue'), meta: { requiresAdminAuth: true, title: '前端用户', icon: 'Avatar', group: 'system', perm: 'user:view' } },

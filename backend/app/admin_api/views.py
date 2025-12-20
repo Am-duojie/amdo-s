@@ -3,8 +3,8 @@ import math
 from datetime import datetime, timedelta
 import json
 from django.utils import timezone
-from django.db.models import Count, Q, Sum
-from django.db.models.functions import TruncDate
+from django.db.models import Count, Q, Sum, F, Value, FloatField, ExpressionWrapper
+from django.db.models.functions import TruncDate, Coalesce
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
@@ -15,13 +15,13 @@ from .models import (
     RecycleDeviceTemplate, RecycleQuestionTemplate, RecycleQuestionOption
 )
 from app.secondhand_app.models import (
-    RecycleOrder, VerifiedProduct, VerifiedOrder, Order, Shop, Category, Product, Message, Address,
+    RecycleOrder, VerifiedProduct, VerifiedOrder, Order, Category, Product, Message, Address,
     VerifiedDevice, create_verified_device_from_recycle_order, create_verified_product_from_device
 )
 from app.secondhand_app.alipay_client import AlipayClient
 from .serializers import (
     AdminUserSerializer, RecycleOrderListSerializer, VerifiedProductListSerializer, AdminAuditQueueItemSerializer,
-    ShopAdminSerializer, VerifiedDeviceListSerializer, OfficialInventorySerializer,
+    VerifiedDeviceListSerializer, OfficialInventorySerializer,
     RecycleDeviceTemplateSerializer, RecycleDeviceTemplateListSerializer, RecycleQuestionTemplateSerializer, RecycleQuestionOptionSerializer
 )
 from app.secondhand_app.serializers import OrderSerializer, VerifiedProductSerializer, VerifiedDeviceSerializer
@@ -139,7 +139,6 @@ def has_perms(admin, perms_list):
             return True
     return False
 
-@method_decorator(csrf_exempt, name='dispatch')
 @method_decorator(csrf_exempt, name='dispatch')
 class LoginView(APIView):
     permission_classes = [AllowAny]
@@ -398,13 +397,27 @@ class StatisticsView(APIView):
         secondhand_qs_gmv_all = secondhand_qs_filtered if include_cancelled_in_order_gmv else secondhand_qs_filtered.exclude(status='cancelled')
 
         recycle_total = recycle_qs.count()
+        recycle_total_all = recycle_qs_filtered.count()
+        recycle_cancelled = recycle_qs_filtered.filter(status='cancelled').count()
         recycle_completed = recycle_qs.filter(status='completed').count()
+        recycle_gmv_completed = recycle_qs_filtered.filter(status='completed').aggregate(
+            gmv=Sum(
+                ExpressionWrapper(
+                    Coalesce(F('final_price'), Value(0)) + Coalesce(F('bonus'), Value(0)),
+                    output_field=FloatField(),
+                )
+            )
+        ).get('gmv') or 0
         verified_total = verified_qs.count()
         verified_gmv_paid = verified_qs.aggregate(
             gmv=Sum('total_price', filter=Q(status__in=paid_status))
         ).get('gmv') or 0
         verified_gmv_all = verified_qs_gmv_all.aggregate(gmv=Sum('total_price')).get('gmv') or 0
         secondhand_total = secondhand_qs.count()
+        secondhand_total_all = secondhand_qs_filtered.count()
+        secondhand_cancelled = secondhand_qs_filtered.filter(status='cancelled').count()
+        secondhand_completed = secondhand_qs_filtered.filter(status='completed').count()
+        secondhand_paid_total = secondhand_qs_filtered.filter(status__in=paid_status).count()
         secondhand_gmv_paid = secondhand_qs.aggregate(
             gmv=Sum('total_price', filter=Q(status__in=paid_status))
         ).get('gmv') or 0
@@ -420,6 +433,7 @@ class StatisticsView(APIView):
                     'recycleOrders': 0,
                     'recycleCompleted': 0,
                     'recycleDisputes': 0,
+                    'recycleGMVCompleted': 0.0,
                     'verifiedOrders': 0,
                     'verifiedGMVPaid': 0.0,
                     'verifiedGMVAll': 0.0,
@@ -438,6 +452,13 @@ class StatisticsView(APIView):
                     orders=Count('id'),
                     completed=Count('id', filter=Q(status='completed')),
                     disputes=Count('id', filter=Q(price_dispute=True)),
+                    gmv_completed=Sum(
+                        ExpressionWrapper(
+                            Coalesce(F('final_price'), Value(0)) + Coalesce(F('bonus'), Value(0)),
+                            output_field=FloatField(),
+                        ),
+                        filter=Q(status='completed'),
+                    ),
                 )
             ):
                 day = row['day']
@@ -445,6 +466,7 @@ class StatisticsView(APIView):
                     trend_map[day]['recycleOrders'] = int(row['orders'] or 0)
                     trend_map[day]['recycleCompleted'] = int(row['completed'] or 0)
                     trend_map[day]['recycleDisputes'] = int(row['disputes'] or 0)
+                    trend_map[day]['recycleGMVCompleted'] = float(row['gmv_completed'] or 0)
 
             for row in (
                 verified_qs.annotate(day=TruncDate('created_at'))
@@ -547,8 +569,9 @@ class StatisticsView(APIView):
             inspected_to_paid = []
             created_to_paid = []
             sla_rules = [
-                {'key': 'created_to_shipped', 'label': '创建 → 寄出', 'threshold_hours': 72},
-                {'key': 'shipped_to_received', 'label': '寄出 → 收货', 'threshold_hours': 48},
+                {'key': 'created_to_shipped', 'label': '创建 → 寄出', 'threshold_hours': 72, 'owner': '用户寄出'},
+                {'key': 'shipped_to_received', 'label': '寄出 → 收货', 'threshold_hours': 48, 'owner': '物流'},
+                {'key': 'received_to_inspected', 'label': '收货 → 质检', 'threshold_hours': 24, 'owner': '质检'},
             ]
             sla_stats = {r['key']: {'label': r['label'], 'threshold_hours': r['threshold_hours'], 'overtime': 0, 'total': 0} for r in sla_rules}
 
@@ -572,7 +595,11 @@ class StatisticsView(APIView):
                 if o.received_at and o.inspected_at:
                     delta = o.inspected_at - o.received_at
                     if delta.total_seconds() >= 0:
-                        received_to_inspected.append(delta.total_seconds() / 3600.0)
+                        hours = delta.total_seconds() / 3600.0
+                        received_to_inspected.append(hours)
+                        sla_stats['received_to_inspected']['total'] += 1
+                        if hours > sla_stats['received_to_inspected']['threshold_hours']:
+                            sla_stats['received_to_inspected']['overtime'] += 1
                 if o.inspected_at and o.paid_at:
                     delta = o.paid_at - o.inspected_at
                     if delta.total_seconds() >= 0:
@@ -610,6 +637,17 @@ class StatisticsView(APIView):
                     }
                     for key, stat in sla_stats.items()
                 ],
+                'sla_attribution': [
+                    {
+                        'key': rule['key'],
+                        'owner': rule['owner'],
+                        'label': rule['label'],
+                        'overtime_rate': safe_rate(sla_stats[rule['key']]['overtime'], sla_stats[rule['key']]['total']),
+                        'overtime_count': sla_stats[rule['key']]['overtime'],
+                        'total': sla_stats[rule['key']]['total'],
+                    }
+                    for rule in sla_rules
+                ],
                 'exceptions': {
                     'cancelled_rate': safe_rate(cancelled_count, recycle_total_all),
                     'dispute_rate': safe_rate(dispute_count, recycle_total_all),
@@ -629,11 +667,11 @@ class StatisticsView(APIView):
         price_gap_distribution = None
         if 'gap' in include_parts or 'price_gap' in include_parts:
             bins = [
-                {'label': '0-5%', 'min': 0.0, 'max': 0.05},
-                {'label': '5-10%', 'min': 0.05, 'max': 0.10},
-                {'label': '10-20%', 'min': 0.10, 'max': 0.20},
-                {'label': '20-30%', 'min': 0.20, 'max': 0.30},
-                {'label': '30%+', 'min': 0.30, 'max': None},
+                {'label': '0-5%', 'min': 0.0, 'max': 0.05, 'mid': 0.025},
+                {'label': '5-10%', 'min': 0.05, 'max': 0.10, 'mid': 0.075},
+                {'label': '10-20%', 'min': 0.10, 'max': 0.20, 'mid': 0.15},
+                {'label': '20-30%', 'min': 0.20, 'max': 0.30, 'mid': 0.25},
+                {'label': '30%+', 'min': 0.30, 'max': None, 'mid': 0.40},
             ]
             counts = [0 for _ in bins]
             total = 0
@@ -672,8 +710,59 @@ class StatisticsView(APIView):
                     {
                         'label': b['label'],
                         'count': counts[i],
+                        'mid': b['mid'],
                     }
                     for i, b in enumerate(bins)
+                ],
+            }
+
+        # ==================== Secondhand Price Distribution（易淘价格区间） ====================
+        secondhand_price_distribution = None
+        if 'secondhand' in include_parts or 'secondhand_price' in include_parts:
+            price_bins = [
+                {'label': '0-500', 'min': 0, 'max': 500},
+                {'label': '500-1000', 'min': 500, 'max': 1000},
+                {'label': '1000-2000', 'min': 1000, 'max': 2000},
+                {'label': '2000-4000', 'min': 2000, 'max': 4000},
+                {'label': '4000+', 'min': 4000, 'max': None},
+            ]
+            counts = [0 for _ in price_bins]
+            total = 0
+            qs = secondhand_qs_filtered.filter(status__in=paid_status)
+            for o in qs.iterator():
+                try:
+                    price = float(o.total_price or 0)
+                except Exception:
+                    continue
+                if price <= 0:
+                    continue
+                total += 1
+                placed = False
+                for idx, b in enumerate(price_bins):
+                    lo = float(b['min'])
+                    hi = b['max']
+                    if hi is None:
+                        if price >= lo:
+                            counts[idx] += 1
+                            placed = True
+                            break
+                    else:
+                        if price >= lo and price < float(hi):
+                            counts[idx] += 1
+                            placed = True
+                            break
+                if not placed:
+                    counts[-1] += 1
+
+            secondhand_price_distribution = {
+                'total': total,
+                'scope': 'paid',
+                'bins': [
+                    {
+                        'label': b['label'],
+                        'count': counts[i],
+                    }
+                    for i, b in enumerate(price_bins)
                 ],
             }
 
@@ -825,7 +914,6 @@ class StatisticsView(APIView):
                 )
                 breakdown = {
                     'type': breakdown_type,
-                    'label': '易淘订单 - 店铺 Top（按 GMV）',
                     'defaultMetric': 'gmv',
                     'rows': [
                         {
@@ -943,7 +1031,10 @@ class StatisticsView(APIView):
 
             # 旧字段（Statistics.vue 已在使用）
             'recycleOrdersTotal': recycle_total,
+            'recycleOrdersTotalAll': recycle_total_all,
+            'recycleCancelledTotal': recycle_cancelled,
             'recycleCompleted': recycle_completed,
+            'recycleGMVCompleted': float(recycle_gmv_completed),
             'verifiedOrdersTotal': verified_total,
             'totalGMV': float(verified_gmv_paid),
 
@@ -952,6 +1043,10 @@ class StatisticsView(APIView):
             'verifiedGMVPaid': float(verified_gmv_paid),
             'verifiedGMVAll': float(verified_gmv_all),
             'secondhandOrdersTotal': secondhand_total,
+            'secondhandOrdersTotalAll': secondhand_total_all,
+            'secondhandCancelledTotal': secondhand_cancelled,
+            'secondhandCompleted': secondhand_completed,
+            'secondhandPaidTotal': secondhand_paid_total,
             'secondhandGMV': float(secondhand_gmv_paid),
             'secondhandGMVPaid': float(secondhand_gmv_paid),
             'secondhandGMVAll': float(secondhand_gmv_all),
@@ -964,6 +1059,7 @@ class StatisticsView(APIView):
             'funnels': funnels,
             'recycle_flow': recycle_flow,
             'price_gap_distribution': price_gap_distribution,
+            'secondhand_price_distribution': secondhand_price_distribution,
             'breakdown': breakdown,
         })
 
@@ -1259,7 +1355,6 @@ class InspectionOrderDetailView(APIView):
         )
         return Response({'success': True})
 
-@method_decorator(csrf_exempt, name='dispatch')
 @method_decorator(csrf_exempt, name='dispatch')
 class InspectionOrderLogisticsView(APIView):
     # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
@@ -2844,64 +2939,6 @@ class VerifiedOrdersAdminView(APIView):
         AdminAuditLog.objects.create(actor=admin, target_type='VerifiedOrder', target_id=vo.id, action=action, snapshot_json={'status': vo.status})
         return Response({'success': True})
 
-# 店铺管理相关视图（简化版）
-@method_decorator(csrf_exempt, name='dispatch')
-class ShopsAdminView(APIView):
-    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
-    authentication_classes = []
-    permission_classes = []
-    
-    def get(self, request, sid=None):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['shop:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
-        if sid:
-            try:
-                s = Shop.objects.get(id=sid)
-                return Response(ShopAdminSerializer(s).data)
-            except Shop.DoesNotExist:
-                return Response({'detail': '店铺不存在'}, status=404)
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 10))
-        search = request.query_params.get('search', '').strip()
-        qs = Shop.objects.all().order_by('-created_at')
-        if search:
-            qs = qs.filter(Q(name__icontains=search) | Q(owner__username__icontains=search))
-        total = qs.count()
-        items = qs[(page-1)*page_size: page*page_size]
-        return Response({'results': ShopAdminSerializer(items, many=True).data, 'count': total})
-    def post(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['shop:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
-        # 创建店铺逻辑
-        return Response({'success': False, 'detail': 'Not implemented'})
-    def put(self, request, sid):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['shop:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
-        # 更新店铺逻辑
-        return Response({'success': False, 'detail': 'Not implemented'})
-    def delete(self, request, sid):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['shop:delete']):
-            return Response({'detail': 'Forbidden'}, status=403)
-        try:
-            s = Shop.objects.get(id=sid)
-            s.delete()
-            return Response({'success': True})
-        except Shop.DoesNotExist:
-            return Response({'detail': '店铺不存在'}, status=404)
-
-# 分类管理、商品管理、前端用户管理、消息管理、地址管理等视图（简化实现）
 @method_decorator(csrf_exempt, name='dispatch')
 class CategoriesAdminView(APIView):
     # 禁用REST Framework的默认认证和权限检查，因为我们手动处理

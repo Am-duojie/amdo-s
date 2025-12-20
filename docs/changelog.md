@@ -12,6 +12,10 @@
   - Verification: open admin “统计分析” and confirm the new section renders.
   - Added SLA overtime rates for key steps (created→shipped, shipped→received).
   - Added price-gap distribution (|final - estimated| / estimated) to explain estimation accuracy.
+  - Added CSV export fields for price-gap distribution and SLA metrics.
+  - Added SLA attribution tags (user shipping, logistics, inspection).
+  - Added recycle KPI cards (completion rate, cancellation rate, average price).
+  - Added secondhand KPI cards and price-range distribution.
 ## 2025-12-15
 
 - **Documentation: add Amdo test note**

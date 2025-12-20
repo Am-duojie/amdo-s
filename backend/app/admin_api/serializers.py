@@ -3,7 +3,7 @@ from .models import (
     AdminUser, AdminRole, AdminInspectionReport, AdminAuditQueueItem,
     RecycleDeviceTemplate, RecycleQuestionTemplate, RecycleQuestionOption
 )
-from app.secondhand_app.models import RecycleOrder, VerifiedProduct, Shop, VerifiedDevice
+from app.secondhand_app.models import RecycleOrder, VerifiedProduct, VerifiedDevice
 
 class AdminUserSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source='role.name', allow_null=True)
@@ -55,13 +55,6 @@ class AdminAuditQueueItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = AdminAuditQueueItem
         fields = ['id','type','rules_hit','status','decision']
-
-class ShopAdminSerializer(serializers.ModelSerializer):
-    owner = serializers.CharField(source='owner.username')
-    class Meta:
-        model = Shop
-        fields = ['id','name','owner','status','rating','is_verified','created_at']
-
 
 # ==================== 回收机型模板序列化器 ====================
 
