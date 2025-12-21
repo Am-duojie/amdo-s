@@ -1,20 +1,21 @@
+
 <template>
   <div>
-    <el-button type="primary" @click="openCreate">新增用户</el-button>
+    <el-button type="primary" @click="openCreate">{{ labels.addUser }}</el-button>
     <el-table :data="items" style="margin-top:8px">
       <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="username" label="用户名" />
-      <el-table-column prop="role" label="角色" width="140" />
-      <el-table-column label="权限">
+      <el-table-column prop="username" :label="labels.username" />
+      <el-table-column prop="role" :label="labels.role" width="140" />
+      <el-table-column :label="labels.permissions">
         <template #default="{ row }">
-          <el-tag v-for="p in (row.permissions||[])" :key="p" class="mr4" type="info">{{ p }}</el-tag>
+          <el-tag v-for="p in (row.permissions || [])" :key="p" class="mr4" type="info">{{ formatPermission(p) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="180">
+      <el-table-column :label="labels.actions" width="180">
         <template #default="{row}">
           <el-space wrap>
-            <el-button size="small" @click="edit(row)">编辑</el-button>
-            <el-button size="small" type="danger" @click="remove(row)">删除</el-button>
+            <el-button size="small" @click="edit(row)">{{ labels.edit }}</el-button>
+            <el-button size="small" type="danger" @click="remove(row)">{{ labels.delete }}</el-button>
           </el-space>
         </template>
       </el-table-column>
@@ -29,17 +30,22 @@
       />
     </div>
 
-    <el-dialog v-model="createVisible" :title="isEdit ? '编辑用户' : '新增用户'" width="420px">
+    <el-dialog v-model="createVisible" :title="isEdit ? labels.editUser : labels.addUser" width="420px">
       <el-form :model="form">
-        <el-form-item label="用户名"><el-input v-model="form.username" /></el-form-item>
-        <el-form-item label="角色"><el-select v-model="form.role"><el-option label="super" value="super" /><el-option label="auditor" value="auditor" /></el-select></el-form-item>
-        <el-form-item label="邮箱"><el-input v-model="form.email" /></el-form-item>
-        <el-form-item label="密码"><el-input v-model="form.password" type="password" /></el-form-item>
+        <el-form-item :label="labels.username"><el-input v-model="form.username" /></el-form-item>
+        <el-form-item :label="labels.role">
+          <el-select v-model="form.role">
+            <el-option :label="labels.roleSuper" value="super" />
+            <el-option :label="labels.roleAuditor" value="auditor" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="labels.email"><el-input v-model="form.email" /></el-form-item>
+        <el-form-item :label="labels.password"><el-input v-model="form.password" type="password" /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createVisible=false">取消</el-button>
-        <el-button v-if="!isEdit" type="primary" :loading="creating" @click="create">确定</el-button>
-        <el-button v-else type="primary" :loading="creating" @click="saveEdit">保存</el-button>
+        <el-button @click="createVisible=false">{{ labels.cancel }}</el-button>
+        <el-button v-if="!isEdit" type="primary" :loading="creating" @click="create">{{ labels.confirm }}</el-button>
+        <el-button v-else type="primary" :loading="creating" @click="saveEdit">{{ labels.save }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -48,7 +54,34 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import adminApi from '@/utils/adminApi'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { formatPermission } from '@/admin/utils/permissionLabels'
+
+const labels = {
+  addUser: '\u65b0\u589e\u7528\u6237',
+  editUser: '\u7f16\u8f91\u7528\u6237',
+  username: '\u7528\u6237\u540d',
+  role: '\u89d2\u8272',
+  roleSuper: '\u8d85\u7ea7\u7ba1\u7406\u5458',
+  roleAuditor: '\u5ba1\u6838\u5458',
+  permissions: '\u6743\u9650',
+  actions: '\u64cd\u4f5c',
+  edit: '\u7f16\u8f91',
+  delete: '\u5220\u9664',
+  email: '\u90ae\u7bb1',
+  password: '\u5bc6\u7801',
+  cancel: '\u53d6\u6d88',
+  confirm: '\u786e\u5b9a',
+  save: '\u4fdd\u5b58',
+  created: '\u5df2\u521b\u5efa',
+  createFailed: '\u521b\u5efa\u5931\u8d25',
+  saved: '\u5df2\u4fdd\u5b58',
+  saveFailed: '\u4fdd\u5b58\u5931\u8d25',
+  deleted: '\u5df2\u5220\u9664',
+  deleteFailed: '\u5220\u9664\u5931\u8d25',
+  missingUserId: '\u672a\u627e\u5230\u7528\u6237ID'
+}
+
 const items = ref([])
 const pagination = ref({ current: 1, pageSize: 10, total: 0 })
 const createVisible = ref(false)
@@ -71,11 +104,11 @@ const create = async () => {
   creating.value = true
   try {
     await adminApi.post('/users', form)
-    ElMessage.success('已创建')
+    ElMessage.success(labels.created)
     createVisible.value = false
     await load()
   } catch (error) {
-    ElMessage.error('创建失败')
+    ElMessage.error(labels.createFailed)
   } finally {
     creating.value = false
   }
@@ -90,10 +123,20 @@ const edit = (row) => {
   form.role = row.role || 'auditor'
   form.password = ''
 }
-const remove = async (row) => { try { await adminApi.delete(`/users/${row.id}`) ; ElMessage.success('已删除'); load() } catch { ElMessage.error('删除失败') } }
+
+const remove = async (row) => {
+  try {
+    await adminApi.delete(`/users/${row.id}`)
+    ElMessage.success(labels.deleted)
+    load()
+  } catch {
+    ElMessage.error(labels.deleteFailed)
+  }
+}
+
 const saveEdit = async () => {
   if (!currentEditId.value) {
-    ElMessage.error('未找到用户ID')
+    ElMessage.error(labels.missingUserId)
     return
   }
   creating.value = true
@@ -103,16 +146,35 @@ const saveEdit = async () => {
       updateData.password = form.password
     }
     await adminApi.put(`/users/${currentEditId.value}`, updateData)
-    ElMessage.success('已保存')
+    ElMessage.success(labels.saved)
     createVisible.value = false
     await load()
   } catch (error) {
-    ElMessage.error('保存失败')
+    ElMessage.error(labels.saveFailed)
   } finally {
     creating.value = false
   }
 }
-const load = async () => { try { const res = await adminApi.get('/users', { params: { page: pagination.value.current, page_size: pagination.value.pageSize } }); items.value = res.data?.results || [] ; pagination.value.total = res.data?.count || items.value.length } catch {} }
+
+const load = async () => {
+  try {
+    const res = await adminApi.get('/users', {
+      params: { page: pagination.value.current, page_size: pagination.value.pageSize }
+    })
+    items.value = res.data?.results || []
+    pagination.value.total = res.data?.count || items.value.length
+  } catch {
+  }
+}
+
 const handlePageChange = () => load()
+
 onMounted(load)
 </script>
+
+<style scoped>
+.mr4 {
+  margin-right: 4px;
+  margin-bottom: 4px;
+}
+</style>

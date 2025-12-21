@@ -1,5 +1,6 @@
 import time
 import math
+from functools import wraps
 from datetime import datetime, timedelta
 import json
 from django.utils import timezone
@@ -14,6 +15,7 @@ from .models import (
     AdminUser, AdminRole, AdminInspectionReport, AdminAuditQueueItem, AdminAuditLog, AdminRefreshToken, AdminTokenBlacklist,
     RecycleDeviceTemplate, RecycleQuestionTemplate, RecycleQuestionOption
 )
+from .permissions import PERMISSIONS, validate_permissions
 from app.secondhand_app.models import (
     RecycleOrder, VerifiedProduct, VerifiedOrder, Order, Category, Product, Message, Address,
     VerifiedDevice, create_verified_device_from_recycle_order, create_verified_product_from_device
@@ -82,7 +84,7 @@ def get_admin_from_request(request):
         logger.info(f'[get_admin_from_request] 找到Authorization头，来源: {auth_source}')
         logger.info(f'[get_admin_from_request] Authorization值: {auth[:20]}...' if len(auth) > 20 else f'[get_admin_from_request] Authorization值: {auth}')
     else:
-        logger.warning(f'[get_admin_from_request] 未找到Authorization头')
+        logger.warning('[get_admin_from_request] Authorization header missing')
         # 查找所有包含AUTH的META键
         auth_keys = [k for k in request.META.keys() if 'AUTH' in k.upper()]
         logger.warning(f'[get_admin_from_request] 相关META键: {auth_keys}')
@@ -138,6 +140,43 @@ def has_perms(admin, perms_list):
         if p in role_perms:
             return True
     return False
+
+
+def require_admin(request, perms=None):
+    admin = get_admin_from_request(request)
+    if not admin:
+        return Response({'detail': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+    if perms and not has_perms(admin, perms):
+        return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+    request.admin = admin
+    return admin
+
+
+def admin_required(perms=None, resolve_perms=None):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, request, *args, **kwargs):
+            perms_to_check = perms
+            if resolve_perms:
+                perms_to_check = resolve_perms(request, *args, **kwargs)
+            admin = require_admin(request, perms_to_check)
+            if isinstance(admin, Response):
+                return admin
+            return func(self, request, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def _audit(admin, action, target_type, target_id, snapshot=None):
+    if not admin:
+        return
+    AdminAuditLog.objects.create(
+        actor=admin,
+        target_type=target_type,
+        target_id=target_id,
+        action=action,
+        snapshot_json=snapshot or {}
+    )
 
 @method_decorator(csrf_exempt, name='dispatch')
 class LoginView(APIView):
@@ -239,10 +278,9 @@ class AuthMeView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required()
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
+        admin = request.admin
         user_data = AdminUserSerializer(admin).data
         return Response({'user': user_data})
 
@@ -252,10 +290,9 @@ class ChangePasswordView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required()
     def post(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
+        admin = request.admin
         old_password = request.data.get('old_password', '').strip()
         new_password = request.data.get('new_password', '').strip()
         if not check_password(old_password, admin.password_hash):
@@ -270,12 +307,11 @@ class PermissionsView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required()
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
+        admin = request.admin
         perms = admin.role.permissions if admin.role else []
-        return Response({'permissions': perms})
+        return Response({'permissions': perms, 'all_permissions': PERMISSIONS})
 
 @method_decorator(csrf_exempt, name='dispatch')
 class MenusView(APIView):
@@ -283,10 +319,9 @@ class MenusView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required()
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
+        admin = request.admin
         perms = admin.role.permissions if admin.role else []
         menus = []
         if '*' in perms or any('dashboard:view' in p for p in perms):
@@ -300,12 +335,9 @@ class DashboardMetricsView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['dashboard:view'])
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['dashboard:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         today = timezone.now().date()
         gmv_qs = VerifiedOrder.objects.filter(created_at__date=today, status__in=['paid','completed']).values_list('total_price', flat=True)
         gmv_today = sum([float(x) for x in gmv_qs]) if gmv_qs else 0.0
@@ -325,12 +357,9 @@ class StatisticsView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['dashboard:view'])
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['dashboard:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         include = (request.query_params.get('include') or 'trend,funnel,breakdown').strip()
@@ -1070,12 +1099,9 @@ class InspectionOrdersView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['inspection:view'])
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['inspection:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
         status_filter = request.query_params.get('status', '')
@@ -1121,12 +1147,9 @@ class InspectionOrderDetailView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['inspection:view'])
     def get(self, request, order_id):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['inspection:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             o = RecycleOrder.objects.select_related('template').get(id=order_id)
         except RecycleOrder.DoesNotExist:
@@ -1217,12 +1240,9 @@ class InspectionOrderDetailView(APIView):
             # 质检报告
             'report': report_data,
         }})
+    @admin_required(['inspection:write'])
     def put(self, request, order_id):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['inspection:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         # 从请求体或查询参数获取状态（优先从body获取）
         status_val = None
         reject_reason = ''
@@ -1271,12 +1291,9 @@ class InspectionOrderDetailView(APIView):
             return Response({'success': True})
         except RecycleOrder.DoesNotExist:
             return Response({'success': False})
+    @admin_required(['inspection:write'])
     def post(self, request, order_id):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['inspection:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         items = request.data.get('check_items', {})
         remarks = request.data.get('remarks', '')
         evidence = request.data.get('evidence', [])
@@ -1362,12 +1379,9 @@ class InspectionOrderLogisticsView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['inspection:write'])
     def post(self, request, order_id):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['inspection:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         
         # 根据URL路径判断操作类型
         # 如果URL包含/received，则默认为receive操作
@@ -1415,128 +1429,76 @@ class InspectionOrderLogisticsView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class InspectionOrderPriceView(APIView):
-    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    # Disable default auth; handled manually
     authentication_classes = []
     permission_classes = []
-    
+
+    @admin_required(['inspection:write'])
     def put(self, request, order_id):
-        # 调试：打印请求信息
         import logging
         logger = logging.getLogger(__name__)
-        logger.info(f'[InspectionOrderPriceView] ========== 收到PUT请求 ==========')
-        logger.info(f'[InspectionOrderPriceView] 路径: /inspection-orders/{order_id}/price')
-        logger.info(f'[InspectionOrderPriceView] 请求方法: {request.method}')
-        logger.info(f'[InspectionOrderPriceView] 完整路径: {request.path}')
-        logger.info(f'[InspectionOrderPriceView] 查询参数: {request.GET}')
-        
-        # 记录所有HTTP_开头的META键
-        http_meta_keys = [k for k in request.META.keys() if k.startswith('HTTP_')]
-        logger.info(f'[InspectionOrderPriceView] META中的HTTP_*键 ({len(http_meta_keys)}个): {http_meta_keys}')
-        
-        # 记录所有META键（用于调试）
-        all_meta_keys = list(request.META.keys())
-        logger.info(f'[InspectionOrderPriceView] 所有META键数量: {len(all_meta_keys)}')
-        
-        # 记录request.headers
-        if hasattr(request, 'headers'):
-            try:
-                headers_dict = dict(request.headers)
-                logger.info(f'[InspectionOrderPriceView] request.headers内容: {headers_dict}')
-            except Exception as e:
-                logger.warning(f'[InspectionOrderPriceView] 无法读取request.headers: {e}')
-        
-        # 尝试直接从META读取Authorization
-        auth_from_meta = request.META.get('HTTP_AUTHORIZATION', '')
-        if auth_from_meta:
-            logger.info(f'[InspectionOrderPriceView] 从META[HTTP_AUTHORIZATION]直接读取到: {auth_from_meta[:30]}...')
-        else:
-            logger.warning(f'[InspectionOrderPriceView] META[HTTP_AUTHORIZATION]为空')
-        
-        # 尝试从request.headers读取Authorization
-        if hasattr(request, 'headers'):
-            try:
-                auth_from_headers = request.headers.get('Authorization', '') or request.headers.get('AUTHORIZATION', '')
-                if auth_from_headers:
-                    logger.info(f'[InspectionOrderPriceView] 从request.headers读取到: {auth_from_headers[:30]}...')
-                else:
-                    logger.warning(f'[InspectionOrderPriceView] request.headers中没有Authorization')
-            except Exception as e:
-                logger.warning(f'[InspectionOrderPriceView] 读取request.headers失败: {e}')
-        
-        logger.info(f'[InspectionOrderPriceView] 开始调用get_admin_from_request...')
-        admin = get_admin_from_request(request)
-        if not admin:
-            logger.error(f'[InspectionOrderPriceView] get_admin_from_request返回None，认证失败')
-            return Response({'detail': '身份认证信息未提供。'}, status=401)
-        logger.info(f'[InspectionOrderPriceView] 认证成功，管理员ID: {admin.id}, 用户名: {admin.username}')
-        if not has_perms(admin, ['inspection:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
-        
-        price_type = request.data.get('price_type', 'final')  # estimated: 预估价格, final: 最终价格
+        logger.info('[InspectionOrderPriceView] received PUT request')
+        admin = request.admin
+
+        price_type = request.data.get('price_type', 'final')
         estimated_price = request.data.get('estimated_price')
         final_price = request.data.get('final_price')
         bonus = request.data.get('bonus', 0)
-        
+
         try:
             o = RecycleOrder.objects.get(id=order_id)
-            
-            if price_type == 'estimated' and estimated_price is not None:
-                # 更新预估价格（估价阶段）
-                try:
-                    estimated_price = float(estimated_price)
-                    if estimated_price <= 0:
-                        return Response({'success': False, 'detail': '价格必须大于0'}, status=400)
-                    o.estimated_price = estimated_price
-                    # 如果订单状态是pending，自动更新为shipped（简化流程）
-                    if o.status == 'pending':
-                        o.status = 'shipped'
-                    # 清除价格异议标记（如果重新估价）
-                    if o.price_dispute:
-                        o.price_dispute = False
-                        o.price_dispute_reason = ''
-                    o.save()
-                except (ValueError, TypeError):
-                    return Response({'success': False, 'detail': '价格格式错误'}, status=400)
-            elif price_type == 'final' and final_price is not None:
-                # 更新最终价格（质检后）
-                try:
-                    if o.payment_status == 'paid':
-                        return Response({'success': False, 'detail': '订单已打款，无法修改最终价格'}, status=400)
-                    if o.status not in ['inspected', 'completed']:
-                        return Response({'success': False, 'detail': f'订单状态必须是已检测/已完成才能设置最终价格，当前状态: {o.status}'}, status=400)
-
-                    final_price = float(final_price)
-                    bonus = float(bonus) if bonus else 0
-                    old_final_price = o.final_price
-                    o.final_price = final_price
-                    o.bonus = bonus
-                    # 最终价格变更后需要用户重新确认
-                    o.final_price_confirmed = False
-                    o.status = 'inspected'
-                    # 清除价格异议标记
-                    if o.price_dispute:
-                        o.price_dispute = False
-                        o.price_dispute_reason = ''
-                except (ValueError, TypeError):
-                    return Response({'success': False, 'detail': '价格格式错误'}, status=400)
-            else:
-                return Response({'success': False, 'detail': '价格参数错误'}, status=400)
-            
-            o.save()
-            AdminAuditLog.objects.create(
-                actor=admin, 
-                target_type='RecycleOrder', 
-                target_id=o.id, 
-                action=f'update_{price_type}_price', 
-                snapshot_json={
-                    'estimated_price': float(o.estimated_price) if o.estimated_price else None,
-                    'final_price': float(o.final_price) if o.final_price else None,
-                    'bonus': float(o.bonus)
-                }
-            )
-            return Response({'success': True})
         except RecycleOrder.DoesNotExist:
-            return Response({'success': False, 'detail': '订单不存在'}, status=404)
+            return Response({'success': False, 'detail': 'Order not found'}, status=404)
+
+        if price_type == 'estimated' and estimated_price is not None:
+            try:
+                estimated_price = float(estimated_price)
+                if estimated_price <= 0:
+                    return Response({'success': False, 'detail': 'Price must be greater than 0'}, status=400)
+                o.estimated_price = estimated_price
+                if o.status == 'pending':
+                    o.status = 'shipped'
+                if o.price_dispute:
+                    o.price_dispute = False
+                    o.price_dispute_reason = ''
+            except (ValueError, TypeError):
+                return Response({'success': False, 'detail': 'Invalid price format'}, status=400)
+        elif price_type == 'final' and final_price is not None:
+            try:
+                if o.payment_status == 'paid':
+                    return Response({'success': False, 'detail': 'Order already paid'}, status=400)
+                if o.status not in ['inspected', 'completed']:
+                    return Response(
+                        {'success': False, 'detail': f'Invalid status for final price: {o.status}'},
+                        status=400
+                    )
+                final_price = float(final_price)
+                bonus = float(bonus) if bonus else 0
+                o.final_price = final_price
+                o.bonus = bonus
+                o.final_price_confirmed = False
+                o.status = 'inspected'
+                if o.price_dispute:
+                    o.price_dispute = False
+                    o.price_dispute_reason = ''
+            except (ValueError, TypeError):
+                return Response({'success': False, 'detail': 'Invalid price format'}, status=400)
+        else:
+            return Response({'success': False, 'detail': 'Invalid price parameters'}, status=400)
+
+        o.save()
+        AdminAuditLog.objects.create(
+            actor=admin,
+            target_type='RecycleOrder',
+            target_id=o.id,
+            action=f'update_{price_type}_price',
+            snapshot_json={
+                'estimated_price': float(o.estimated_price) if o.estimated_price else None,
+                'final_price': float(o.final_price) if o.final_price else None,
+                'bonus': float(o.bonus)
+            }
+        )
+        return Response({'success': True})
 
 @method_decorator(csrf_exempt, name='dispatch')
 class InspectionOrderPaymentView(APIView):
@@ -1544,12 +1506,9 @@ class InspectionOrderPaymentView(APIView):
     authentication_classes = []
     permission_classes = []
 
+    @admin_required(['inspection:write'])
     def post(self, request, order_id):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['inspection:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         note = (request.data.get('note') or '').strip()
         payment_method = (request.data.get('payment_method') or '').strip()
         if not payment_method:
@@ -1632,12 +1591,9 @@ class InspectionOrderPublishVerifiedView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['recycled:write', 'verified:write'])
     def post(self, request, order_id):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['recycled:write', 'verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             o = RecycleOrder.objects.get(id=order_id)
             if o.status not in ['inspected', 'completed']:
@@ -1674,12 +1630,9 @@ class InspectionOrdersBatchUpdateView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['inspection:write'])
     def post(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['inspection:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         ids = request.data.get('ids', [])
         new_status = request.data.get('status', '')
         if not ids or not new_status:
@@ -1696,10 +1649,9 @@ class InspectionOrdersBatchUpdateView(APIView):
 class AdminUploadImageView(APIView):
     authentication_classes = []
     permission_classes = []
+    @admin_required()
     def post(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
+        admin = request.admin
         f = request.FILES.get('file')
         if not f:
             return Response({'detail': 'no file'}, status=400)
@@ -1711,10 +1663,9 @@ class AdminUploadImageView(APIView):
 class AdminUploadReportView(APIView):
     authentication_classes = []
     permission_classes = []
+    @admin_required()
     def post(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
+        admin = request.admin
         f = request.FILES.get('file')
         if not f:
             return Response({'detail': 'no file'}, status=400)
@@ -1727,12 +1678,9 @@ class AdminUploadReportView(APIView):
 class AdminVerifiedProductListView(APIView):
     authentication_classes = []
     permission_classes = []
+    @admin_required(['verified:view', 'verified:write'])
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:view', 'verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 20))
         status_q = request.query_params.get('status')
@@ -1746,12 +1694,9 @@ class AdminVerifiedProductListView(APIView):
         items = qs[(page-1)*page_size: page*page_size]
         return Response({'results': VerifiedProductListSerializer(items, many=True).data, 'count': total})
 
+    @admin_required(['verified:write'])
     def post(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         serializer = VerifiedProductSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             obj = serializer.save()
@@ -1765,24 +1710,18 @@ class AdminVerifiedProductDetailView(APIView):
     def get_object(self, pk):
         return VerifiedProduct.objects.get(id=pk)
 
+    @admin_required(['verified:view', 'verified:write'])
     def get(self, request, pk):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:view', 'verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             obj = self.get_object(pk)
             return Response(VerifiedProductSerializer(obj, context={'request': request}).data)
         except VerifiedProduct.DoesNotExist:
             return Response({'detail': 'Not found'}, status=404)
 
+    @admin_required(['verified:write'])
     def put(self, request, pk):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             obj = self.get_object(pk)
         except VerifiedProduct.DoesNotExist:
@@ -1797,12 +1736,9 @@ class AdminVerifiedProductDetailView(APIView):
 class AdminVerifiedProductPublishView(APIView):
     authentication_classes = []
     permission_classes = []
+    @admin_required(['verified:write'])
     def post(self, request, pk):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             obj = VerifiedProduct.objects.get(id=pk)
         except VerifiedProduct.DoesNotExist:
@@ -1818,12 +1754,9 @@ class AdminVerifiedProductPublishView(APIView):
 class AdminVerifiedProductUnpublishView(APIView):
     authentication_classes = []
     permission_classes = []
+    @admin_required(['verified:write'])
     def post(self, request, pk):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             obj = VerifiedProduct.objects.get(id=pk)
         except VerifiedProduct.DoesNotExist:
@@ -1843,12 +1776,9 @@ class CreateVerifiedDeviceFromRecycleOrderView(APIView):
     authentication_classes = []
     permission_classes = []
 
+    @admin_required(['verified:write'])
     def post(self, request, order_id):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             order = RecycleOrder.objects.get(id=order_id)
         except RecycleOrder.DoesNotExist:
@@ -1881,12 +1811,9 @@ class AdminVerifiedDeviceView(APIView):
     authentication_classes = []
     permission_classes = []
 
+    @admin_required(['verified:read', 'verified:write'])
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:read', 'verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         qs = VerifiedDevice.objects.all().order_by('-created_at')
         search = request.GET.get('search') or request.GET.get('sn')
         status_filter = request.GET.get('status')
@@ -1906,12 +1833,9 @@ class AdminVerifiedDeviceView(APIView):
         serializer = VerifiedDeviceListSerializer(qs[start:end], many=True)
         return Response({'count': total, 'results': serializer.data})
 
+    @admin_required(['verified:write'])
     def post(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         serializer = VerifiedDeviceSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             obj = serializer.save()
@@ -1927,24 +1851,18 @@ class AdminVerifiedDeviceDetailView(APIView):
     def get_object(self, pk):
         return VerifiedDevice.objects.get(pk=pk)
 
+    @admin_required(['verified:read', 'verified:write'])
     def get(self, request, pk):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:read', 'verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             obj = self.get_object(pk)
         except VerifiedDevice.DoesNotExist:
             return Response({'detail': 'Not found'}, status=404)
         return Response(VerifiedDeviceSerializer(obj).data)
 
+    @admin_required(['verified:write'])
     def patch(self, request, pk):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             obj = self.get_object(pk)
         except VerifiedDevice.DoesNotExist:
@@ -1964,12 +1882,9 @@ class AdminVerifiedDeviceListProductView(APIView):
     authentication_classes = []
     permission_classes = []
 
+    @admin_required(['verified:write'])
     def post(self, request, pk):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             device = VerifiedDevice.objects.get(pk=pk)
         except VerifiedDevice.DoesNotExist:
@@ -2003,12 +1918,9 @@ class AdminVerifiedDeviceActionView(APIView):
     authentication_classes = []
     permission_classes = []
 
+    @admin_required(['verified:write'])
     def post(self, request, pk, action):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             device = VerifiedDevice.objects.get(pk=pk)
         except VerifiedDevice.DoesNotExist:
@@ -2043,12 +1955,9 @@ class AdminOfficialInventoryView(APIView):
     authentication_classes = []
     permission_classes = []
 
+    @admin_required(['verified:view', 'verified:write'])
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:view', 'verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
 
         qs = VerifiedDevice.objects.select_related('template', 'category').all().order_by('-created_at')
 
@@ -2110,24 +2019,18 @@ class RecycledProductsView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['recycled:view'])
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['recycled:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
         qs = VerifiedProduct.objects.all().order_by('-created_at')
         total = qs.count()
         items = qs[(page-1)*page_size: page*page_size]
         return Response({'results': VerifiedProductListSerializer(items, many=True).data, 'count': total})
+    @admin_required(['recycled:write'])
     def post(self, request, item_id=None):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['recycled:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         if item_id:
             try:
                 p = VerifiedProduct.objects.get(id=item_id)
@@ -2137,12 +2040,9 @@ class RecycledProductsView(APIView):
             except VerifiedProduct.DoesNotExist:
                 return Response({'success': False})
         return Response({'success': False})
+    @admin_required(['recycled:write'])
     def put(self, request, item_id=None):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['recycled:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             p = VerifiedProduct.objects.get(id=item_id)
             toggle = request.data.get('toggle', True)
@@ -2155,17 +2055,13 @@ class RecycledProductsView(APIView):
 # 官方验商品相关视图
 @method_decorator(csrf_exempt, name='dispatch')
 class VerifiedListingsView(APIView):
-    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    # Disable default auth; handled manually
     authentication_classes = []
     permission_classes = []
-    
+
+    @admin_required(['verified:view'])
     def get(self, request, item_id=None):
         if item_id:
-            admin = get_admin_from_request(request)
-            if not admin:
-                return Response({'detail': 'Unauthorized'}, status=401)
-            if not has_perms(admin, ['verified:view']):
-                return Response({'detail': 'Forbidden'}, status=403)
             try:
                 v = VerifiedProduct.objects.get(id=item_id)
                 return Response({
@@ -2185,13 +2081,8 @@ class VerifiedListingsView(APIView):
                     'updated_at': v.updated_at.isoformat()
                 })
             except VerifiedProduct.DoesNotExist:
-                return Response({'detail': '商品不存在'}, status=404)
-        
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+                return Response({'detail': 'product not found'}, status=404)
+
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
         search = request.query_params.get('search', '').strip()
@@ -2219,11 +2110,7 @@ class VerifiedListingsView(APIView):
         } for v in items]
         return Response({'results': data, 'count': total})
     def post(self, request, item_id=None, action=None):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             v = VerifiedProduct.objects.get(id=item_id)
             if action == 'publish':
@@ -2251,24 +2138,18 @@ class AuditQueueView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['audit:view'])
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['audit:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
         qs = AdminAuditQueueItem.objects.all().order_by('-created_at')
         total = qs.count()
         items = qs[(page-1)*page_size: page*page_size]
         return Response({'results': AdminAuditQueueItemSerializer(items, many=True).data, 'count': total})
+    @admin_required(['audit:write'])
     def post(self, request, qid, decision):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['audit:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             item = AdminAuditQueueItem.objects.get(id=qid)
             item.decision = decision
@@ -2292,12 +2173,9 @@ class AuditLogsView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['audit_log:view'])
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['audit_log:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
         qs = AdminAuditLog.objects.all().order_by('-created_at')
@@ -2317,38 +2195,35 @@ class AuditLogsView(APIView):
 # 管理员用户相关视图
 @method_decorator(csrf_exempt, name='dispatch')
 class UsersView(APIView):
-    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    # ??REST Framework???????????????????
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['admin_user:view'])
     def get(self, request, uid=None):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['admin_user:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         if uid:
             try:
                 u = AdminUser.objects.get(id=uid)
                 return Response(AdminUserSerializer(u).data)
             except AdminUser.DoesNotExist:
-                return Response({'detail': '用户不存在'}, status=404)
+                return Response({'detail': '?????'}, status=404)
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
         qs = AdminUser.objects.all().order_by('-id')
         total = qs.count()
         items = qs[(page-1)*page_size: page*page_size]
         return Response({'results': AdminUserSerializer(items, many=True).data, 'count': total})
+
+    @admin_required(['admin_user:write'])
     def post(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['admin_user:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         username = request.data.get('username', '').strip()
         password = request.data.get('password', '').strip()
         role_name = request.data.get('role', 'auditor')
         email = request.data.get('email', '').strip()
+        if not username or not password:
+            return Response({'detail': 'username and password required'}, status=400)
         try:
             role = AdminRole.objects.get(name=role_name)
         except AdminRole.DoesNotExist:
@@ -2359,13 +2234,12 @@ class UsersView(APIView):
             role=role,
             email=email
         )
+        _audit(admin, 'admin_user:create', 'AdminUser', u.id, {'username': u.username, 'role': role_name})
         return Response(AdminUserSerializer(u).data)
+
+    @admin_required(['admin_user:write'])
     def put(self, request, uid):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['admin_user:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             u = AdminUser.objects.get(id=uid)
             if 'role' in request.data:
@@ -2379,35 +2253,30 @@ class UsersView(APIView):
             if 'password' in request.data and request.data.get('password'):
                 u.password_hash = make_password(request.data.get('password'))
             u.save()
+            _audit(admin, 'admin_user:update', 'AdminUser', u.id, {'username': u.username, 'role': u.role.name if u.role else None})
             return Response(AdminUserSerializer(u).data)
         except AdminUser.DoesNotExist:
-            return Response({'detail': '用户不存在'}, status=404)
+            return Response({'detail': '?????'}, status=404)
+
+    @admin_required(['admin_user:write'])
     def delete(self, request, uid):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['admin_user:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             u = AdminUser.objects.get(id=uid)
+            _audit(admin, 'admin_user:delete', 'AdminUser', u.id, {'username': u.username})
             u.delete()
             return Response({'success': True})
         except AdminUser.DoesNotExist:
-            return Response({'detail': '用户不存在'}, status=404)
+            return Response({'detail': '?????'}, status=404)
 
-# 角色相关视图
-@method_decorator(csrf_exempt, name='dispatch')
 class RolesView(APIView):
-    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    # ??REST Framework???????????????????
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['role:view'])
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['role:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         roles = AdminRole.objects.all()
         data = [{
             'id': r.id,
@@ -2415,37 +2284,45 @@ class RolesView(APIView):
             'description': r.description,
             'permissions': r.permissions or []
         } for r in roles]
-        return Response({'results': data})
+        return Response({'results': data, 'all_permissions': PERMISSIONS})
+
+    @admin_required(['role:write'])
     def post(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['role:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         name = request.data.get('name', '').strip()
         description = request.data.get('description', '').strip()
-        perms_text = request.data.get('permsText', '').strip()
-        perms = [p.strip() for p in perms_text.split(',') if p.strip()] if perms_text else []
-        role, created = AdminRole.objects.get_or_create(name=name, defaults={'description': description, 'permissions': perms})
+        perms = request.data.get('permissions')
+        if perms is None:
+            perms_text = request.data.get('permsText', '').strip()
+            perms = [p.strip() for p in perms_text.split(',') if p.strip()] if perms_text else []
+        if not isinstance(perms, list):
+            return Response({'detail': 'permissions must be a list'}, status=400)
+        if not name:
+            return Response({'detail': 'role name required'}, status=400)
+        valid, invalid = validate_permissions(perms)
+        if invalid:
+            return Response({'detail': 'invalid permissions', 'invalid': invalid}, status=400)
+        perms = sorted(set(valid))
+        role, created = AdminRole.objects.get_or_create(
+            name=name,
+            defaults={'description': description, 'permissions': perms}
+        )
         if not created:
             role.description = description
             role.permissions = perms
             role.save()
+        _audit(admin, 'role:upsert', 'AdminRole', role.id, {'name': role.name, 'permissions': perms})
         return Response({'success': True, 'id': role.id})
 
-# 支付订单相关视图
-@method_decorator(csrf_exempt, name='dispatch')
 class PaymentOrdersView(APIView):
+
     # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['payment:view'])
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['payment:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
         status_filter = request.query_params.get('status', '')
@@ -2477,12 +2354,9 @@ class PaymentOrderDetailView(APIView):
     authentication_classes = []
     permission_classes = []
 
+    @admin_required(['payment:view'])
     def get(self, request, order_id):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['payment:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             o = Order.objects.select_related(
                 'buyer__profile',
@@ -2502,35 +2376,35 @@ class PaymentOrderDetailView(APIView):
         }
         return Response({'order': data})
 
+def _payment_action_perms(request, order_id, action):
+    if action == 'query':
+        return ['payment:view']
+    if action == 'refund':
+        return ['payment:write']
+    if action == 'ship':
+        return ['order:ship']
+    return None
+
 @method_decorator(csrf_exempt, name='dispatch')
 class PaymentOrderActionView(APIView):
-    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    # Disable default auth; handled manually
     authentication_classes = []
     permission_classes = []
-    
+
+    @admin_required(resolve_perms=_payment_action_perms)
     def post(self, request, order_id, action):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
+        admin = request.admin
         try:
             o = Order.objects.get(id=order_id)
         except Order.DoesNotExist:
             return Response({'success': False, 'detail': 'order not found'}, status=404)
         if action == 'query':
-            if not has_perms(admin, ['payment:view']):
-                return Response({'detail': 'Forbidden'}, status=403)
-            # 使用支付宝查询
             alipay = AlipayClient()
             result = alipay.query_trade(f'normal_{order_id}')
             return Response({'success': True, 'result': result})
-        elif action == 'refund':
-            if not has_perms(admin, ['payment:write']):
-                return Response({'detail': 'Forbidden'}, status=403)
-            # TODO: 实现支付宝退款接口
-            return Response({'success': False, 'detail': '退款功能暂未实现'}, status=501)
-        elif action == 'ship':
-            if not has_perms(admin, ['order:ship']):
-                return Response({'detail': 'Forbidden'}, status=403)
+        if action == 'refund':
+            return Response({'success': False, 'detail': 'refund not implemented'}, status=501)
+        if action == 'ship':
             carrier = request.data.get('carrier', '').strip()
             tracking_number = request.data.get('tracking_number', '').strip()
             o.carrier = carrier
@@ -2538,7 +2412,13 @@ class PaymentOrderActionView(APIView):
             o.shipped_at = timezone.now()
             o.status = 'shipped'
             o.save()
-            AdminAuditLog.objects.create(actor=admin, target_type='Order', target_id=o.id, action='ship', snapshot_json={'carrier': carrier, 'tracking_number': tracking_number})
+            AdminAuditLog.objects.create(
+                actor=admin,
+                target_type='Order',
+                target_id=o.id,
+                action='ship',
+                snapshot_json={'carrier': carrier, 'tracking_number': tracking_number}
+            )
             return Response({'success': True})
         return Response({'success': False}, status=400)
 
@@ -2547,12 +2427,9 @@ class PaymentOrderSettlementView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['payment:view'])
     def get(self, request, order_id, action=None):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['payment:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             o = Order.objects.select_related('product__seller__profile', 'buyer').get(id=order_id)
             seller_profile = getattr(o.product.seller, 'profile', None)
@@ -2605,12 +2482,9 @@ class PaymentOrderSettlementView(APIView):
         except Order.DoesNotExist:
             return Response({'detail': 'order not found'}, status=404)
     
+    @admin_required(['payment:write'])
     def post(self, request, order_id, action):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['payment:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         if action != 'retry':
             return Response({'success': False, 'detail': 'unknown action'}, status=400)
         try:
@@ -2683,12 +2557,9 @@ class SettlementSummaryView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['payment:view'])
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['payment:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         qs = Order.objects.all()
         counts = qs.values('settlement_status').annotate(cnt=Count('id'))
         totals = qs.aggregate(
@@ -2708,12 +2579,9 @@ class VerifiedOrdersAdminView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['verified:view'])
     def get(self, request, oid=None):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         
         if oid:
             try:
@@ -2769,12 +2637,9 @@ class VerifiedOrdersAdminView(APIView):
             'created_at': vo.created_at.isoformat(),
         } for vo in items]
         return Response({'results': data, 'count': total})
+    @admin_required(['verified:write'])
     def post(self, request, oid, action):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': 'Unauthorized'}, status=401)
-        if not has_perms(admin, ['verified:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             vo = VerifiedOrder.objects.get(id=oid)
         except VerifiedOrder.DoesNotExist:
@@ -2810,10 +2675,9 @@ class CategoriesAdminView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['category:view'])
     def get(self, request, cid=None):
-        admin = get_admin_from_request(request)
-        if not admin or not has_perms(admin, ['category:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         if cid:
             try:
                 c = Category.objects.get(id=cid)
@@ -2823,18 +2687,16 @@ class CategoriesAdminView(APIView):
         qs = Category.objects.all()
         data = [{'id': c.id, 'name': c.name, 'description': c.description} for c in qs]
         return Response({'results': data})
+    @admin_required(['category:write'])
     def post(self, request):
-        admin = get_admin_from_request(request)
-        if not admin or not has_perms(admin, ['category:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         name = request.data.get('name', '').strip()
         description = request.data.get('description', '').strip()
         c = Category.objects.create(name=name, description=description)
         return Response({'id': c.id, 'name': c.name})
+    @admin_required(['category:write'])
     def put(self, request, cid):
-        admin = get_admin_from_request(request)
-        if not admin or not has_perms(admin, ['category:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             c = Category.objects.get(id=cid)
             c.name = request.data.get('name', c.name)
@@ -2843,10 +2705,9 @@ class CategoriesAdminView(APIView):
             return Response({'id': c.id, 'name': c.name})
         except Category.DoesNotExist:
             return Response({'detail': '分类不存在'}, status=404)
+    @admin_required(['category:delete'])
     def delete(self, request, cid):
-        admin = get_admin_from_request(request)
-        if not admin or not has_perms(admin, ['category:delete']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             c = Category.objects.get(id=cid)
             c.delete()
@@ -2860,10 +2721,9 @@ class ProductsAdminView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['product:view'])
     def get(self, request, pid=None):
-        admin = get_admin_from_request(request)
-        if not admin or not has_perms(admin, ['product:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         if pid:
             try:
                 p = Product.objects.get(id=pid)
@@ -2877,10 +2737,9 @@ class ProductsAdminView(APIView):
         items = qs[(page-1)*page_size: page*page_size]
         data = [{'id': p.id, 'title': p.title, 'status': p.status} for p in items]
         return Response({'results': data, 'count': total})
+    @admin_required(['product:write'])
     def post(self, request, pid, action):
-        admin = get_admin_from_request(request)
-        if not admin or not has_perms(admin, ['product:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             p = Product.objects.get(id=pid)
             if action == 'publish':
@@ -2893,10 +2752,9 @@ class ProductsAdminView(APIView):
             return Response({'success': True})
         except Product.DoesNotExist:
             return Response({'success': False})
+    @admin_required(['product:delete'])
     def delete(self, request, pid):
-        admin = get_admin_from_request(request)
-        if not admin or not has_perms(admin, ['product:delete']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             p = Product.objects.get(id=pid)
             p.delete()
@@ -2910,10 +2768,9 @@ class UsersFrontendAdminView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['user:view'])
     def get(self, request, uid=None):
-        admin = get_admin_from_request(request)
-        if not admin or not has_perms(admin, ['user:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         if uid:
             try:
                 from django.contrib.auth.models import User
@@ -2929,10 +2786,9 @@ class UsersFrontendAdminView(APIView):
         items = qs[(page-1)*page_size: page*page_size]
         data = [{'id': u.id, 'username': u.username, 'email': u.email, 'is_active': u.is_active, 'is_staff': u.is_staff, 'date_joined': u.date_joined.isoformat()} for u in items]
         return Response({'results': data, 'count': total})
+    @admin_required(['user:write'])
     def post(self, request, uid):
-        admin = get_admin_from_request(request)
-        if not admin or not has_perms(admin, ['user:write']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         from django.contrib.auth.models import User
         try:
             u = User.objects.get(id=uid)
@@ -2945,10 +2801,9 @@ class UsersFrontendAdminView(APIView):
             return Response({'success': True})
         except User.DoesNotExist:
             return Response({'detail': '用户不存在'}, status=404)
+    @admin_required(['user:delete'])
     def delete(self, request, uid):
-        admin = get_admin_from_request(request)
-        if not admin or not has_perms(admin, ['user:delete']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         from django.contrib.auth.models import User
         try:
             u = User.objects.get(id=uid)
@@ -2963,10 +2818,9 @@ class MessagesAdminView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['message:view'])
     def get(self, request, mid=None):
-        admin = get_admin_from_request(request)
-        if not admin or not has_perms(admin, ['message:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
         qs = Message.objects.all().order_by('-created_at')
@@ -2974,10 +2828,9 @@ class MessagesAdminView(APIView):
         items = qs[(page-1)*page_size: page*page_size]
         data = [{'id': m.id, 'sender': m.sender.username if m.sender else '', 'receiver': m.receiver.username if m.receiver else '', 'content': m.content, 'is_read': m.is_read, 'created_at': m.created_at.isoformat()} for m in items]
         return Response({'results': data, 'count': total})
+    @admin_required(['message:delete'])
     def delete(self, request, mid):
-        admin = get_admin_from_request(request)
-        if not admin or not has_perms(admin, ['message:delete']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             m = Message.objects.get(id=mid)
             m.delete()
@@ -2991,10 +2844,9 @@ class AddressesAdminView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['address:view'])
     def get(self, request, aid=None):
-        admin = get_admin_from_request(request)
-        if not admin or not has_perms(admin, ['address:view']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
         qs = Address.objects.all().order_by('-created_at')
@@ -3002,10 +2854,9 @@ class AddressesAdminView(APIView):
         items = qs[(page-1)*page_size: page*page_size]
         data = [{'id': a.id, 'user': a.user.username if a.user else '', 'name': a.name, 'phone': a.phone, 'address': a.address, 'is_default': a.is_default, 'created_at': a.created_at.isoformat()} for a in items]
         return Response({'results': data, 'count': total})
+    @admin_required(['address:delete'])
     def delete(self, request, aid):
-        admin = get_admin_from_request(request)
-        if not admin or not has_perms(admin, ['address:delete']):
-            return Response({'detail': 'Forbidden'}, status=403)
+        admin = request.admin
         try:
             a = Address.objects.get(id=aid)
             a.delete()
@@ -3022,12 +2873,9 @@ class RecycleDeviceTemplateView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['recycle_template:view'])
     def get(self, request, template_id=None):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
-        if not has_perms(admin, ['recycle_template:view']):
-            return Response({'detail': '没有权限执行此操作，需要 recycle_template:view 权限'}, status=403)
+        admin = request.admin
         
         if template_id:
             # 获取单个模板详情
@@ -3063,13 +2911,10 @@ class RecycleDeviceTemplateView(APIView):
             serializer = RecycleDeviceTemplateListSerializer(items, many=True)
             return Response({'results': serializer.data, 'count': total})
     
+    @admin_required(['recycle_template:create'])
     def post(self, request):
         """创建模板"""
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
-        if not has_perms(admin, ['recycle_template:create']):
-            return Response({'detail': '没有权限执行此操作，需要 recycle_template:create 权限'}, status=403)
+        admin = request.admin
         
         data = request.data.copy()
         data['created_by'] = admin.id
@@ -3080,13 +2925,10 @@ class RecycleDeviceTemplateView(APIView):
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
     
+    @admin_required(['recycle_template:update'])
     def put(self, request, template_id):
         """更新模板"""
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
-        if not has_perms(admin, ['recycle_template:update']):
-            return Response({'detail': '没有权限执行此操作，需要 recycle_template:update 权限'}, status=403)
+        admin = request.admin
         
         try:
             template = RecycleDeviceTemplate.objects.get(id=template_id)
@@ -3098,13 +2940,10 @@ class RecycleDeviceTemplateView(APIView):
         except RecycleDeviceTemplate.DoesNotExist:
             return Response({'detail': '模板不存在'}, status=404)
     
+    @admin_required(['recycle_template:delete'])
     def delete(self, request, template_id):
         """删除模板"""
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
-        if not has_perms(admin, ['recycle_template:delete']):
-            return Response({'detail': '没有权限执行此操作，需要 recycle_template:delete 权限'}, status=403)
+        admin = request.admin
         
         try:
             template = RecycleDeviceTemplate.objects.get(id=template_id)
@@ -3120,12 +2959,9 @@ class RecycleTemplateDownloadView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['recycle_template:view'])
     def get(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
-        if not has_perms(admin, ['recycle_template:view']):
-            return Response({'detail': '没有权限执行此操作，需要 recycle_template:view 权限'}, status=403)
+        admin = request.admin
         
         try:
             import io
@@ -3344,12 +3180,9 @@ class RecycleTemplateImportView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['recycle_template:create'])
     def post(self, request):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
-        if not has_perms(admin, ['recycle_template:create']):
-            return Response({'detail': '没有权限执行此操作，需要 recycle_template:create 权限'}, status=403)
+        admin = request.admin
         
         uploaded_file = request.FILES.get('file')
         if not uploaded_file:
@@ -3721,12 +3554,9 @@ class RecycleQuestionTemplateView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['recycle_template:view'])
     def get(self, request, template_id, question_id=None):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
-        if not has_perms(admin, ['recycle_template:view']):
-            return Response({'detail': '没有权限执行此操作，需要 recycle_template:view 权限'}, status=403)
+        admin = request.admin
         
         try:
             device_template = RecycleDeviceTemplate.objects.get(id=template_id)
@@ -3747,13 +3577,10 @@ class RecycleQuestionTemplateView(APIView):
             serializer = RecycleQuestionTemplateSerializer(questions, many=True)
             return Response({'results': serializer.data})
     
+    @admin_required(['recycle_template:create'])
     def post(self, request, template_id):
         """创建问题"""
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
-        if not has_perms(admin, ['recycle_template:create']):
-            return Response({'detail': '没有权限执行此操作，需要 recycle_template:create 权限'}, status=403)
+        admin = request.admin
         
         try:
             device_template = RecycleDeviceTemplate.objects.get(id=template_id)
@@ -3769,13 +3596,10 @@ class RecycleQuestionTemplateView(APIView):
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
     
+    @admin_required(['recycle_template:update'])
     def put(self, request, template_id, question_id):
         """更新问题"""
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
-        if not has_perms(admin, ['recycle_template:update']):
-            return Response({'detail': '没有权限执行此操作，需要 recycle_template:update 权限'}, status=403)
+        admin = request.admin
         
         try:
             device_template = RecycleDeviceTemplate.objects.get(id=template_id)
@@ -3791,13 +3615,10 @@ class RecycleQuestionTemplateView(APIView):
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
     
+    @admin_required(['recycle_template:delete'])
     def delete(self, request, template_id, question_id):
         """删除问题"""
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
-        if not has_perms(admin, ['recycle_template:delete']):
-            return Response({'detail': '没有权限执行此操作，需要 recycle_template:delete 权限'}, status=403)
+        admin = request.admin
         
         try:
             device_template = RecycleDeviceTemplate.objects.get(id=template_id)
@@ -3816,12 +3637,9 @@ class RecycleQuestionOptionView(APIView):
     authentication_classes = []
     permission_classes = []
     
+    @admin_required(['recycle_template:view'])
     def get(self, request, template_id, question_id, option_id=None):
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
-        if not has_perms(admin, ['recycle_template:view']):
-            return Response({'detail': '没有权限执行此操作，需要 recycle_template:view 权限'}, status=403)
+        admin = request.admin
         
         try:
             device_template = RecycleDeviceTemplate.objects.get(id=template_id)
@@ -3845,13 +3663,10 @@ class RecycleQuestionOptionView(APIView):
             serializer = RecycleQuestionOptionSerializer(options, many=True)
             return Response({'results': serializer.data})
     
+    @admin_required(['recycle_template:create'])
     def post(self, request, template_id, question_id):
         """创建选项"""
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
-        if not has_perms(admin, ['recycle_template:create']):
-            return Response({'detail': '没有权限执行此操作，需要 recycle_template:create 权限'}, status=403)
+        admin = request.admin
         
         try:
             device_template = RecycleDeviceTemplate.objects.get(id=template_id)
@@ -3870,13 +3685,10 @@ class RecycleQuestionOptionView(APIView):
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
     
+    @admin_required(['recycle_template:update'])
     def put(self, request, template_id, question_id, option_id):
         """更新选项"""
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
-        if not has_perms(admin, ['recycle_template:update']):
-            return Response({'detail': '没有权限执行此操作，需要 recycle_template:update 权限'}, status=403)
+        admin = request.admin
         
         try:
             device_template = RecycleDeviceTemplate.objects.get(id=template_id)
@@ -3895,13 +3707,10 @@ class RecycleQuestionOptionView(APIView):
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
     
+    @admin_required(['recycle_template:delete'])
     def delete(self, request, template_id, question_id, option_id):
         """删除选项"""
-        admin = get_admin_from_request(request)
-        if not admin:
-            return Response({'detail': '未登录或登录已过期，请重新登录'}, status=401)
-        if not has_perms(admin, ['recycle_template:delete']):
-            return Response({'detail': '没有权限执行此操作，需要 recycle_template:delete 权限'}, status=403)
+        admin = request.admin
         
         try:
             device_template = RecycleDeviceTemplate.objects.get(id=template_id)
