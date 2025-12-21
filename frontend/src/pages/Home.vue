@@ -16,7 +16,7 @@
                 @click="goToCategory(cat.id)"
                 :class="{ active: activeCategory === cat.id }"
               >
-                <span class="cat-icon">{{ catIcons[idx % catIcons.length] }}</span>
+                <span class="cat-icon">{{ getCatIcon(cat.name) }}</span>
                 <span class="cat-name">{{ cat.name }}</span>
               </li>
             </ul>
@@ -118,7 +118,10 @@
                   <span class="num">{{ formatPriceInt(product.price) }}</span>
                   <span class="decimal">{{ formatPriceDecimal(product.price) }}</span>
                 </div>
-                <div class="want-num">{{ product.favorite_count || 0 }}人收藏</div>
+                <div class="goods-metrics">
+                  <span class="view-num">{{ product.view_count || 0 }}浏览</span>
+                  <span class="want-num">{{ product.favorite_count || 0 }}人收藏</span>
+                </div>
               </div>
               <div class="seller-row">
                 <div class="seller-left">
@@ -180,7 +183,19 @@ const products = ref([])
 
 // 数码分类
 const categories = ref([])
-const catIcons = ['📱','📷','💻','📘','🎧','🎮','💾','⌚']
+const catIcons = {
+  '手机': '📱',
+  '平板': '📘',
+  '电脑': '💻',
+  '摄影摄像': '📷',
+  '智能手表': '⌚',
+  '耳机音响': '🎧',
+  '游戏设备': '🎮',
+  '数码配件': '💾',
+  '其他数码': '🧩',
+}
+
+const getCatIcon = (name) => catIcons[name] || '📦'
 
 // 分类商品数据
 const phoneProducts = ref([])
@@ -254,7 +269,7 @@ const goToCategoryByName = (name) => {
 
 // 标签
 const tabs = ref([
-  { id: 'recommend', name: '猜你喜欢', desc: '为你推荐' },
+  { id: 'recommend', name: '推荐', desc: '为你推荐' },
   { id: 'fresh', name: '最新发布', desc: '刚刚上架' },
   { id: 'nearby', name: '同城好物', desc: '就在身边' },
   { id: 'low_price', name: '捡漏专区', desc: '超低价格' },
@@ -357,14 +372,14 @@ const loadCategories = async () => {
     let allCategories = getResults(res.data)
     
     // 按数码产品重要性排序
-    const categoryOrder = ['手机', '平板', '笔记本电脑', '台式电脑', '摄影摄像', '智能手表', '耳机音响', '游戏设备', '数码配件', '其他数码']
+    const categoryOrder = ['手机', '平板', '电脑', '摄影摄像', '智能手表', '耳机音响', '游戏设备', '数码配件', '其他数码']
     allCategories.sort((a, b) => {
       const indexA = categoryOrder.indexOf(a.name)
       const indexB = categoryOrder.indexOf(b.name)
       return indexA - indexB
     })
     
-    categories.value = allCategories
+    categories.value = allCategories.filter(cat => cat.name !== '手机数码')
   } catch (err) {
     console.error('加载分类失败:', err)
     categories.value = []
@@ -375,6 +390,34 @@ const loadCategories = async () => {
 const goToCategory = (categoryId) => {
   if (!categoryId) return
   router.push({ path: '/products', query: { category: categoryId } })
+}
+
+const computeRecommendScore = (product) => {
+  let score = 0
+  const favorites = Number(product.favorite_count || 0)
+  const views = Number(product.view_count || 0)
+  score += favorites * 3
+  score += views * 0.05
+
+  if (product?.created_at) {
+    const hours = (Date.now() - new Date(product.created_at).getTime()) / 36e5
+    score += Math.max(0, 72 - hours)
+  }
+
+  return score
+}
+
+const computeFreshScore = (product) => {
+  let score = 0
+  if (product?.created_at) {
+    const hours = (Date.now() - new Date(product.created_at).getTime()) / 36e5
+    score += Math.max(0, 168 - hours) * 10
+  }
+  const favorites = Number(product.favorite_count || 0)
+  const views = Number(product.view_count || 0)
+  score += favorites * 2
+  score += views * 0.02
+  return score
 }
 
 // 加载商品
@@ -393,8 +436,27 @@ const loadProducts = async (append = false) => {
     const res = await api.get('/products/', { params })
     const newProducts = getResults(res.data)
 
-    if (append) products.value.push(...newProducts)
-    else products.value = newProducts
+    if (activeTab.value === 'recommend' || activeTab.value === 'fresh') {
+      const merged = append ? [...products.value, ...newProducts] : newProducts
+      const seen = new Set()
+      const unique = merged.filter((p) => {
+        if (!p || seen.has(p.id)) return false
+        seen.add(p.id)
+        return true
+      })
+      products.value = unique.sort((a, b) => {
+        if (activeTab.value === 'recommend') {
+          return computeRecommendScore(b) - computeRecommendScore(a)
+        }
+        const timeA = a?.created_at ? new Date(a.created_at).getTime() : 0
+        const timeB = b?.created_at ? new Date(b.created_at).getTime() : 0
+        if (timeA !== timeB) return timeB - timeA
+        return computeFreshScore(b) - computeFreshScore(a)
+      })
+    } else {
+      if (append) products.value.push(...newProducts)
+      else products.value = newProducts
+    }
 
     hasMore.value = !!res.data.next
   } catch (error) {
@@ -1433,7 +1495,9 @@ onMounted(async () => {
 .goods-price-row .price .symbol { font-size: 12px; }
 .goods-price-row .price .num { font-size: 20px; }
 .goods-price-row .price .decimal { font-size: 12px; }
-.goods-price-row .want-num { font-size: 11px; color: var(--text-light); }
+.goods-price-row .goods-metrics { display: flex; align-items: center; gap: 8px; }
+.goods-price-row .want-num,
+.goods-price-row .view-num { font-size: 11px; color: var(--text-light); }
 
 .seller-row { 
   display: flex; 

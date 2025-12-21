@@ -414,7 +414,8 @@ const clearAllFilters = () => {
 const loadCategories = async () => {
   try {
     const res = await api.get('/categories/')
-    categories.value = res.data.results || res.data || []
+    const list = res.data.results || res.data || []
+    categories.value = list.filter(cat => cat && cat.id && cat.name !== '手机数码')
   } catch (error) {
     console.error('加载分类失败:', error)
   }

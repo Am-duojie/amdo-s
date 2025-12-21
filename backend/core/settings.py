@@ -218,6 +218,11 @@ RAPIDAPI_PRICE_API_URL = ''  # 价格查询API地址
 BAIDU_API_KEY = ''  # 百度API密钥
 BAIDU_PRICE_API_URL = ''  # 价格查询API地址
 
+# 高德IP定位配置
+AMAP_API_KEY = 'f02f4bf9cffe783a1318a91646bd6d45'
+
+AMAP_IP_API_URL = 'https://restapi.amap.com/v3/ip'
+
 # 阿里云API配置
 ALIYUN_API_KEY = ''  # 阿里云API密钥
 ALIYUN_API_SECRET = ''  # 阿里云API密钥

@@ -46,6 +46,12 @@ const routes = [
     meta: { theme: 'yellow', hideSearch: false }
   },
   {
+    path: '/seller/:id',
+    name: 'SellerHome',
+    component: () => import('@/pages/SellerHome.vue'),
+    meta: { theme: 'yellow', hideSearch: false }
+  },
+  {
     path: '/verified-products/:id',
     name: 'VerifiedProductDetail',
     component: () => import('@/pages/VerifiedProductDetail.vue'),
@@ -54,13 +60,13 @@ const routes = [
   {
     path: '/publish',
     name: 'PublishProduct',
-    component: () => import('@/pages/EditProduct.vue'),
+    component: () => import('@/pages/PublishProduct.vue'),
     meta: { requiresAuth: true, hideSearch: true, theme: 'yellow' }
   },
   {
     path: '/edit/:id',
-    name: 'EditProduct',
-    component: () => import('@/pages/EditProduct.vue'),
+    name: 'ProductForm',
+    component: () => import('@/pages/PublishProduct.vue'),
     meta: { requiresAuth: true, hideSearch: true, theme: 'yellow' }
   },
   {

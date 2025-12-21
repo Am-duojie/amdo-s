@@ -5,7 +5,7 @@
     <main class="main-content">
       <div class="content-wrapper">
         <!-- 筛选区域 -->
-        <div class="filter-section">
+        <div class="filter-section" v-if="!sellerId">
           <div class="filter-header">
             <span class="filter-title">筛选条件</span>
             <el-button text @click="handleReset" size="small">清空</el-button>
@@ -79,6 +79,7 @@
         <div class="products-wrapper" v-loading="loading">
           <div class="result-header">
             <span class="result-count">找到 <span class="count-num">{{ pagination.total }}</span> 件商品</span>
+            <span v-if="sellerId" class="seller-shop-title">卖家：{{ sellerName }}</span>
           </div>
 
           <el-empty v-if="!loading && products.length === 0" description="暂无商品，换个条件试试吧~" />
@@ -177,6 +178,11 @@ const filters = ref({
   minPrice: null,
   maxPrice: null,
 })
+const sellerId = ref(route.query.seller ? String(route.query.seller) : '')
+const sellerName = computed(() => {
+  if (!sellerId.value) return ''
+  return products.value[0]?.seller?.username || 'TA的小店'
+})
 const pagination = ref({
   current: 1,
   pageSize: 30,
@@ -246,6 +252,11 @@ watch(() => route.query.search, (val) => {
   pagination.value.current = 1
   loadProducts()
 })
+watch(() => route.query.seller, (val) => {
+  sellerId.value = val ? String(val) : ''
+  pagination.value.current = 1
+  loadProducts()
+})
 
 const onCategoryChange = (val) => {
   // 同步到路由，便于刷新/分享保留筛选条件
@@ -269,7 +280,8 @@ watch([() => filters.value.category, () => filters.value.condition, () => filter
 const loadCategories = async () => {
   try {
     const res = await api.get('/categories/')
-    categories.value = getResults(res.data)
+    const list = getResults(res.data)
+    categories.value = list.filter(cat => cat && cat.id && cat.name !== '手机数码')
   } catch (error) {
     console.error('加载分类失败:', error)
   }
@@ -287,6 +299,9 @@ const loadProducts = async () => {
       status: filters.value.status,
       min_price: filters.value.minPrice,
       max_price: filters.value.maxPrice,
+    }
+    if (sellerId.value) {
+      params.seller = sellerId.value
     }
     
     if (sortBy.value) {
@@ -867,6 +882,12 @@ const formatPriceDecimal = (price) => {
 .result-count {
   font-size: 14px;
   color: var(--text-secondary);
+}
+.seller-shop-title {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .count-num {

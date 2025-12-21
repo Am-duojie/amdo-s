@@ -2,13 +2,16 @@ from django.shortcuts import render
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
+from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, AllowAny
 from rest_framework.views import APIView
 from django.contrib.auth.models import User
-from django.db.models import Q, Count
+from django.db.models import Q, Count, F
 from django.core.cache import cache
+from django.conf import settings
 import re
 import logging
+import requests
+import ipaddress
 
 logger = logging.getLogger(__name__)
 from .models import (
@@ -29,6 +32,69 @@ from .serializers import (
     MessageSerializer, FavoriteSerializer, AddressSerializer, RecycleOrderSerializer,
     VerifiedProductSerializer, VerifiedProductImageSerializer, VerifiedOrderSerializer, VerifiedFavoriteSerializer
 )
+
+
+class GeoIpView(APIView):
+    """IP粗定位（高德）"""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        amap_key = getattr(settings, 'AMAP_API_KEY', '')
+
+        forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
+        if forwarded_for:
+            client_ip = forwarded_for.split(',')[0].strip()
+        else:
+            real_ip = request.META.get('HTTP_X_REAL_IP', '').strip()
+            client_ip = real_ip or request.META.get('REMOTE_ADDR', '')
+
+        if not client_ip:
+            return Response({'detail': 'IP not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        api_url = getattr(settings, 'AMAP_IP_API_URL', 'https://restapi.amap.com/v3/ip')
+        if not amap_key:
+            return Response({'detail': 'AMAP_API_KEY not configured'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        session = requests.Session()
+        session.trust_env = False
+
+        def _call_amap(params, url):
+            response = session.get(url, params=params, timeout=5)
+            if response.status_code != 200:
+                return None
+            data = response.json()
+            if data.get('status') == '1':
+                return data
+            return None
+
+        params = {'key': amap_key}
+        try:
+            ip_obj = ipaddress.ip_address(client_ip)
+            if not (ip_obj.is_private or ip_obj.is_loopback):
+                params['ip'] = client_ip
+        except ValueError:
+            pass
+
+        try:
+            data = _call_amap(params, api_url)
+            if not data and 'ip' in params:
+                data = _call_amap({'key': amap_key}, api_url)
+            if data:
+                province = data.get('province') or ''
+                city = data.get('city') or ''
+                if isinstance(city, list) or city == '[]':
+                    city = ''
+
+                return Response({
+                    'province': province,
+                    'city': city,
+                    'adcode': data.get('adcode') or '',
+                    'ip': client_ip
+                })
+        except requests.exceptions.RequestException:
+            logger.warning('AMAP request failed', exc_info=True)
+
+        return Response({'detail': 'IP lookup failed'}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -291,7 +357,22 @@ class ProductViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
 
     def get_queryset(self):
-        queryset = Product.objects.filter(status='active').select_related('category', 'seller')
+        queryset = Product.objects.all().select_related('category', 'seller').annotate(
+            favorite_count=Count('favorites', distinct=True)
+        )
+
+        status_param = self.request.query_params.get('status', None)
+        if status_param:
+            if status_param == 'all':
+                queryset = queryset.filter(status__in=['active', 'sold'])
+            elif ',' in status_param:
+                status_values = [s.strip() for s in status_param.split(',') if s.strip()]
+                if status_values:
+                    queryset = queryset.filter(status__in=status_values)
+            else:
+                queryset = queryset.filter(status=status_param)
+        else:
+            queryset = queryset.filter(status='active')
         
         # 分类筛选（优先处理，确保分类筛选生效）
         category = self.request.query_params.get('category', None)
@@ -309,6 +390,14 @@ class ProductViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(
                 Q(title__icontains=search) | Q(description__icontains=search)
             )
+
+        seller = self.request.query_params.get('seller', None)
+        if seller:
+            try:
+                seller_id = int(seller)
+                queryset = queryset.filter(seller_id=seller_id)
+            except (ValueError, TypeError):
+                pass
         
         # 成色筛选（支持多个成色，用逗号分隔）
         condition = self.request.query_params.get('condition', None)
@@ -339,6 +428,13 @@ class ProductViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         """创建商品时设置卖家为当前用户"""
         serializer.save(seller=self.request.user)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        Product.objects.filter(pk=instance.pk).update(view_count=F('view_count') + 1)
+        instance.refresh_from_db(fields=['view_count'])
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
 
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated])
     def update_status(self, request, pk=None):
@@ -381,6 +477,30 @@ class ProductViewSet(viewsets.ModelViewSet):
             if is_primary:
                 has_primary = True
                 
+        serializer = ProductSerializer(product, context={'request': request})
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['delete'], url_path='images/(?P<image_id>[^/.]+)', permission_classes=[IsAuthenticated])
+    def delete_image(self, request, pk=None, image_id=None):
+        """删除商品图片"""
+        product = self.get_object()
+        if product.seller != request.user:
+            return Response({'detail': '无权限操作'}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            image = ProductImage.objects.get(id=image_id, product=product)
+        except ProductImage.DoesNotExist:
+            return Response({'detail': '图片不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        was_primary = image.is_primary
+        image.delete()
+
+        if was_primary:
+            next_image = ProductImage.objects.filter(product=product).order_by('id').first()
+            if next_image:
+                next_image.is_primary = True
+                next_image.save(update_fields=['is_primary'])
+
         serializer = ProductSerializer(product, context={'request': request})
         return Response(serializer.data)
 

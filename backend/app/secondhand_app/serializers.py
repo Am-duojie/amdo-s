@@ -320,13 +320,14 @@ class ProductSerializer(serializers.ModelSerializer):
     shop_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     images = ProductImageSerializer(many=True, read_only=True)
     is_favorited = serializers.SerializerMethodField()
+    favorite_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Product
         fields = [
             'id', 'seller', 'category', 'category_id', 'shop', 'shop_id', 'title', 'description',
             'price', 'original_price', 'condition', 'status', 'location',
-            'contact_phone', 'contact_wechat', 'view_count', 'images',
+            'contact_phone', 'contact_wechat', 'view_count', 'favorite_count', 'images',
             'is_favorited', 'created_at', 'updated_at'
         ]
         read_only_fields = ['seller', 'view_count', 'created_at', 'updated_at']

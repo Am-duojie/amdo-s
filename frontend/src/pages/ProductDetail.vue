@@ -10,12 +10,12 @@
     <div v-else-if="product" class="detail-container">
       <!-- 卖家信息栏 -->
       <div class="seller-header">
-        <div class="seller-left">
-          <el-avatar :size="48" class="seller-avatar">
+        <div class="seller-left" @click="handleViewSeller">
+          <el-avatar :size="48" class="seller-avatar clickable">
             {{ product.seller?.username?.[0] || '卖' }}
           </el-avatar>
           <div class="seller-info">
-            <div class="seller-name">{{ product.seller?.username }}</div>
+            <div class="seller-name clickable">{{ product.seller?.username }}</div>
             <div class="seller-stats">
               <span class="stat-item">
                 <el-icon><Location /></el-icon>
@@ -126,6 +126,15 @@
               <el-icon><ChatDotRound /></el-icon>
               聊一聊
             </el-button>
+
+            <el-button
+              v-if="isOwner"
+              class="action-btn edit-btn"
+              size="large"
+              @click="handleEditProduct"
+            >
+              编辑商品
+            </el-button>
             
             <el-button
               v-if="product.status === 'active'"
@@ -140,12 +149,12 @@
               {{ product.status === 'sold' ? '已售出' : '已下架' }}
             </el-button>
             
-            <el-button 
-              class="action-btn favorite-btn"
-              size="large"
-              @click="handleFavorite"
-              :disabled="!authStore.user"
-            >
+          <el-button 
+            class="action-btn favorite-btn"
+            size="large"
+            @click="handleFavorite"
+            :disabled="!authStore.user"
+          >
               <el-icon>
                 <StarFilled v-if="product.is_favorited" />
                 <Star v-else />
@@ -301,8 +310,15 @@
           <span>{{ product.is_favorited ? '已收藏' : '收藏' }}</span>
         </div>
       </div>
+      <el-button
+        v-if="isOwner"
+        class="mobile-buy-btn"
+        @click="handleEditProduct"
+      >
+        编辑商品
+      </el-button>
       <el-button 
-        v-if="product.status === 'active'"
+        v-else-if="product.status === 'active'"
         class="mobile-buy-btn"
         @click="handleBuy"
         :disabled="!authStore.user || (authStore.user && authStore.user.id === product.seller?.id)"
@@ -334,6 +350,7 @@ const userDisplayName = computed(() => authStore.user?.nickname || authStore.use
 const userInitial = computed(() => authStore.user?.username?.charAt(0)?.toUpperCase() || 'U')
 
 const product = ref(null)
+const isOwner = computed(() => authStore.user?.id && authStore.user?.id === product.value?.seller?.id)
 const relatedProducts = ref([])
 const loading = ref(true)
 const showOrderDialog = ref(false)
@@ -449,7 +466,9 @@ const formatTimeAgo = (dateStr) => {
 
 const loadProduct = async () => {
   try {
-    const res = await api.get(`/products/${route.params.id}/`)
+    const res = await api.get(`/products/${route.params.id}/`, {
+      params: { status: 'all' }
+    })
     product.value = res.data
     loadRelatedProducts()
   } catch (error) {
@@ -522,8 +541,17 @@ const handleBuy = () => {
   router.push(`/checkout/${route.params.id}`)
 }
 
-const handleViewSeller = () => { 
-  router.push(`/products?seller=${product.value.seller.id}`) 
+const handleViewSeller = () => {
+  const sellerId = product.value?.seller?.id
+  if (!sellerId) {
+    return
+  }
+  router.push(`/seller/${sellerId}`)
+}
+
+const handleEditProduct = () => {
+  if (!product.value?.id) return
+  router.push(`/edit/${product.value.id}`)
 }
 
 const handleOrderSubmit = async () => {
@@ -1107,6 +1135,9 @@ const handleShare = () => {
   color: #fff;
   font-weight: 600;
 }
+.clickable {
+  cursor: pointer;
+}
 
 .seller-info .seller-name {
   font-size: 16px;
@@ -1364,6 +1395,18 @@ const handleShare = () => {
 .buy-btn:hover:not(:disabled) {
   background: var(--primary-dark);
   border-color: var(--primary-dark);
+}
+
+.edit-btn {
+  flex: 1;
+  background: #fff7e6;
+  border-color: #ffd591;
+  color: #d46b08;
+}
+
+.edit-btn:hover {
+  background: #fff1d6;
+  border-color: #ffbf69;
 }
 
 .disabled-btn {
