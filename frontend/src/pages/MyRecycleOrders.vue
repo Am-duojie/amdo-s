@@ -52,8 +52,7 @@
             <el-alert v-if="order.payment_status === 'paid'" type="success" :closable="false" style="margin-bottom: 12px">
               <div>
                 <strong>平台已打款</strong>
-                <span v-if="order.payment_method === 'wallet'">：已存入易淘钱包，建议前往“个人中心-钱包”查看余额</span>
-                <span v-else-if="order.payment_method === 'transfer'">：已通过直接转账完成{{ order.payment_account ? `，收款账户：${order.payment_account}` : '' }}</span>
+                <span v-if="order.payment_method === 'transfer'">：已通过直接转账完成{{ order.payment_account ? `，收款账户：${order.payment_account}` : '' }}</span>
                 <span v-else>：请在订单详情查看打款信息</span>
               </div>
             </el-alert>
@@ -366,7 +365,6 @@ onMounted(() => {
   }
 }
 </style>
-
 
 
 

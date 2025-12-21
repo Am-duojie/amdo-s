@@ -90,7 +90,7 @@ const handleRemove = async (productId) => {
       cancelButtonText: '取消',
       type: 'warning',
     })
-    await api.delete('/favorites/remove/', { params: { product_id: productId } })
+    await api.post('/favorites/remove/', { product_id: productId })
     ElMessage.success('已取消收藏')
     loadFavorites()
   } catch (error) {
@@ -276,7 +276,6 @@ const formatDate = (dateString) => {
   }
 }
 </style>
-
 
 
 

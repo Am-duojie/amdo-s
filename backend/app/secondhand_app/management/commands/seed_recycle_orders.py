@@ -466,7 +466,7 @@ class Command(BaseCommand):
                 received_at=received_at,
                 inspected_at=inspected_at,
                 payment_status=payment_status,
-                payment_method=("wallet" if payment_status == "paid" else ""),
+                payment_method=("transfer" if payment_status == "paid" else ""),
                 payment_account=None,
                 paid_at=paid_at,
                 payment_note=("拟真数据打款" if payment_status == "paid" else ""),

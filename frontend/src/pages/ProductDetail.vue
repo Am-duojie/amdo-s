@@ -89,7 +89,7 @@
 
           <!-- 统计信息 -->
           <div class="stats-row">
-            <span class="stat">{{ product.favorite_count || 0 }}人想要</span>
+            <span class="stat">{{ product.favorite_count || 0 }}人收藏</span>
             <span class="stat-divider">|</span>
             <span class="stat">{{ product.view_count || 0 }}浏览</span>
           </div>
@@ -141,7 +141,7 @@
               class="action-btn buy-btn"
               size="large"
               @click="handleBuy"
-              :disabled="!authStore.user || (authStore.user && authStore.user.id === product.seller?.id)"
+              :disabled="authStore.user && authStore.user.id === product.seller?.id"
             >
               立即购买
             </el-button>
@@ -153,7 +153,6 @@
             class="action-btn favorite-btn"
             size="large"
             @click="handleFavorite"
-            :disabled="!authStore.user"
           >
               <el-icon>
                 <StarFilled v-if="product.is_favorited" />
@@ -321,7 +320,7 @@
         v-else-if="product.status === 'active'"
         class="mobile-buy-btn"
         @click="handleBuy"
-        :disabled="!authStore.user || (authStore.user && authStore.user.id === product.seller?.id)"
+        :disabled="authStore.user && authStore.user.id === product.seller?.id"
       >
         ¥{{ product.price }} 立即购买
       </el-button>
@@ -498,7 +497,7 @@ const handleFavorite = async () => {
   }
   try {
     if (product.value.is_favorited) {
-      await api.delete('/favorites/remove/', { params: { product_id: route.params.id } })
+      await api.post('/favorites/remove/', { product_id: route.params.id })
       ElMessage.success('已取消收藏')
     } else {
       await api.post('/favorites/', { product_id: route.params.id })

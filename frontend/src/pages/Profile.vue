@@ -45,15 +45,11 @@
               <el-icon class="arrow" :class="{ expanded: expandedMenus.wallet }"><ArrowDown /></el-icon>
             </div>
             <div class="submenu" v-show="expandedMenus.wallet">
-              <div class="submenu-item" :class="{ active: activeMenu === 'wallet' }" @click="switchMenu('wallet')">
-                钱包余额
-              </div>
+              
               <div class="submenu-item" :class="{ active: activeMenu === 'wallet-transactions' }" @click="switchMenu('wallet-transactions')">
                 交易记录
               </div>
-              <div class="submenu-item" :class="{ active: activeMenu === 'wallet-withdraw' }" @click="switchMenu('wallet-withdraw')">
-                提现
-              </div>
+              
               <div class="submenu-item" :class="{ active: activeMenu === 'wallet-bind' }" @click="switchMenu('wallet-bind')">
                 绑定支付宝
               </div>
@@ -388,34 +384,7 @@
         </div>
 
         <!-- 钱包余额 -->
-        <div class="content-section wallet-section" v-if="activeMenu === 'wallet'">
-          <div class="section-header">
-            <h2 class="section-title">钱包余额</h2>
-          </div>
-          <div v-if="loading" class="loading-wrapper">
-            <el-skeleton :rows="3" animated />
-          </div>
-          <div v-else class="wallet-balance-card">
-            <div class="balance-display">
-              <div class="balance-label">钱包余额</div>
-              <div class="balance-amount">¥{{ walletInfo.balance || '0.00' }}</div>
-              <div class="balance-frozen" v-if="walletInfo.frozen_balance > 0">
-                冻结余额: ¥{{ walletInfo.frozen_balance }}
-              </div>
-              <div style="margin-top: 12px; font-size: 12px">
-                <el-tag v-if="bindForm.alipay_login_id" type="success" size="small">已绑定：{{ bindForm.alipay_login_id }}</el-tag>
-                <el-tag v-else type="warning" size="small">未绑定支付宝账户</el-tag>
-              </div>
-            </div>
-            <div class="balance-actions">
-              <el-button type="primary" @click="switchMenu('wallet-withdraw')" :disabled="!walletInfo.balance || walletInfo.balance <= 0">
-                提现
-              </el-button>
-              <el-button @click="switchMenu('wallet-transactions')">查看交易记录</el-button>
-              <el-button @click="switchMenu('wallet-bind')">绑定支付宝</el-button>
-            </div>
-          </div>
-        </div>
+        
 
         <!-- 交易记录 -->
         <div class="content-section wallet-transactions-section" v-if="activeMenu === 'wallet-transactions'">
@@ -439,7 +408,7 @@
               <el-table-column prop="transaction_type_display" label="类型" width="120">
                 <template #default="{ row }">
                   <el-tag :type="getTransactionType(row.transaction_type)">
-                    {{ row.transaction_type_display }}
+                    {{ getTransactionTypeLabel(row) }}
                   </el-tag>
                 </template>
               </el-table-column>
@@ -450,24 +419,12 @@
                   </span>
                 </template>
               </el-table-column>
-              <el-table-column prop="balance_after" label="余额" width="120">
-                <template #default="{ row }">
-                  ¥{{ row.balance_after }}
-                </template>
-              </el-table-column>
               <el-table-column prop="note" label="备注" min-width="200">
                 <template #default="{ row }">
-                  {{ row.note || '-' }}
+                  {{ formatTransactionNote(row) }}
                 </template>
               </el-table-column>
-              <el-table-column prop="withdraw_status_display" label="提现状态" width="120" v-if="hasWithdrawStatus">
-                <template #default="{ row }">
-                  <el-tag v-if="row.withdraw_status" :type="getWithdrawStatusType(row.withdraw_status)" size="small">
-                    {{ row.withdraw_status_display }}
-                  </el-tag>
-                  <span v-else>-</span>
-                </template>
-              </el-table-column>
+              
             </el-table>
             <div v-if="walletTransactionsTotal > walletTransactions.length" style="text-align: center; margin-top: 16px">
               <el-button @click="loadMoreTransactions">加载更多</el-button>
@@ -476,67 +433,7 @@
         </div>
 
         <!-- 提现 -->
-        <div class="content-section wallet-withdraw-section" v-if="activeMenu === 'wallet-withdraw'">
-          <div class="section-header">
-            <h2 class="section-title">提现</h2>
-          </div>
-          <el-card class="withdraw-card">
-            <el-alert
-              type="info"
-              :closable="false"
-              style="margin-bottom: 20px"
-            >
-              <template #title>
-                <div>提现将转账到您的支付宝账户（支持沙箱环境）</div>
-              </template>
-            </el-alert>
-            <el-form :model="withdrawForm" label-width="100px">
-              <el-form-item label="可提现金额">
-                <div style="font-size: 24px; color: #ff2442; font-weight: bold">
-                  ¥{{ walletInfo.balance || '0.00' }}
-                </div>
-              </el-form-item>
-              <el-form-item label="提现金额" required>
-                <el-input-number
-                  v-model="withdrawForm.amount"
-                  :precision="2"
-                  :min="0.01"
-                  :max="walletInfo.balance && walletInfo.balance > 0.01 ? walletInfo.balance : 0.01"
-                  :step="100"
-                  :disabled="!walletInfo.balance || walletInfo.balance <= 0"
-                  style="width: 100%"
-                  placeholder="请输入提现金额"
-                />
-                <div style="font-size: 12px; color: #909399; margin-top: 4px">
-                  可提现金额: ¥{{ walletInfo.balance || '0.00' }}
-                </div>
-              </el-form-item>
-              <el-form-item label="支付宝账号" required>
-                <el-input
-                  v-model="withdrawForm.alipay_account"
-                  placeholder="请输入支付宝账号（手机号或邮箱）"
-                />
-                <div style="font-size: 12px; color: #909399; margin-top: 4px">
-                  支持沙箱环境测试账号。如果已绑定支付宝账户，将自动填充
-                </div>
-              </el-form-item>
-              <el-form-item label="支付宝姓名">
-                <el-input
-                  v-model="withdrawForm.alipay_name"
-                  placeholder="请输入支付宝真实姓名（可选，建议填写）"
-                />
-                <div style="font-size: 12px; color: #909399; margin-top: 4px">
-                  填写真实姓名可提高提现成功率
-                </div>
-              </el-form-item>
-              <el-form-item>
-                <el-button type="primary" :loading="withdrawing" @click="handleWithdraw" :disabled="!walletInfo.balance || walletInfo.balance <= 0">确认提现</el-button>
-                <el-button @click="resetWithdrawForm">重置</el-button>
-                <el-button @click="switchMenu('wallet')">返回</el-button>
-              </el-form-item>
-            </el-form>
-          </el-card>
-        </div>
+        
 
         <!-- 绑定支付宝 -->
         <div class="content-section wallet-bind-section" v-if="activeMenu === 'wallet-bind'">
@@ -711,18 +608,11 @@ const addresses = ref([])
 const userLocation = ref('未设置')
 
 // 钱包相关数据
-const walletInfo = ref({ balance: 0, frozen_balance: 0 })
 const walletTransactions = ref([])
 const walletTransactionsTotal = ref(0)
 const walletTransactionsPage = ref(1)
 const walletTransactionsPageSize = ref(20)
-const withdrawing = ref(false)
 const binding = ref(false)
-const withdrawForm = reactive({
-  amount: null,
-  alipay_account: '',
-  alipay_name: ''
-})
 const bindForm = reactive({
   alipay_login_id: '',
   alipay_real_name: ''
@@ -936,27 +826,10 @@ const toggleMenu = (menu) => {
 }
 
 // 钱包相关方法
-const loadWalletInfo = async () => {
-  try {
-    const res = await api.get('/users/wallet/', {
-      params: {
-        page: 1,
-        page_size: 1
-      }
-    })
-    walletInfo.value = {
-      balance: res.data.balance || 0,
-      frozen_balance: res.data.frozen_balance || 0
-    }
-  } catch (error) {
-    console.error('加载钱包信息失败:', error)
-  }
-}
-
 const loadWalletTransactions = async () => {
   loading.value = true
   try {
-    const res = await api.get('/users/wallet/', {
+    const res = await api.get('/users/transactions/', {
       params: {
         page: walletTransactionsPage.value,
         page_size: walletTransactionsPageSize.value
@@ -968,10 +841,6 @@ const loadWalletTransactions = async () => {
       walletTransactions.value.push(...(res.data.transactions || []))
     }
     walletTransactionsTotal.value = res.data.total || 0
-    walletInfo.value = {
-      balance: res.data.balance || 0,
-      frozen_balance: res.data.frozen_balance || 0
-    }
   } catch (error) {
     ElMessage.error('加载交易记录失败')
   } finally {
@@ -984,79 +853,19 @@ const loadMoreTransactions = () => {
   loadWalletTransactions()
 }
 
-const resetWithdrawForm = () => {
-  withdrawForm.amount = null
-  withdrawForm.alipay_account = bindForm.alipay_login_id || ''
-  withdrawForm.alipay_name = bindForm.alipay_real_name || ''
-}
-
-const handleWithdraw = async () => {
-  if (!withdrawForm.amount || withdrawForm.amount <= 0) {
-    ElMessage.warning('请输入提现金额')
-    return
-  }
-  if (withdrawForm.amount > walletInfo.value.balance) {
-    ElMessage.warning('提现金额不能超过余额')
-    return
-  }
-  if (!withdrawForm.alipay_account) {
-    ElMessage.warning('请输入支付宝账号')
-    return
-  }
-  
-  try {
-    await ElMessageBox.confirm(
-      `确认提现 ¥${withdrawForm.amount} 到支付宝账号 ${withdrawForm.alipay_account}？`,
-      '确认提现',
-      { type: 'warning' }
-    )
-    
-    withdrawing.value = true
-    const res = await api.post('/users/withdraw/', {
-      amount: withdrawForm.amount,
-      alipay_account: withdrawForm.alipay_account,
-      alipay_name: withdrawForm.alipay_name
-    })
-    
-    if (res.data.success) {
-      ElMessage.success(res.data.message || '提现成功')
-      resetWithdrawForm()
-      await loadWalletInfo()
-      await loadWalletTransactions()
-      switchMenu('wallet-transactions')
-    } else {
-      ElMessage.error(res.data.detail || '提现失败')
-    }
-  } catch (error) {
-    if (error !== 'cancel') {
-      const errorDetail = error.response?.data?.detail || '提现失败'
-      ElMessage.error(errorDetail)
-    }
-  } finally {
-    withdrawing.value = false
-  }
-}
-
 const loadUserInfo = async () => {
   try {
     const res = await api.get('/users/me/')
     bindForm.alipay_login_id = res.data?.alipay_login_id || ''
     bindForm.alipay_real_name = res.data?.alipay_real_name || ''
-    // 如果已绑定支付宝，自动填充到提现表单
-    if (bindForm.alipay_login_id && !withdrawForm.alipay_account) {
-      withdrawForm.alipay_account = bindForm.alipay_login_id
-    }
-    if (bindForm.alipay_real_name && !withdrawForm.alipay_name) {
-      withdrawForm.alipay_name = bindForm.alipay_real_name
-    }
   } catch (error) {
-    console.error('加载用户信息失败:', error)
+    console.error('????????:', error)
   }
 }
 
 const handleBindAlipay = async () => {
   if (!bindForm.alipay_login_id) {
-    ElMessage.warning('请输入支付宝登录账号')
+    ElMessage.warning('??????????')
     return
   }
   try {
@@ -1065,27 +874,18 @@ const handleBindAlipay = async () => {
       alipay_login_id: bindForm.alipay_login_id,
       alipay_real_name: bindForm.alipay_real_name
     })
-    ElMessage.success('绑定成功')
-    // 更新绑定表单
+    ElMessage.success('????')
     if (res.data) {
       bindForm.alipay_login_id = res.data.alipay_login_id || bindForm.alipay_login_id
       bindForm.alipay_real_name = res.data.alipay_real_name || bindForm.alipay_real_name
     }
-    // 同时更新 authStore 中的用户信息
     if (authStore.user) {
       authStore.user.alipay_login_id = res.data?.alipay_login_id || ''
       authStore.user.alipay_real_name = res.data?.alipay_real_name || ''
       localStorage.setItem('user', JSON.stringify(authStore.user))
     }
-    // 如果提现表单中的账号为空，自动填充
-    if (!withdrawForm.alipay_account && bindForm.alipay_login_id) {
-      withdrawForm.alipay_account = bindForm.alipay_login_id
-    }
-    if (!withdrawForm.alipay_name && bindForm.alipay_real_name) {
-      withdrawForm.alipay_name = bindForm.alipay_real_name
-    }
   } catch (error) {
-    const detail = error.response?.data?.detail || '绑定失败'
+    const detail = error.response?.data?.detail || '????'
     ElMessage.error(detail)
   } finally {
     binding.value = false
@@ -1096,24 +896,25 @@ const getTransactionType = (type) => {
   const typeMap = {
     income: 'success',
     expense: 'danger',
-    withdraw: 'warning',
-    refund: 'info'
+    refund: 'warning',
+    recycle: 'success'
   }
   return typeMap[type] || 'info'
 }
 
-const hasWithdrawStatus = computed(() => {
-  return walletTransactions.value.some(t => t.withdraw_status)
-})
-
-const getWithdrawStatusType = (status) => {
-  const statusMap = {
-    pending: 'warning',
-    processing: 'primary',
-    success: 'success',
-    failed: 'danger'
+const getTransactionTypeLabel = (row) => {
+  const labelMap = {
+    income: '收入',
+    expense: '支出',
+    refund: '退款',
+    recycle: '回收'
   }
-  return statusMap[status] || 'info'
+  return labelMap[row.transaction_type] || row.transaction_type_display || row.transaction_type || '-'
+}
+
+const formatTransactionNote = (row) => {
+  if (!row.note) return '-'
+  return row.note
 }
 
 const formatTime = (time) => {
@@ -1149,24 +950,9 @@ const loadContent = async (menu) => {
       case 'address':
         await loadAddresses()
         break
-      case 'wallet':
-        await loadWalletInfo()
-        await loadUserInfo()
-        break
       case 'wallet-transactions':
         walletTransactionsPage.value = 1
         await loadWalletTransactions()
-        break
-      case 'wallet-withdraw':
-        await loadWalletInfo()
-        await loadUserInfo()
-        // 如果已绑定支付宝，自动填充到提现表单
-        if (bindForm.alipay_login_id && !withdrawForm.alipay_account) {
-          withdrawForm.alipay_account = bindForm.alipay_login_id
-        }
-        if (bindForm.alipay_real_name && !withdrawForm.alipay_name) {
-          withdrawForm.alipay_name = bindForm.alipay_real_name
-        }
         break
       case 'wallet-bind':
         await loadUserInfo()
@@ -1848,40 +1634,11 @@ onMounted(async () => {
 }
 
 /* 钱包相关样式 */
-.wallet-balance-card {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
-  padding: 40px;
-  color: white;
-  text-align: center;
-}
 
-.balance-display {
-  margin-bottom: 24px;
-}
 
-.balance-label {
-  font-size: 16px;
-  opacity: 0.9;
-  margin-bottom: 16px;
-}
 
-.balance-amount {
-  font-size: 48px;
-  font-weight: bold;
-  margin-bottom: 8px;
-}
 
-.balance-frozen {
-  font-size: 14px;
-  opacity: 0.8;
-}
 
-.balance-actions {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-}
 
 .transactions-list {
   display: flex;
@@ -1942,7 +1699,4 @@ onMounted(async () => {
   margin-top: 4px;
 }
 
-.withdraw-card {
-  max-width: 600px;
-}
 </style>

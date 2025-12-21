@@ -22,7 +22,6 @@ from app.secondhand_app.models import (
     VerifiedOrder,
     VerifiedProduct,
     VerifiedProductImage,
-    WalletTransaction,
 )
 
 
@@ -56,7 +55,6 @@ class Command(BaseCommand):
         return {
             "AdminInspectionReport": AdminInspectionReport.objects.count(),
             "RecycleOrder": RecycleOrder.objects.count(),
-            "WalletTransaction(recycle_related)": WalletTransaction.objects.filter(related_order__isnull=False).count(),
             "VerifiedDevice": VerifiedDevice.objects.count(),
             "VerifiedProduct": VerifiedProduct.objects.count(),
             "VerifiedProductImage": VerifiedProductImage.objects.count(),
@@ -108,7 +106,6 @@ class Command(BaseCommand):
 
         # Delete recycle data (reports -> orders)
         AdminInspectionReport.objects.all().delete()
-        WalletTransaction.objects.filter(related_order__isnull=False).delete()
         RecycleOrder.objects.all().delete()
 
         # Delete audit logs referencing these datasets
@@ -142,4 +139,3 @@ class Command(BaseCommand):
             )
 
         self.stdout.write(self.style.SUCCESS("Reset completed."))
-

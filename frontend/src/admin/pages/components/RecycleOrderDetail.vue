@@ -694,7 +694,6 @@
       <el-form :model="paymentForm" label-width="100px">
         <el-form-item label="打款方式" required>
           <el-select v-model="paymentForm.payment_method" style="width: 100%">
-            <el-option label="存入易淘钱包" value="wallet" />
             <el-option label="支付方直接转账" value="transfer" />
           </el-select>
         </el-form-item>
@@ -1104,7 +1103,7 @@ const convertInspectionDataToAPI = () => {
 }
 
 const paymentForm = reactive({
-  payment_method: 'wallet',
+  payment_method: 'transfer',
   payment_account: '',
   note: ''
 })
@@ -1164,7 +1163,7 @@ const statusMap = {
 
 const openPaymentDialog = () => {
   const loginId = (detail.value && detail.value.user && detail.value.user.alipay_login_id) ? detail.value.user.alipay_login_id : ''
-  paymentForm.payment_method = loginId ? 'transfer' : 'wallet'
+  paymentForm.payment_method = 'transfer'
   paymentForm.payment_account = loginId || ''
   showPaymentDialog.value = true
 }

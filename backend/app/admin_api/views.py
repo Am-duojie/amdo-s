@@ -1540,76 +1540,75 @@ class InspectionOrderPriceView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class InspectionOrderPaymentView(APIView):
-    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
+    # Disable default auth; handled manually
     authentication_classes = []
     permission_classes = []
-    
+
     def post(self, request, order_id):
         admin = get_admin_from_request(request)
         if not admin:
             return Response({'detail': 'Unauthorized'}, status=401)
         if not has_perms(admin, ['inspection:write']):
             return Response({'detail': 'Forbidden'}, status=403)
-        note = request.data.get('note', '').strip()
-        payment_method = request.data.get('payment_method', '').strip()
-        payment_account = request.data.get('payment_account', '').strip()
-        
+        note = (request.data.get('note') or '').strip()
+        payment_method = (request.data.get('payment_method') or '').strip()
+        if not payment_method:
+            payment_method = 'transfer'
+        payment_account = (request.data.get('payment_account') or '').strip()
+
         try:
             o = RecycleOrder.objects.get(id=order_id)
             if not o.final_price:
-                return Response({'success': False, 'detail': '订单尚未确定最终价格'}, status=400)
-            # 用户尚未确认/已提交价格异议时，不允许直接打款
+                return Response({'success': False, 'detail': 'Final price not set'}, status=400)
             if getattr(o, 'price_dispute', False):
-                return Response({'success': False, 'detail': '用户已提交价格异议，暂无法打款'}, status=400)
+                return Response({'success': False, 'detail': 'Price dispute pending'}, status=400)
             if not getattr(o, 'final_price_confirmed', False):
-                return Response({'success': False, 'detail': '用户尚未确认最终价格，暂无法打款'}, status=400)
+                return Response({'success': False, 'detail': 'Final price not confirmed'}, status=400)
 
-            # 仅允许已完成的订单打款（由用户确认价格后自动进入 completed）
             if o.status != 'completed':
                 return Response({
                     'success': False,
-                    'detail': f'订单状态必须是已完成才能打款，当前状态: {o.status}',
+                    'detail': f'Order must be completed before payment. Current: {o.status}',
                     'current_status': o.status,
                     'required_status': ['completed']
                 }, status=400)
-            # 如果已经打款成功，不允许重复打款
+
             if o.payment_status == 'paid':
                 return Response({
                     'success': False,
-                    'detail': '订单已打款，无法重复打款',
+                    'detail': 'Order already paid',
                     'payment_status': o.payment_status
                 }, status=400)
-            
-            # 计算打款总额（最终价格 + 加价）
+
             from decimal import Decimal
             final_price_decimal = Decimal(str(o.final_price)) if o.final_price else Decimal('0')
             bonus_decimal = Decimal(str(o.bonus)) if o.bonus else Decimal('0')
             total_amount_decimal = final_price_decimal + bonus_decimal
             total_amount = float(total_amount_decimal)
             AdminAuditLog.objects.create(
-                actor=admin, 
-                target_type='RecycleOrder', 
-                target_id=o.id, 
-                action='payment', 
+                actor=admin,
+                target_type='RecycleOrder',
+                target_id=o.id,
+                action='payment',
                 snapshot_json={
                     'amount': total_amount,
                     'final_price': float(o.final_price),
                     'bonus': float(o.bonus),
                     'note': note,
                     'payment_method': payment_method or None,
-                    'payment_account': payment_account or None
+                    'payment_account': payment_account or None,
                 }
             )
-            
-            if payment_method and payment_method not in ['wallet', 'transfer']:
-                return Response({'success': False, 'detail': '打款方式不支持'}, status=400)
-            
+
+            if payment_method and payment_method != 'transfer':
+                return Response({'success': False, 'detail': 'Unsupported payment method'}, status=400)
+
             if payment_method == 'transfer':
                 if not payment_account:
                     profile = getattr(o.user, 'profile', None)
                     payment_account = getattr(profile, 'alipay_login_id', '') if profile else ''
                 if not payment_account:
-                    return Response({'success': False, 'detail': '收款账户不能为空'}, status=400)
+                    return Response({'success': False, 'detail': 'Payee account required'}, status=400)
                 o.payment_status = 'paid'
                 o.paid_at = timezone.now()
                 o.payment_method = 'transfer'
@@ -1617,97 +1616,17 @@ class InspectionOrderPaymentView(APIView):
                 parts = []
                 if note:
                     parts.append(note)
-                parts.append(f'已直接转账，金额: ¥{total_amount}')
+                parts.append(f'Transfer amount: ?{total_amount}')
                 if payment_account:
-                    parts.append(f'收款账户: {payment_account}')
+                    parts.append(f'Payee: {payment_account}')
                 o.payment_note = '\n'.join(parts)
                 o.save()
+                return Response({'success': True, 'message': 'Transfer completed', 'amount': total_amount})
 
-                # 记录交易（用于前端“钱包-交易记录”展示提示）
-                from app.secondhand_app.models import Wallet, WalletTransaction
-                wallet, _ = Wallet.objects.get_or_create(user=o.user)
-                from decimal import Decimal
-                WalletTransaction.objects.create(
-                    wallet=wallet,
-                    transaction_type='withdraw',
-                    amount=Decimal(str(-total_amount)),
-                    balance_after=wallet.balance,
-                    related_order=o,
-                    withdraw_status='success',
-                    alipay_account=payment_account or '',
-                    note=f'平台已打款到支付宝（订单#{o.id}），金额：¥{total_amount}'
-                )
-
-                return Response({'success': True, 'message': '打款成功，已直接转账', 'amount': total_amount})
-            
-            # 将钱存入用户钱包
-            from app.secondhand_app.models import Wallet, WalletTransaction
-            import logging
-            logger = logging.getLogger(__name__)
-            
-            try:
-                # 获取或创建用户钱包
-                wallet, created = Wallet.objects.get_or_create(user=o.user)
-                logger.info(f'[打款] 开始: 订单ID={o.id}, 用户ID={o.user.id}, 用户名={o.user.username}, 金额={total_amount}, 钱包已存在={not created}, 当前余额={wallet.balance}')
-                
-                # 刷新钱包对象以确保获取最新数据
-                wallet.refresh_from_db()
-                
-                # 将钱存入钱包
-                old_balance = wallet.balance
-                wallet.add_balance(
-                    amount=total_amount,
-                    transaction_type='income',
-                    related_order=o,
-                    note=f'回收订单#{o.id}打款，设备：{o.brand} {o.model}'
-                )
-                
-                # 再次刷新以确保余额已更新
-                wallet.refresh_from_db()
-                
-                logger.info(f'[打款] 成功: 订单ID={o.id}, 用户ID={o.user.id}, 金额={total_amount}, 原余额={old_balance}, 新余额={wallet.balance}')
-                
-                # 更新打款状态
-                o.payment_status = 'paid'
-                o.paid_at = timezone.now()
-                payment_note_parts = []
-                if note:
-                    payment_note_parts.append(note)
-                payment_note_parts.append(f'已存入钱包，钱包余额: ¥{wallet.balance}')
-                o.payment_note = '\n'.join(payment_note_parts)
-                o.payment_method = 'wallet'
-                o.payment_account = None
-                o.save()
-                
-                logger.info(f'订单状态已更新: 订单ID={o.id}, 打款状态={o.payment_status}, 打款时间={o.paid_at}')
-                
-                return Response({
-                    'success': True, 
-                    'message': f'打款成功，已存入用户钱包。钱包余额: ¥{wallet.balance}', 
-                    'amount': total_amount,
-                    'wallet_balance': float(wallet.balance)
-                })
-            except Exception as e:
-                import traceback
-                error_trace = traceback.format_exc()
-                logger.error(f'[打款] 异常详情: {str(e)}\n{error_trace}')
-                # 打款异常时，更新打款状态为失败
-                o.payment_status = 'failed'
-                error_info = f'\n打款异常: {str(e)}'
-                if o.payment_note:
-                    o.payment_note += error_info
-                else:
-                    o.payment_note = error_info.strip()
-                o.save()
-                
-                return Response({
-                    'success': False,
-                    'detail': f'打款异常: {str(e)}。请查看服务器日志获取详细信息。'
-                }, status=500)
+            return Response({'success': False, 'detail': 'Unsupported payment method'}, status=400)
         except RecycleOrder.DoesNotExist:
-            return Response({'success': False, 'detail': '订单不存在'}, status=404)
+            return Response({'success': False, 'detail': 'Order not found'}, status=404)
 
-@method_decorator(csrf_exempt, name='dispatch')
 class InspectionOrderPublishVerifiedView(APIView):
     # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
     authentication_classes = []
@@ -2748,21 +2667,6 @@ class PaymentOrderSettlementView(APIView):
                 o.platform_commission_amount = commission_amount
                 o.settlement_method = 'ROYALTY'
                 o.save()
-                try:
-                    from app.secondhand_app.models import Wallet, WalletTransaction
-                    wallet, _ = Wallet.objects.get_or_create(user=o.product.seller)
-                    WalletTransaction.objects.create(
-                        wallet=wallet,
-                        transaction_type='income',
-                        amount=seller_amount,
-                        balance_after=wallet.balance,
-                        related_market_order=o,
-                        alipay_account=(seller_user_id or seller_login_id),
-                        alipay_name=(seller_profile.alipay_real_name if seller_profile else ''),
-                        note=f'订单#{o.id} 分账完成，资金已存入支付宝: {(seller_user_id or seller_login_id)}'
-                    )
-                except Exception:
-                    pass
                 AdminAuditLog.objects.create(actor=admin, target_type='Order', target_id=o.id, action='settlement_retry', snapshot_json={'result': 'success'})
                 return Response({'success': True})
             else:
@@ -2770,46 +2674,6 @@ class PaymentOrderSettlementView(APIView):
                 o.settle_request_no = out_request_no
                 o.save()
                 AdminAuditLog.objects.create(actor=admin, target_type='Order', target_id=o.id, action='settlement_retry', snapshot_json={'result': 'failed', 'code': result.get('code'), 'msg': result.get('msg')})
-                try:
-                    from django.conf import settings
-                    from django.utils import timezone
-                    if getattr(settings, 'SETTLEMENT_FALLBACK_TO_TRANSFER', False):
-                        out_biz_no = f'admin_settle_transfer_{o.id}_{int(time.time())}'
-                        transfer_res = alipay.transfer_to_account(
-                            out_biz_no=out_biz_no,
-                            payee_account=(seller_login_id or seller_user_id),
-                            amount=float(seller_amount),
-                            payee_real_name=(seller_profile.alipay_real_name if seller_profile else None),
-                            remark='易淘分账-管理员转账代结算'
-                        )
-                        if transfer_res.get('success'):
-                            o.settlement_status = 'settled'
-                            o.settled_at = timezone.now()
-                            o.seller_settle_amount = seller_amount
-                            o.platform_commission_amount = commission_amount
-                            o.settlement_method = 'TRANSFER'
-                            o.transfer_order_id = transfer_res.get('order_id','')
-                            o.save()
-                            try:
-                                from app.secondhand_app.models import Wallet, WalletTransaction
-                                wallet, _ = Wallet.objects.get_or_create(user=o.product.seller)
-                                WalletTransaction.objects.create(
-                                    wallet=wallet,
-                                    transaction_type='income',
-                                    amount=seller_amount,
-                                    balance_after=wallet.balance,
-                                    related_market_order=o,
-                                    alipay_account=(seller_user_id or seller_login_id),
-                                    alipay_name=(seller_profile.alipay_real_name if seller_profile else ''),
-                                    alipay_order_id=transfer_res.get('order_id',''),
-                                    note=f'订单#{o.id} 转账代结算成功，资金已存入支付宝: {(seller_user_id or seller_login_id)}'
-                                )
-                            except Exception:
-                                pass
-                            AdminAuditLog.objects.create(actor=admin, target_type='Order', target_id=o.id, action='settlement_retry_transfer', snapshot_json={'result': 'success'})
-                            return Response({'success': True})
-                except Exception:
-                    pass
                 return Response({'success': False, 'detail': result.get('msg', '分账失败')}, status=500)
         except Order.DoesNotExist:
             return Response({'detail': 'order not found'}, status=404)

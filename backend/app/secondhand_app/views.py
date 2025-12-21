@@ -16,7 +16,7 @@ import ipaddress
 logger = logging.getLogger(__name__)
 from .models import (
     Category, Product, ProductImage, Order, Message, Favorite, Address, UserProfile, RecycleOrder,
-    VerifiedProduct, VerifiedProductImage, VerifiedOrder, VerifiedFavorite, Wallet, WalletTransaction
+    VerifiedProduct, VerifiedProductImage, VerifiedOrder, VerifiedFavorite
 )
 try:
     from app.admin_api.models import RecycleDeviceTemplate, RecycleQuestionTemplate, RecycleQuestionOption
@@ -183,6 +183,78 @@ class UserViewSet(viewsets.ModelViewSet):
                 return Response(user_serializer.data)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def transactions(self, request):
+        """äº¤æ˜“è®°å½•ï¼ˆè´­ä¹°/å–å‡ºï¼‰"""
+        page = int(request.query_params.get('page', 1) or 1)
+        page_size = int(request.query_params.get('page_size', 20) or 20)
+        page = max(page, 1)
+        page_size = max(page_size, 1)
+
+        type_display = {
+            'income': 'Income',
+            'expense': 'Expense',
+            'refund': 'Refund',
+            'recycle': 'Recycle',
+        }
+
+        orders = (
+            Order.objects
+            .select_related('product', 'buyer', 'product__seller')
+            .filter(Q(buyer=request.user) | Q(product__seller=request.user))
+        )
+
+        transactions = []
+        for order in orders:
+            if order.status == 'cancelled' and order.buyer_id == request.user.id:
+                transactions.append({
+                    'created_at': order.updated_at,
+                    'transaction_type': 'refund',
+                    'transaction_type_display': type_display['refund'],
+                    'amount': float(order.total_price),
+                    'balance_after': None,
+                    'note': f"Order#{order.id}",
+                })
+                continue
+
+            if order.status in ('pending', 'cancelled'):
+                continue
+
+            is_buyer = order.buyer_id == request.user.id
+            tx_type = 'expense' if is_buyer else 'income'
+            transactions.append({
+                'created_at': order.created_at,
+                'transaction_type': tx_type,
+                'transaction_type_display': type_display[tx_type],
+                'amount': -float(order.total_price) if is_buyer else float(order.total_price),
+                'balance_after': None,
+                'note': f"Order#{order.id}",
+            })
+
+        recycle_orders = (
+            RecycleOrder.objects
+            .filter(user=request.user, status='completed', payment_status='paid')
+        )
+        for recycle in recycle_orders:
+            amount = recycle.final_price or recycle.estimated_price or 0
+            transactions.append({
+                'created_at': recycle.paid_at or recycle.updated_at,
+                'transaction_type': 'recycle',
+                'transaction_type_display': type_display['recycle'],
+                'amount': float(amount),
+                'balance_after': None,
+                'note': f"Recycle#{recycle.id}",
+            })
+
+        transactions.sort(key=lambda x: x['created_at'], reverse=True)
+        total = len(transactions)
+        start = (page - 1) * page_size
+        end = start + page_size
+        return Response({
+            'transactions': transactions[start:end],
+            'total': total
+        })
+
     @action(detail=False, methods=['post'], permission_classes=[])
     def register(self, request):
         """用户注册"""
@@ -250,156 +322,6 @@ class UserViewSet(viewsets.ModelViewSet):
             'user': UserSerializer(user, context={'request': request}).data
         })
     
-    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
-    def wallet(self, request):
-        """获取当前用户钱包信息"""
-        wallet, created = Wallet.objects.get_or_create(user=request.user)
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 20))
-        
-        # 获取交易记录（分页）
-        transactions_qs = wallet.transactions.all()
-        total = transactions_qs.count()
-        transactions = transactions_qs[(page-1)*page_size: page*page_size]
-        
-        return Response({
-            'balance': float(wallet.balance),
-            'frozen_balance': float(wallet.frozen_balance),
-            'transactions': [{
-                'id': t.id,
-                'transaction_type': t.transaction_type,
-                'transaction_type_display': t.get_transaction_type_display(),
-                'amount': float(t.amount),
-                'balance_after': float(t.balance_after),
-                'note': t.note,
-                'created_at': t.created_at.isoformat(),
-                'withdraw_status': t.withdraw_status,
-                'withdraw_status_display': t.get_withdraw_status_display() if t.withdraw_status else None,
-                'alipay_order_id': t.alipay_order_id if hasattr(t, 'alipay_order_id') else None,
-            } for t in transactions],
-            'total': total,
-            'page': page,
-            'page_size': page_size
-        })
-    
-    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
-    def withdraw(self, request):
-        """提现到支付宝"""
-        from decimal import Decimal
-        from app.secondhand_app.alipay_client import AlipayClient
-        import time
-        
-        amount = request.data.get('amount')
-        alipay_account = request.data.get('alipay_account', '').strip()
-        alipay_name = request.data.get('alipay_name', '').strip()
-        
-        if not amount:
-            return Response({'detail': '提现金额不能为空'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            amount = Decimal(str(amount))
-            if amount <= 0:
-                return Response({'detail': '提现金额必须大于0'}, status=status.HTTP_400_BAD_REQUEST)
-        except (ValueError, TypeError):
-            return Response({'detail': '提现金额格式错误'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if not alipay_account:
-            return Response({'detail': '支付宝账号不能为空'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # 获取用户钱包
-        wallet, created = Wallet.objects.get_or_create(user=request.user)
-        
-        # 检查余额是否足够
-        if wallet.balance < amount:
-            return Response({'detail': '余额不足'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # 检查支付宝配置
-        alipay = AlipayClient()
-        is_valid, error_msg = alipay.validate_config()
-        if not is_valid:
-            return Response({'detail': f'支付宝配置未完成: {error_msg}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        # 创建提现交易记录（先冻结金额）
-        transaction = WalletTransaction.objects.create(
-            wallet=wallet,
-            transaction_type='withdraw',
-            amount=-amount,  # 负数表示支出
-            balance_after=wallet.balance - amount,
-            alipay_account=alipay_account,
-            alipay_name=alipay_name,
-            withdraw_status='pending',
-            note=f'提现到支付宝: {alipay_account}'
-        )
-        
-        # 扣除余额
-        wallet.balance -= amount
-        wallet.save()
-        
-        # 调用支付宝转账接口
-        try:
-            transfer_result = alipay.transfer_to_account(
-                out_biz_no=f'withdraw_{request.user.id}_{int(time.time())}',
-                payee_account=alipay_account,
-                amount=float(amount),
-                payee_real_name=alipay_name if alipay_name else None,
-                remark=f'易淘账户提现'
-            )
-            
-            if transfer_result.get('success'):
-                # 提现成功
-                transaction.withdraw_status = 'success'
-                transaction.alipay_order_id = transfer_result.get('order_id', '')
-                transaction.note = f'提现成功，支付宝订单号: {transfer_result.get("order_id", "")}'
-                transaction.save()
-                
-                logger.info(f'提现成功: 用户ID={request.user.id}, 金额={amount}, 支付宝订单号={transfer_result.get("order_id", "")}')
-                
-                return Response({
-                    'success': True,
-                    'message': '提现成功',
-                    'order_id': transfer_result.get('order_id', ''),
-                    'balance': float(wallet.balance)
-                })
-            else:
-                # 提现失败，退回余额
-                wallet.balance += amount
-                wallet.save()
-                
-                error_code = transfer_result.get('code', '')
-                error_msg = transfer_result.get('msg', '提现失败')
-                sub_code = transfer_result.get('sub_code', '')
-                sub_msg = transfer_result.get('sub_msg', '')
-                
-                transaction.withdraw_status = 'failed'
-                transaction.note = f'提现失败: {sub_msg or error_msg}'
-                transaction.save()
-                
-                logger.error(f'提现失败: 用户ID={request.user.id}, code={error_code}, msg={error_msg}')
-                
-                return Response({
-                    'success': False,
-                    'detail': f'提现失败: {sub_msg or error_msg}',
-                    'error_code': error_code,
-                    'sub_code': sub_code
-                }, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            # 异常时退回余额
-            wallet.balance += amount
-            wallet.save()
-            
-            transaction.withdraw_status = 'failed'
-            transaction.note = f'提现异常: {str(e)}'
-            transaction.save()
-            
-            logger.error(f'提现异常: 用户ID={request.user.id}, 错误={str(e)}', exc_info=True)
-            
-            return Response({
-                'success': False,
-                'detail': f'提现异常: {str(e)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     """分类视图集"""
     serializer_class = CategorySerializer
@@ -842,20 +764,6 @@ class OrderViewSet(viewsets.ModelViewSet):
                                 order.platform_commission_amount = commission_amount
                                 order.settlement_method = 'ROYALTY'
                                 order.save()
-                                try:
-                                    wallet, _ = Wallet.objects.get_or_create(user=order.product.seller)
-                                    WalletTransaction.objects.create(
-                                        wallet=wallet,
-                                        transaction_type='income',
-                                        amount=seller_amount,
-                                        balance_after=wallet.balance,
-                                        related_market_order=order,
-                                        alipay_account=(seller_user_id or seller_login_id),
-                                        alipay_name=(seller_profile.alipay_real_name if seller_profile else ''),
-                                        note=f'订单#{order.id} 分账完成，资金已存入支付宝: {(seller_user_id or seller_login_id)}'
-                                    )
-                                except Exception:
-                                    pass
                                 # 创建分账成功的审计日志
                                 try:
                                     from app.admin_api.models import AdminAuditLog
@@ -880,79 +788,6 @@ class OrderViewSet(viewsets.ModelViewSet):
                                 # 注意：不设置settlement_method，等待降级到转账或手动重试
                                 order.save()
                                 logger.error(f"分账失败: code={result.get('code')}, msg={result.get('msg')}, sub={result.get('sub_code')} {result.get('sub_msg')}")
-                                try:
-                                    from app.admin_api.models import AdminAuditLog
-                                    AdminAuditLog.objects.create(
-                                        actor=None,
-                                        target_type='Order',
-                                        target_id=order.id,
-                                        action='settlement_auto',
-                                        snapshot_json={
-                                            'result': 'failed',
-                                            'code': result.get('code'),
-                                            'msg': result.get('msg'),
-                                            'sub_code': result.get('sub_code'),
-                                            'sub_msg': result.get('sub_msg')
-                                        }
-                                    )
-                                except Exception:
-                                    pass
-                                try:
-                                    if getattr(settings, 'SETTLEMENT_FALLBACK_TO_TRANSFER', False):
-                                        out_biz_no = f'settle_transfer_{order.id}_{int(timezone.now().timestamp())}'
-                                        transfer_res = alipay.transfer_to_account(
-                                            out_biz_no=out_biz_no,
-                                            payee_account=(seller_login_id or seller_user_id),
-                                            amount=float(seller_amount),
-                                            payee_real_name=(seller_profile.alipay_real_name if seller_profile else None),
-                                            remark='易淘分账-转账代结算'
-                                        )
-                                        if transfer_res.get('success'):
-                                            order.settlement_status = 'settled'
-                                            order.settled_at = timezone.now()
-                                            order.platform_commission_amount = commission_amount
-                                            order.seller_settle_amount = seller_amount
-                                            order.settlement_method = 'TRANSFER'
-                                            order.transfer_order_id = transfer_res.get('order_id','')
-                                            order.save()
-                                            logger.info(f"分账失败后转账代结算成功: order_id={order.id}")
-                                            try:
-                                                wallet, _ = Wallet.objects.get_or_create(user=order.product.seller)
-                                                WalletTransaction.objects.create(
-                                                    wallet=wallet,
-                                                    transaction_type='income',
-                                                    amount=seller_amount,
-                                                    balance_after=wallet.balance,
-                                                    related_market_order=order,
-                                                    alipay_account=(seller_user_id or seller_login_id),
-                                                    alipay_name=(seller_profile.alipay_real_name if seller_profile else ''),
-                                                    alipay_order_id=transfer_res.get('order_id',''),
-                                                    note=f'订单#{order.id} 转账代结算成功，资金已存入支付宝: {(seller_user_id or seller_login_id)}'
-                                                )
-                                            except Exception:
-                                                pass
-                                            # 创建转账代结算成功的审计日志
-                                            try:
-                                                from app.admin_api.models import AdminAuditLog
-                                                AdminAuditLog.objects.create(
-                                                    actor=None,
-                                                    target_type='Order',
-                                                    target_id=order.id,
-                                                    action='settlement_auto',
-                                                    snapshot_json={
-                                                        'result': 'success',
-                                                        'method': 'TRANSFER',
-                                                        'transfer_order_id': transfer_res.get('order_id',''),
-                                                        'seller_amount': float(seller_amount),
-                                                        'commission_amount': float(commission_amount)
-                                                    }
-                                                )
-                                            except Exception:
-                                                pass
-                                        else:
-                                            logger.error(f"转账代结算失败: code={transfer_res.get('code')}, msg={transfer_res.get('msg')}, sub={transfer_res.get('sub_code')} {transfer_res.get('sub_msg')}")
-                                except Exception as e:
-                                    logger.error(f'转账代结算异常: {str(e)}', exc_info=True)
         except Exception as e:
             logger.error(f'订单分账异常: {str(e)}', exc_info=True)
         serializer = OrderSerializer(order)

@@ -244,43 +244,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
                     else:
                         o.settlement_status = 'failed'
                         o.settle_request_no = out_request_no
-                        try:
-                            from django.conf import settings
-                            if getattr(settings, 'SETTLEMENT_FALLBACK_TO_TRANSFER', False):
-                                out_biz_no = f'auto_bind_settle_transfer_{o.id}_{int(timezone.now().timestamp())}'
-                                transfer_res = alipay.transfer_to_account(
-                                    out_biz_no=out_biz_no,
-                                    payee_account=(profile.alipay_login_id or profile.alipay_user_id),
-                                    amount=float(seller_amount),
-                                    payee_real_name=profile.alipay_real_name,
-                                    remark='易淘分账-绑定后转账代结算'
-                                )
-                                if transfer_res.get('success'):
-                                    o.settlement_status = 'settled'
-                                    o.settled_at = timezone.now()
-                                    o.seller_settle_amount = seller_amount
-                                    o.platform_commission_amount = commission_amount
-                                    o.settlement_method = 'TRANSFER'
-                                    o.transfer_order_id = transfer_res.get('order_id','')
-                        except Exception:
-                            pass
                     o.save()
-                    try:
-                        from app.secondhand_app.models import Wallet, WalletTransaction
-                        wallet, _ = Wallet.objects.get_or_create(user=profile.user)
-                        WalletTransaction.objects.create(
-                            wallet=wallet,
-                            transaction_type='income',
-                            amount=seller_amount,
-                            balance_after=wallet.balance,
-                            related_market_order=o,
-                            alipay_account=(profile.alipay_user_id or profile.alipay_login_id),
-                            alipay_name=profile.alipay_real_name,
-                            alipay_order_id=getattr(o,'transfer_order_id',''),
-                            note=f'订单#{o.id} 结算完成，资金已存入支付宝: {(profile.alipay_user_id or profile.alipay_login_id)}'
-                        )
-                    except Exception:
-                        pass
         except Exception:
             pass
 

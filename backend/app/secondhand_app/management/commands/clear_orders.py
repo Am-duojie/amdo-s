@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from app.secondhand_app.models import Order, VerifiedOrder, RecycleOrder, WalletTransaction
+from app.secondhand_app.models import Order, VerifiedOrder, RecycleOrder
 from app.admin_api.models import AdminAuditLog
 
 class Command(BaseCommand):
@@ -20,13 +20,11 @@ class Command(BaseCommand):
             count_orders = Order.objects.count()
             count_vorders = VerifiedOrder.objects.count()
             count_rorders = RecycleOrder.objects.count()
-            count_wallet_tx = WalletTransaction.objects.filter(related_order__isnull=False).count()
             count_audit = AdminAuditLog.objects.filter(target_type__in=['Order','VerifiedOrder','RecycleOrder','Payment','Settlement']).count()
-            self.stdout.write(f'Orders: {count_orders}, VerifiedOrders: {count_vorders}, RecycleOrders: {count_rorders}, WalletTxLinked: {count_wallet_tx}, AdminAuditLogs: {count_audit}')
+            self.stdout.write(f'Orders: {count_orders}, VerifiedOrders: {count_vorders}, RecycleOrders: {count_rorders}, AdminAuditLogs: {count_audit}')
             if dry:
                 return
             AdminAuditLog.objects.filter(target_type__in=['Order','VerifiedOrder','RecycleOrder','Payment','Settlement']).delete()
-            WalletTransaction.objects.filter(related_order__isnull=False).delete()
             VerifiedOrder.objects.all().delete()
             Order.objects.all().delete()
             RecycleOrder.objects.all().delete()
