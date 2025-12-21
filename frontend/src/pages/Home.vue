@@ -392,33 +392,7 @@ const goToCategory = (categoryId) => {
   router.push({ path: '/products', query: { category: categoryId } })
 }
 
-const computeRecommendScore = (product) => {
-  let score = 0
-  const favorites = Number(product.favorite_count || 0)
-  const views = Number(product.view_count || 0)
-  score += favorites * 3
-  score += views * 0.05
 
-  if (product?.created_at) {
-    const hours = (Date.now() - new Date(product.created_at).getTime()) / 36e5
-    score += Math.max(0, 72 - hours)
-  }
-
-  return score
-}
-
-const computeFreshScore = (product) => {
-  let score = 0
-  if (product?.created_at) {
-    const hours = (Date.now() - new Date(product.created_at).getTime()) / 36e5
-    score += Math.max(0, 168 - hours) * 10
-  }
-  const favorites = Number(product.favorite_count || 0)
-  const views = Number(product.view_count || 0)
-  score += favorites * 2
-  score += views * 0.02
-  return score
-}
 
 // 加载商品
 const loadProducts = async (append = false) => {
@@ -426,37 +400,40 @@ const loadProducts = async (append = false) => {
   else loadingMore.value = true
 
   try {
+    const isFresh = activeTab.value === 'fresh'
+    const basePageSize = isFresh ? 30 : 30
     const params = {
       status: 'active',
-      page: append ? Math.ceil(products.value.length / 30) + 1 : 1,
-      page_size: 30,
-      ordering: activeTab.value === 'fresh' ? '-created_at' : (activeTab.value === 'low_price' ? 'price' : '-created_at'),
+      page: append ? Math.ceil(products.value.length / basePageSize) + 1 : 1,
+      page_size: basePageSize,
+      ordering: '-created_at',
     }
 
-    const res = await api.get('/products/', { params })
+    const locationParam = (() => {
+      const local = typeof localStorage !== 'undefined' ? localStorage.getItem('user_location') : ''
+      return (local || authStore.user?.location || '').trim()
+    })()
+
+    let endpoint = '/products/'
+    if (activeTab.value === 'recommend') {
+      endpoint = '/products/recommend/'
+    } else if (isFresh) {
+      endpoint = '/products/latest/'
+    } else if (activeTab.value === 'nearby') {
+      endpoint = '/products/nearby/'
+    } else if (activeTab.value === 'low_price') {
+      endpoint = '/products/low-price/'
+    }
+
+    if (activeTab.value === 'nearby' && locationParam) {
+      params.location = locationParam
+    }
+
+    const res = await api.get(endpoint, { params })
     const newProducts = getResults(res.data)
 
-    if (activeTab.value === 'recommend' || activeTab.value === 'fresh') {
-      const merged = append ? [...products.value, ...newProducts] : newProducts
-      const seen = new Set()
-      const unique = merged.filter((p) => {
-        if (!p || seen.has(p.id)) return false
-        seen.add(p.id)
-        return true
-      })
-      products.value = unique.sort((a, b) => {
-        if (activeTab.value === 'recommend') {
-          return computeRecommendScore(b) - computeRecommendScore(a)
-        }
-        const timeA = a?.created_at ? new Date(a.created_at).getTime() : 0
-        const timeB = b?.created_at ? new Date(b.created_at).getTime() : 0
-        if (timeA !== timeB) return timeB - timeA
-        return computeFreshScore(b) - computeFreshScore(a)
-      })
-    } else {
-      if (append) products.value.push(...newProducts)
-      else products.value = newProducts
-    }
+    if (append) products.value.push(...newProducts)
+    else products.value = newProducts
 
     hasMore.value = !!res.data.next
   } catch (error) {

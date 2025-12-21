@@ -32,6 +32,29 @@ from .serializers import (
     MessageSerializer, FavoriteSerializer, AddressSerializer, RecycleOrderSerializer,
     VerifiedProductSerializer, VerifiedProductImageSerializer, VerifiedOrderSerializer, VerifiedFavoriteSerializer
 )
+from .pagination import LatestProductsPagination
+
+
+def _extract_location_keys(text):
+    value = (text or '').strip()
+    if not value:
+        return []
+
+    keys = []
+    province_match = re.search(r'([^\s省市区县]+省|[^\s省市区县]+自治区|[^\s省市区县]+特别行政区)', value)
+    city_match = re.search(r'([^\s省市区县]+市)', value)
+    district_match = re.search(r'([^\s省市区县]+区|[^\s省市区县]+县)', value)
+
+    for match in [city_match, district_match, province_match]:
+        if match:
+            key = match.group(1)
+            if key and key not in keys:
+                keys.append(key)
+
+    if not keys and len(value) >= 2:
+        keys.append(value)
+
+    return keys
 
 
 class GeoIpView(APIView):
@@ -95,6 +118,48 @@ class GeoIpView(APIView):
             logger.warning('AMAP request failed', exc_info=True)
 
         return Response({'detail': 'IP lookup failed'}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+class GeoDistrictsView(APIView):
+    """行政区划查询（高德）"""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        amap_key = getattr(settings, 'AMAP_API_KEY', '')
+        if not amap_key:
+            return Response({'detail': 'AMAP_API_KEY not configured'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        keywords = request.query_params.get('keywords', '').strip() or '中国'
+        subdistrict = request.query_params.get('subdistrict', '1').strip() or '1'
+        api_url = getattr(settings, 'AMAP_DISTRICT_API_URL', 'https://restapi.amap.com/v3/config/district')
+
+        session = requests.Session()
+        session.trust_env = False
+
+        try:
+            res = session.get(api_url, params={
+                'key': amap_key,
+                'keywords': keywords,
+                'subdistrict': subdistrict,
+                'extensions': 'base',
+                'page': 1,
+                'offset': 100
+            }, timeout=5)
+        except requests.exceptions.RequestException:
+            logger.warning('AMAP district request failed', exc_info=True)
+            return Response({'detail': 'AMAP district request failed'}, status=status.HTTP_502_BAD_GATEWAY)
+
+        if res.status_code != 200:
+            return Response({'detail': 'AMAP district response error'}, status=status.HTTP_502_BAD_GATEWAY)
+
+        data = res.json()
+        if data.get('status') != '1':
+            return Response({'detail': data.get('info') or 'AMAP error'}, status=status.HTTP_502_BAD_GATEWAY)
+
+        districts = data.get('districts') or []
+        return Response({
+            'districts': districts
+        })
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -435,6 +500,85 @@ class ProductViewSet(viewsets.ModelViewSet):
         instance.refresh_from_db(fields=['view_count'])
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
+
+
+class LatestProductsView(APIView):
+    """最新发布商品列表（后端排序分页）"""
+    permission_classes = [IsAuthenticatedOrReadOnly]
+    pagination_class = LatestProductsPagination
+
+    def get(self, request):
+        queryset = Product.objects.filter(status='active').select_related('category', 'seller').annotate(
+            favorite_count=Count('favorites', distinct=True)
+        ).order_by('-created_at')
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = ProductSerializer(page, many=True, context={'request': request})
+        return paginator.get_paginated_response(serializer.data)
+
+
+class RecommendProductsView(APIView):
+    """推荐商品列表（后端排序分页）"""
+    permission_classes = [IsAuthenticatedOrReadOnly]
+    pagination_class = LatestProductsPagination
+
+    def get(self, request):
+        queryset = Product.objects.filter(status='active').select_related('category', 'seller').annotate(
+            favorite_count=Count('favorites', distinct=True),
+            recommend_score=(
+                F('view_count') * 0.05 +
+                Count('favorites', distinct=True) * 3
+            )
+        ).order_by('-recommend_score', '-created_at')
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = ProductSerializer(page, many=True, context={'request': request})
+        return paginator.get_paginated_response(serializer.data)
+
+
+class NearbyProductsView(APIView):
+    """同城商品列表（后端过滤分页）"""
+    permission_classes = [IsAuthenticatedOrReadOnly]
+    pagination_class = LatestProductsPagination
+
+    def get(self, request):
+        location = request.query_params.get('location', '').strip()
+        if not location and request.user.is_authenticated:
+            profile = UserProfile.objects.filter(user=request.user).first()
+            location = (profile.location or '').strip() if profile else ''
+
+        keys = _extract_location_keys(location)
+        if not keys:
+            paginator = self.pagination_class()
+            return paginator.get_paginated_response([])
+
+        queryset = Product.objects.filter(status='active').select_related('category', 'seller').annotate(
+            favorite_count=Count('favorites', distinct=True)
+        )
+        queryset = queryset.filter(location__icontains=keys[0]).order_by('-created_at')
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = ProductSerializer(page, many=True, context={'request': request})
+        return paginator.get_paginated_response(serializer.data)
+
+
+class LowPriceProductsView(APIView):
+    """捡漏专区（全量按价格排序分页）"""
+    permission_classes = [IsAuthenticatedOrReadOnly]
+    pagination_class = LatestProductsPagination
+
+    def get(self, request):
+        queryset = Product.objects.filter(status='active').select_related('category', 'seller').annotate(
+            favorite_count=Count('favorites', distinct=True)
+        ).order_by('price', '-created_at')
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = ProductSerializer(page, many=True, context={'request': request})
+        return paginator.get_paginated_response(serializer.data)
 
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated])
     def update_status(self, request, pk=None):

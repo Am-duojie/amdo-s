@@ -36,7 +36,6 @@
       </el-table-column>
       <el-table-column prop="seller" label="卖家" width="120" />
       <el-table-column prop="category" label="分类" width="120" />
-      <el-table-column prop="shop" label="店铺" width="120" />
       <el-table-column prop="created_at" label="创建时间" width="180" />
       <el-table-column label="操作" width="360" fixed="right">
         <template #default="{ row }">
@@ -88,12 +87,6 @@
         <el-form-item label="位置">
           <el-input v-model="form.location" />
         </el-form-item>
-        <el-form-item label="联系电话">
-          <el-input v-model="form.contact_phone" />
-        </el-form-item>
-        <el-form-item label="微信">
-          <el-input v-model="form.contact_wechat" />
-        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -127,9 +120,7 @@ const form = reactive({
   original_price: 0,
   condition: '',
   status: 'active',
-  location: '',
-  contact_phone: '',
-  contact_wechat: ''
+  location: ''
 })
 
 const getStatusType = (status) => {
@@ -182,14 +173,12 @@ const edit = async (row) => {
     // 由于后端没有提供详情接口，这里先使用列表中的数据
     Object.assign(form, {
       title: row.title || '',
-      description: '',
+      description: row.description || '',
       price: row.price || 0,
-      original_price: 0,
-      condition: '',
+      original_price: row.original_price || 0,
+      condition: row.condition || '',
       status: row.status || 'active',
-      location: '',
-      contact_phone: '',
-      contact_wechat: ''
+      location: row.location || ''
     })
   } catch (error) {
     ElMessage.error('加载商品详情失败')
@@ -240,11 +229,6 @@ onMounted(() => {
   load()
 })
 </script>
-
-
-
-
-
 
 
 

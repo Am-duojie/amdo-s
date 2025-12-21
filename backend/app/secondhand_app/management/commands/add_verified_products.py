@@ -275,42 +275,36 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(f'商品已存在: {data["title"]}'))
                 continue
 
-            # 创建商品 - 使用原始 SQL 以支持数据库中存在但模型中不存在的字段
-            from django.db import connection
-            import json
-            
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO secondhand_app_verifiedproduct 
-                    (seller_id, category_id, title, description, price, original_price, 
-                     `condition`, status, location, brand, model, storage, screen_size, 
-                     battery_health, charging_type, inspection_result, inspection_note, 
-                     stock, tags, pricing_coefficient, source_tag, created_at, updated_at, 
-                     view_count, sales_count, verified_at, inspection_date, inspection_staff, 
-                     published_at, cover_image, detail_images, inspection_reports,
-                     contact_phone, contact_wechat, shop_id, verified_by_id, removed_reason)
-                    VALUES 
-                    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 
-                     1.0, 'manual', NOW(), NOW(), %s, %s, %s, %s, %s, %s, '', '[]', '[]', '', '', NULL, NULL, '')
-                    """,
-                    [
-                        seller.id, category.id, data['title'], data['description'],
-                        data['price'], data.get('original_price'), data['condition'],
-                        'active', data['location'], data['brand'], data['model'],
-                        data['storage'], data['screen_size'], data['battery_health'],
-                        'Lightning' if 'iPhone' in data['model'] and '15' not in data['model'] else 'USB-C',
-                        data['inspection_result'], data['inspection_note'], data['stock'],
-                        json.dumps(data['tags']), random.randint(100, 1000), random.randint(0, 10),
-                        datetime.now() - timedelta(days=random.randint(1, 30)),
-                        datetime.now().date() - timedelta(days=random.randint(1, 30)),
-                        '张质检', datetime.now() - timedelta(days=random.randint(1, 15))
-                    ]
-                )
-                product_id = cursor.lastrowid
-            
-            # 重新获取创建的对象
-            product = VerifiedProduct.objects.get(id=product_id)
+            product = VerifiedProduct.objects.create(
+                seller=seller,
+                category=category,
+                title=data['title'],
+                description=data['description'],
+                price=data['price'],
+                original_price=data.get('original_price'),
+                condition=data['condition'],
+                status='active',
+                location=data['location'],
+                brand=data['brand'],
+                model=data['model'],
+                storage=data['storage'],
+                screen_size=data['screen_size'],
+                battery_health=data['battery_health'],
+                charging_type='Lightning' if 'iPhone' in data['model'] and '15' not in data['model'] else 'USB-C',
+                inspection_result=data['inspection_result'],
+                inspection_note=data['inspection_note'],
+                stock=data['stock'],
+                tags=data['tags'],
+                pricing_coefficient=1.0,
+                source_tag='manual',
+                view_count=random.randint(100, 1000),
+                sales_count=random.randint(0, 10),
+                verified_at=datetime.now() - timedelta(days=random.randint(1, 30)),
+                inspection_date=datetime.now().date() - timedelta(days=random.randint(1, 30)),
+                inspection_staff='张质检',
+                published_at=datetime.now() - timedelta(days=random.randint(1, 15)),
+                removed_reason=''
+            )
 
             # 添加封面图（使用占位图）
             product.cover_image = f'https://via.placeholder.com/600x600/667eea/ffffff?text={product.brand}+{product.model}'

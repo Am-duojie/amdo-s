@@ -13,6 +13,12 @@ class CustomPageNumberPagination(PageNumberPagination):
     max_page_size = 100  # 每页最大数量限制
 
 
+class LatestProductsPagination(PageNumberPagination):
+    """最新发布专用分页"""
+    page_size = 30
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 
 
 

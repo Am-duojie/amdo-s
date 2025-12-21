@@ -307,7 +307,18 @@
               <el-input v-model="editForm.email" type="email" placeholder="请输入邮箱" />
             </el-form-item>
             <el-form-item label="所在地">
-              <el-input v-model="editForm.location" placeholder="如：广东省 深圳市" />
+              <div class="location-row">
+                <el-cascader
+                  v-model="locationValue"
+                  :options="locationOptions"
+                  :props="locationProps"
+                  clearable
+                  filterable
+                  placeholder="请选择省/市/区"
+                  class="location-cascader"
+                />
+                <el-button type="primary" plain :loading="locating" @click="handleLocate">自动获取</el-button>
+              </div>
             </el-form-item>
             <el-form-item label="个人简介">
               <el-input v-model="editForm.bio" type="textarea" :rows="3" placeholder="介绍一下自己吧~" :maxlength="200" show-word-limit />
@@ -599,7 +610,18 @@
           <el-input v-model="editForm.email" type="email" placeholder="请输入邮箱" />
         </el-form-item>
         <el-form-item label="所在地">
-          <el-input v-model="editForm.location" placeholder="如：广东省 深圳市" />
+          <div class="location-row">
+            <el-cascader
+              v-model="locationValue"
+              :options="locationOptions"
+              :props="locationProps"
+              clearable
+              filterable
+              placeholder="请选择省/市/区"
+              class="location-cascader"
+            />
+            <el-button type="primary" plain :loading="locating" @click="handleLocate">自动获取</el-button>
+          </div>
         </el-form-item>
         <el-form-item label="个人简介">
           <el-input v-model="editForm.bio" type="textarea" :rows="3" placeholder="介绍一下自己吧~" />
@@ -643,7 +665,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -728,6 +750,9 @@ const editForm = reactive({
   location: '',
   bio: ''
 })
+const locating = ref(false)
+const locationOptions = ref([])
+const locationValue = ref([])
 
 const passwordForm = reactive({
   old_password: '',
@@ -755,6 +780,135 @@ const addressRules = {
   name: [{ required: true, message: '请输入收货人姓名', trigger: 'blur' }],
   phone: [{ required: true, message: '请输入手机号码', trigger: 'blur' }],
   detail_address: [{ required: true, message: '请输入详细地址', trigger: 'blur' }]
+}
+
+const locationProps = {
+  lazy: true,
+  lazyLoad: async (node, resolve) => {
+    try {
+      const keyword = node.level === 0 ? '中国' : node.value
+      const res = await api.get('/geo/districts/', {
+        params: { keywords: keyword, subdistrict: 1 }
+      })
+      const districts = res.data?.districts?.[0]?.districts || []
+      const options = districts.map((d) => ({
+        label: d.name,
+        value: d.name,
+        leaf: !d.districts || d.districts.length === 0,
+      }))
+      resolve(options)
+    } catch (error) {
+      resolve([])
+    }
+  },
+}
+
+const loadRootDistricts = async () => {
+  try {
+    const res = await api.get('/geo/districts/', {
+      params: { keywords: '中国', subdistrict: 1 }
+    })
+    const districts = res.data?.districts?.[0]?.districts || []
+    locationOptions.value = districts.map((d) => ({
+      label: d.name,
+      value: d.name,
+      leaf: false,
+    }))
+  } catch (error) {
+    locationOptions.value = []
+  }
+}
+
+const parseLocationToArray = (value) => {
+  if (!value) return []
+  const parts = []
+  const province = value.match(/([^\s省市区县]+省|[^\s省市区县]+自治区|[^\s省市区县]+特别行政区)/)
+  const city = value.match(/([^\s省市区县]+市)/)
+  const district = value.match(/([^\s省市区县]+区|[^\s省市区县]+县)/)
+  if (province) parts.push(province[1])
+  if (city) parts.push(city[1])
+  if (district) parts.push(district[1])
+  if (parts.length === 0) return [value]
+  return parts
+}
+
+watch(locationValue, (val) => {
+  editForm.location = Array.isArray(val) ? val.join('') : ''
+})
+
+const fetchIpLocation = async () => {
+  const res = await api.get('/geo/ip/')
+  const data = res.data || {}
+  const parts = [data.province, data.city].filter(Boolean)
+  return parts.join('')
+}
+
+const handleLocate = async () => {
+  if (locating.value) return
+  if (!navigator.geolocation) {
+    ElMessage.warning('当前浏览器不支持定位')
+    return
+  }
+
+  locating.value = true
+  try {
+    const ipLocation = await fetchIpLocation()
+    if (ipLocation) {
+      locationValue.value = parseLocationToArray(ipLocation)
+      ElMessage.info('已使用网络定位，正在尝试精准定位...')
+    }
+  } catch (error) {
+    // 忽略网络定位失败
+  }
+
+  try {
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 8000,
+        maximumAge: 300000,
+      })
+    })
+
+    const { latitude, longitude } = position.coords
+    const url = new URL('https://nominatim.openstreetmap.org/reverse')
+    url.searchParams.set('format', 'jsonv2')
+    url.searchParams.set('lat', latitude)
+    url.searchParams.set('lon', longitude)
+    url.searchParams.set('accept-language', 'zh-CN')
+
+    const res = await fetch(url.toString())
+    if (!res.ok) throw new Error('reverse geocode failed')
+    const data = await res.json()
+    const address = data.address || {}
+
+    const rawParts = [
+      address.state,
+      address.city || address.town || address.village,
+      address.city_district || address.suburb || address.county,
+    ]
+    const parts = []
+    rawParts.forEach((part) => {
+      if (!part) return
+      const value = String(part).trim()
+      if (!value || parts.includes(value)) return
+      parts.push(value)
+    })
+
+    if (parts.length > 0) {
+      locationValue.value = parts
+    }
+  } catch (error) {
+    if (error && error.code === 1) {
+      ElMessage.warning('定位权限被拒绝')
+    } else if (error && (error.code === 2 || error.code === 3)) {
+      ElMessage.warning('定位超时或不可用，请手动修正')
+    } else {
+      ElMessage.error('定位失败')
+    }
+  } finally {
+    locating.value = false
+  }
 }
 
 // 计算属性：根据当前菜单和状态筛选订单
@@ -1138,6 +1292,7 @@ const initEditForm = () => {
     editForm.last_name = authStore.user.last_name || ''
     editForm.location = localStorage.getItem('user_location') || authStore.user.location || ''
     editForm.bio = localStorage.getItem('user_bio') || authStore.user.bio || ''
+    locationValue.value = parseLocationToArray(editForm.location)
   }
 }
 
@@ -1380,6 +1535,7 @@ onMounted(async () => {
   
   initEditForm()
   userLocation.value = localStorage.getItem('user_location') || '未设置'
+  loadRootDistricts()
   // 初始化绑定表单数据
   loadUserInfo()
 })
@@ -1518,6 +1674,16 @@ onMounted(async () => {
 .section-count { font-size: 14px; color: var(--text-muted); }
 
 .loading-wrapper, .empty-wrapper { padding: 60px 0; }
+
+.location-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.location-cascader {
+  flex: 1;
+}
 
 /* 商品网格 */
 .products-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }

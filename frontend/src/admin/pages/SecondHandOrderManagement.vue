@@ -334,10 +334,6 @@
               </el-tag>
               <span class="muted">地点：{{ orderDetail.product?.location || '-' }}</span>
             </div>
-            <div class="product-contact">
-              <span>电话：{{ orderDetail.product?.contact_phone || '-' }}</span>
-              <span>微信：{{ orderDetail.product?.contact_wechat || '-' }}</span>
-            </div>
           </div>
         </div>
 

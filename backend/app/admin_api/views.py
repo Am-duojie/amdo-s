@@ -908,16 +908,17 @@ class StatisticsView(APIView):
                     else (Sum('total_price') if include_cancelled_in_order_gmv else Sum('total_price', filter=~Q(status='cancelled')))
                 )
                 rows = list(
-                    base.values('product__shop__name')
+                    base.values('product__seller__username')
                     .annotate(count=count_agg, gmv=gmv_agg)
                     .order_by('-gmv', '-count')[:top_n]
                 )
                 breakdown = {
                     'type': breakdown_type,
+                    'label': '易淘订单 - 卖家 Top（按 GMV）',
                     'defaultMetric': 'gmv',
                     'rows': [
                         {
-                            'dim': norm_dim(r.get('product__shop__name')),
+                            'dim': norm_dim(r.get('product__seller__username')),
                             'count': int(r.get('count') or 0),
                             'gmv': float(r.get('gmv') or 0),
                         }

@@ -159,8 +159,6 @@ class Command(BaseCommand):
                 condition="good",
                 status="active",
                 location=city,
-                contact_phone="",
-                contact_wechat="",
             )
 
             # 下载主图 + 其余图片
@@ -264,4 +262,3 @@ class Command(BaseCommand):
         # 默认返回手机数码
         else:
             return "手机数码"
-

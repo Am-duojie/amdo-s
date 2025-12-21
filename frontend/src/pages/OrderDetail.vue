@@ -100,14 +100,6 @@
                   <span class="label">卖家：</span>
                   <span class="value">{{ order.product.seller.username }}</span>
                 </div>
-                <div v-if="order.product.contact_phone" class="info-row">
-                  <span class="label">联系电话：</span>
-                  <span class="value">{{ order.product.contact_phone }}</span>
-                </div>
-                <div v-if="order.product.contact_wechat" class="info-row">
-                  <span class="label">微信：</span>
-                  <span class="value">{{ order.product.contact_wechat }}</span>
-                </div>
                 <div class="info-row">
                   <span class="label">交易地点：</span>
                   <span class="value">{{ order.product.location }}</span>

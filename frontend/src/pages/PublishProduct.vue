@@ -90,9 +90,14 @@
 
           <el-form-item label="所在地" prop="location">
             <div class="location-row">
-              <el-input
-                v-model="form.location"
-                placeholder="请输入所在地"
+              <el-cascader
+                v-model="locationValue"
+                :options="locationOptions"
+                :props="locationProps"
+                clearable
+                filterable
+                placeholder="请选择省/市/区"
+                class="location-cascader"
               />
               <el-button type="primary" plain :loading="locating" @click="handleLocate">
                 自动获取
@@ -158,7 +163,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -174,6 +179,8 @@ const categories = ref([])
 const imageFiles = ref([])
 const activeImageIndex = ref(0)
 const locating = ref(false)
+const locationOptions = ref([])
+const locationValue = ref([])
 
 const productId = computed(() => route.params.id)
 const isEditing = computed(() => !!productId.value)
@@ -219,6 +226,61 @@ onMounted(() => {
   } else {
     handleLocate()
   }
+  loadRootDistricts()
+})
+
+const locationProps = {
+  lazy: true,
+  lazyLoad: async (node, resolve) => {
+    try {
+      const keyword = node.level === 0 ? '中国' : node.value
+      const res = await api.get('/geo/districts/', {
+        params: { keywords: keyword, subdistrict: 1 }
+      })
+      const districts = res.data?.districts?.[0]?.districts || []
+      const options = districts.map((d) => ({
+        label: d.name,
+        value: d.name,
+        leaf: !d.districts || d.districts.length === 0,
+      }))
+      resolve(options)
+    } catch (error) {
+      resolve([])
+    }
+  },
+}
+
+const loadRootDistricts = async () => {
+  try {
+    const res = await api.get('/geo/districts/', {
+      params: { keywords: '中国', subdistrict: 1 }
+    })
+    const districts = res.data?.districts?.[0]?.districts || []
+    locationOptions.value = districts.map((d) => ({
+      label: d.name,
+      value: d.name,
+      leaf: false,
+    }))
+  } catch (error) {
+    locationOptions.value = []
+  }
+}
+
+const parseLocationToArray = (value) => {
+  if (!value) return []
+  const parts = []
+  const province = value.match(/([^\s省市区县]+省|[^\s省市区县]+自治区|[^\s省市区县]+特别行政区)/)
+  const city = value.match(/([^\s省市区县]+市)/)
+  const district = value.match(/([^\s省市区县]+区|[^\s省市区县]+县)/)
+  if (province) parts.push(province[1])
+  if (city) parts.push(city[1])
+  if (district) parts.push(district[1])
+  if (parts.length === 0) return [value]
+  return parts
+}
+
+watch(locationValue, (val) => {
+  form.value.location = Array.isArray(val) ? val.join('') : ''
 })
 
 const loadCategories = async () => {
@@ -250,6 +312,7 @@ const loadProduct = async () => {
       description: product.description,
       location: product.location,
     }
+    locationValue.value = parseLocationToArray(product.location || '')
 
     // 加载现有图片
     if (product.images && product.images.length > 0) {
@@ -321,7 +384,7 @@ const handleLocate = async () => {
   try {
     const ipLocation = await fetchIpLocation()
     if (ipLocation) {
-      form.value.location = ipLocation
+      locationValue.value = parseLocationToArray(ipLocation)
       ElMessage.info('已使用网络定位，正在尝试精准定位...')
     }
   } catch (error) {
@@ -362,9 +425,10 @@ const handleLocate = async () => {
     })
 
     if (parts.length > 0) {
-      form.value.location = parts.join('')
+      locationValue.value = parts
     } else {
       form.value.location = `${latitude.toFixed(5)},${longitude.toFixed(5)}`
+      locationValue.value = []
     }
   } catch (error) {
     if (error && error.code === 1) {
@@ -512,7 +576,7 @@ const handleSubmit = async () => {
   width: 100%;
 }
 
-.location-row .el-input {
+.location-cascader {
   flex: 1;
 }
 

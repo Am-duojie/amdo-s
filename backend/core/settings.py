@@ -222,6 +222,7 @@ BAIDU_PRICE_API_URL = ''  # 价格查询API地址
 AMAP_API_KEY = 'f02f4bf9cffe783a1318a91646bd6d45'
 
 AMAP_IP_API_URL = 'https://restapi.amap.com/v3/ip'
+AMAP_DISTRICT_API_URL = 'https://restapi.amap.com/v3/config/district'
 
 # 阿里云API配置
 ALIYUN_API_KEY = ''  # 阿里云API密钥

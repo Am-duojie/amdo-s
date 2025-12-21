@@ -51,7 +51,6 @@ class Product(models.Model):
     ]
 
     seller = models.ForeignKey(User, on_delete=models.CASCADE, related_name='products', verbose_name='卖家')
-    shop = models.ForeignKey('Shop', on_delete=models.SET_NULL, null=True, blank=True, related_name='products', verbose_name='店铺')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='products', verbose_name='分类')
     title = models.CharField(max_length=200, verbose_name='商品标题')
     description = models.TextField(verbose_name='商品描述')
@@ -66,8 +65,6 @@ class Product(models.Model):
     ], default='good', verbose_name='成色')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active', verbose_name='状态')
     location = models.CharField(max_length=100, verbose_name='所在地')
-    contact_phone = models.CharField(max_length=20, blank=True, verbose_name='联系电话')
-    contact_wechat = models.CharField(max_length=50, blank=True, verbose_name='微信')
     view_count = models.IntegerField(default=0, verbose_name='浏览次数')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='发布时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
@@ -511,7 +508,6 @@ class VerifiedProduct(models.Model):
     )
     
     seller = models.ForeignKey(User, on_delete=models.CASCADE, related_name='verified_products', verbose_name='卖家')
-    shop = models.ForeignKey('Shop', on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_products', verbose_name='店铺')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='verified_products', verbose_name='分类')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active', verbose_name='状态')
     

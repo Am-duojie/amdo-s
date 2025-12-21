@@ -315,19 +315,18 @@ class ProductSerializer(serializers.ModelSerializer):
     """商品序列化器"""
     seller = UserSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
-    shop = ShopSerializer(read_only=True)
     category_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
-    shop_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     images = ProductImageSerializer(many=True, read_only=True)
     is_favorited = serializers.SerializerMethodField()
     favorite_count = serializers.IntegerField(read_only=True)
+    recommend_score = serializers.FloatField(read_only=True)
 
     class Meta:
         model = Product
         fields = [
-            'id', 'seller', 'category', 'category_id', 'shop', 'shop_id', 'title', 'description',
+            'id', 'seller', 'category', 'category_id', 'title', 'description',
             'price', 'original_price', 'condition', 'status', 'location',
-            'contact_phone', 'contact_wechat', 'view_count', 'favorite_count', 'images',
+            'view_count', 'favorite_count', 'recommend_score', 'images',
             'is_favorited', 'created_at', 'updated_at'
         ]
         read_only_fields = ['seller', 'view_count', 'created_at', 'updated_at']
@@ -340,16 +339,10 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         category_id = validated_data.pop('category_id', None)
-        shop_id = validated_data.pop('shop_id', None)
         if category_id:
             try:
                 validated_data['category'] = Category.objects.get(id=category_id)
             except Category.DoesNotExist:
-                pass
-        if shop_id:
-            try:
-                validated_data['shop'] = Shop.objects.get(id=shop_id)
-            except Shop.DoesNotExist:
                 pass
         # 显式设置为在售，避免默认值或前端缺省导致的状态异常
         validated_data.setdefault('status', 'active')
@@ -694,9 +687,7 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
     """官方验货商品序列化器"""
     seller = UserSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
-    shop = ShopSerializer(read_only=True)
     category_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
-    shop_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     images = VerifiedProductImageSerializer(many=True, read_only=True)
     is_favorited = serializers.SerializerMethodField()
     cover_image = serializers.CharField(required=False, allow_blank=True)
@@ -712,7 +703,7 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = VerifiedProduct
         fields = [
-            'id', 'seller', 'category', 'category_id', 'shop', 'shop_id', 'title', 'description',
+            'id', 'seller', 'category', 'category_id', 'title', 'description',
             'price', 'original_price', 'condition', 'status', 'device_type',
             'brand', 'model', 'storage', 'ram', 'version', 'repair_status',
             'screen_size', 'battery_health', 'charging_type', 'verified_at',
@@ -761,16 +752,10 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         category_id = validated_data.pop('category_id', None)
-        shop_id = validated_data.pop('shop_id', None)
         if category_id:
             try:
                 validated_data['category'] = Category.objects.get(id=category_id)
             except Category.DoesNotExist:
-                pass
-        if shop_id:
-            try:
-                validated_data['shop'] = Shop.objects.get(id=shop_id)
-            except Shop.DoesNotExist:
                 pass
         validated_data.setdefault('status', 'draft')
         validated_data['seller'] = self.context['request'].user
@@ -778,7 +763,6 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         category_id = validated_data.pop('category_id', None)
-        shop_id = validated_data.pop('shop_id', None)
         # 允许前端传字符串/空列表，做清洗
         if 'detail_images' in validated_data and validated_data['detail_images'] is None:
             validated_data['detail_images'] = []
@@ -788,11 +772,6 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
             try:
                 validated_data['category'] = Category.objects.get(id=category_id)
             except Category.DoesNotExist:
-                pass
-        if shop_id:
-            try:
-                validated_data['shop'] = Shop.objects.get(id=shop_id)
-            except Shop.DoesNotExist:
                 pass
         return super().update(instance, validated_data)
 
