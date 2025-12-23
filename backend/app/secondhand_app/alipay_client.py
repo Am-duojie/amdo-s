@@ -5,6 +5,7 @@
 import json
 import hashlib
 import base64
+import time
 from datetime import datetime
 from html import escape
 from Crypto.PublicKey import RSA
@@ -13,7 +14,7 @@ from Crypto.Hash import SHA256
 from django.conf import settings
 import logging
 import requests
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,83 @@ class AlipayClient:
         self.session.trust_env = False
 
     def _post(self, url, data, timeout=10):
-        return self.session.post(url, data=data, timeout=timeout)
+        headers = {'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'}
+        encoded = urlencode(data, encoding='utf-8')
+        return self.session.post(url, data=encoded, headers=headers, timeout=timeout)
+
+    def refund_trade(self, out_trade_no, refund_amount, refund_reason='', out_request_no=None, trade_no=None):
+        """
+        支付宝退款
+        接口：alipay.trade.refund
+        文档：https://opendocs.alipay.com/open/028r7b
+        """
+        biz_content = {
+            'refund_amount': f'{float(refund_amount):.2f}'
+        }
+        if trade_no:
+            biz_content['trade_no'] = str(trade_no)
+        else:
+            biz_content['out_trade_no'] = str(out_trade_no)
+        if refund_reason:
+            biz_content['refund_reason'] = str(refund_reason)[:256]
+        if out_request_no:
+            biz_content['out_request_no'] = str(out_request_no)
+
+        params = {
+            'app_id': self.app_id,
+            'method': 'alipay.trade.refund',
+            'charset': self.charset,
+            'sign_type': self.sign_type,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'version': self.version,
+            'biz_content': json.dumps(biz_content, ensure_ascii=False, separators=(',', ':')),
+        }
+        params['sign'] = self._sign(params)
+
+        logger.info('========== 支付宝退款请求 ==========')
+        logger.info(f'接口URL: {self.gateway_url}')
+        logger.info(f'订单号: {out_trade_no}')
+        logger.info(f'退款金额: {refund_amount}')
+
+        def is_system_error(payload):
+            sub_code = (payload.get('sub_code') or '').upper()
+            msg = (payload.get('msg') or '').upper()
+            sub_msg = (payload.get('sub_msg') or '').upper()
+            return 'SYSTEM_ERROR' in sub_code or 'SYSTEM_ERROR' in msg or 'SYSTEM_ERROR' in sub_msg
+
+        try:
+            last_error = None
+            for attempt in range(3):
+                response = self._post(self.gateway_url, params)
+                result = response.json()
+                logger.info(f'退款响应: {result}')
+                response_data = result.get('alipay_trade_refund_response', {})
+                if response_data.get('code') == '10000':
+                    return {
+                        'success': True,
+                        'code': '10000',
+                        'msg': response_data.get('msg', 'Success'),
+                        'refund_fee': response_data.get('refund_fee', ''),
+                        'out_trade_no': response_data.get('out_trade_no', ''),
+                        'trade_no': response_data.get('trade_no', ''),
+                    }
+                last_error = {
+                    'success': False,
+                    'code': response_data.get('code', ''),
+                    'msg': response_data.get('msg', 'Refund failed'),
+                    'sub_code': response_data.get('sub_code', ''),
+                    'sub_msg': response_data.get('sub_msg', '')
+                }
+                if not is_system_error(last_error) or attempt == 2:
+                    return last_error
+                time.sleep(1.2)
+            return last_error or {'success': False, 'msg': 'Refund failed'}
+        except requests.exceptions.RequestException as e:
+            logger.error(f'退款请求异常: {str(e)}', exc_info=True)
+            return {'success': False, 'msg': f'退款请求失败: {str(e)}'}
+        except Exception as e:
+            logger.error(f'退款异常: {str(e)}', exc_info=True)
+            return {'success': False, 'msg': f'退款失败: {str(e)}'}
     
     def validate_config(self):
         """
@@ -202,7 +279,7 @@ class AlipayClient:
             
             filtered_data = {}
             for k, v in data.items():
-                # 仅排除 sign；sign_type 参与签名
+                # 排除 sign
                 if k == 'sign':
                     continue
                 if v is None or v == '':
@@ -253,11 +330,11 @@ class AlipayClient:
             # 加载公钥
             public_key = RSA.import_key(public_key_str)
             
-            # 对数据进行排序并拼接（支付宝规范：过滤空值、sign和sign_type参数，按参数名ASCII码排序）
+            # 对数据进行排序并拼接（过滤空值与sign参数，按参数名ASCII码排序）
             filtered_data = {}
             for k, v in data.items():
-                # 排除 sign 和 sign_type
-                if k in ['sign', 'sign_type']:
+                # 排除 sign
+                if k == 'sign':
                     continue
                 # 排除空值
                 if v is None or v == '':
@@ -417,7 +494,7 @@ class AlipayClient:
             'sign_type': self.sign_type,
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'version': self.version,
-            'biz_content': json.dumps(biz_content, ensure_ascii=True),
+            'biz_content': json.dumps(biz_content, ensure_ascii=False, separators=(',', ':')),
         }
         
         # 生成签名

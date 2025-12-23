@@ -396,7 +396,14 @@
     >
       <el-form :model="shipForm" label-position="top">
         <el-form-item label="物流公司" required>
-          <el-input v-model="shipForm.carrier" placeholder="例如：顺丰速运" :prefix-icon="Van" />
+          <el-select v-model="shipForm.carrier" placeholder="请选择物流公司" style="width: 100%">
+            <el-option
+              v-for="company in logisticsCompanies"
+              :key="company"
+              :label="company"
+              :value="company"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="运单号" required>
           <el-input v-model="shipForm.tracking_number" placeholder="请输入运单号" :prefix-icon="Ticket" />
@@ -529,6 +536,7 @@ import adminApi from '@/utils/adminApi'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import { getImageUrl } from '@/utils/image'
+import { LOGISTICS_COMPANIES } from '@/constants/logistics'
 import {
   Search,
   List,
@@ -739,6 +747,8 @@ const closeShipDialog = () => {
   shipForm.tracking_number = ''
   currentShipOrder.value = null
 }
+
+const logisticsCompanies = LOGISTICS_COMPANIES
 
 const queryPayment = async (row) => {
   try {

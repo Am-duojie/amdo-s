@@ -239,9 +239,20 @@
       @close="closeShippingDialog"
     >
       <el-form :model="shippingForm" label-width="100px">
-        <el-form-item label="物流公司" required>
-          <el-input v-model="shippingForm.carrier" placeholder="请输入物流公司名称，如：顺丰、圆通、中通等" />
-        </el-form-item>
+          <el-form-item label="物流公司" required>
+            <el-select
+              v-model="shippingForm.carrier"
+              placeholder="请选择物流公司"
+              style="width: 100%;"
+            >
+              <el-option
+                v-for="company in logisticsCompanies"
+                :key="company"
+                :label="company"
+                :value="company"
+              />
+            </el-select>
+          </el-form-item>
         <el-form-item label="运单号" required>
           <el-input v-model="shippingForm.tracking_number" placeholder="请输入运单号" />
         </el-form-item>
@@ -270,6 +281,7 @@ import { PictureFilled } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
 import OrderSteps from '@/components/OrderSteps.vue'
+import { LOGISTICS_COMPANIES } from '@/constants/logistics'
 
 const route = useRoute()
 const router = useRouter()
@@ -294,6 +306,8 @@ const shippingForm = ref({
   carrier: '',
   tracking_number: ''
 })
+
+const logisticsCompanies = LOGISTICS_COMPANIES
 
 const isBuyer = computed(() => {
   return order.value && authStore.user?.id === order.value.buyer?.id
@@ -474,27 +488,16 @@ const createPayment = async () => {
     if (res.data.success) {
       // 优先使用表单提交方式（更可靠）
       if (res.data.form_html) {
-        // 创建新窗口并写入表单HTML，自动提交
-        const newWindow = window.open('', '_blank')
-        if (newWindow) {
-          newWindow.document.write(res.data.form_html)
-          newWindow.document.close()
-        } else {
-          // 如果弹窗被阻止，使用当前窗口
-          document.write(res.data.form_html)
-          document.close()
-        }
+        // 同页提交表单，支付宝完成后回跳 return_url
+        document.write(res.data.form_html)
+        document.close()
         return
       }
       
       // 备用方案：如果返回支付URL（支付宝），直接跳转
       if (res.data.payment_url) {
-        // 尝试在新窗口打开
-        const newWindow = window.open(res.data.payment_url, '_blank')
-        if (!newWindow) {
-          // 如果弹窗被阻止，使用当前窗口
-          window.location.href = res.data.payment_url
-        }
+        // 同页跳转到支付宝
+        window.location.href = res.data.payment_url
         return
       }
       

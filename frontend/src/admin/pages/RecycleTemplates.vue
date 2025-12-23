@@ -312,15 +312,6 @@
           </el-select>
           <div class="form-hint">如不需要颜色区分，可留空；配置后会参与库存设备上架校验</div>
         </el-form-item>
-        <el-form-item label="屏幕尺寸">
-          <el-input v-model="form.screen_size" placeholder="例：6.1英寸（可选）" />
-        </el-form-item>
-        <el-form-item label="电池容量">
-          <el-input v-model="form.battery_capacity" placeholder="例：3279mAh（可选）" />
-        </el-form-item>
-        <el-form-item label="充电方式">
-          <el-input v-model="form.charging_type" placeholder="例：Lightning / Type-C（可选）" />
-        </el-form-item>
         <el-form-item label="默认封面图">
           <div style="width: 100%">
             <el-input
@@ -688,9 +679,6 @@ const form = reactive({
   ram_options: [],
   version_options: [],
   color_options: [],
-  screen_size: '',
-  battery_capacity: '',
-  charging_type: '',
   default_cover_image: '',
   default_detail_images: [],
   description_template: '',
@@ -1067,9 +1055,6 @@ const handleCreate = () => {
     ram_options: [],
     version_options: [],
     color_options: [],
-    screen_size: '',
-    battery_capacity: '',
-    charging_type: '',
     default_cover_image: '',
     default_detail_images: [],
     description_template: '',
@@ -1103,9 +1088,6 @@ const handleEdit = async (row) => {
       ram_options: fullData.ram_options || [],
       version_options: fullData.version_options || [],
       color_options: fullData.color_options || [],
-      screen_size: fullData.screen_size || '',
-      battery_capacity: fullData.battery_capacity || '',
-      charging_type: fullData.charging_type || '',
       default_cover_image: fullData.default_cover_image || '',
       default_detail_images: fullData.default_detail_images || [],
       description_template: fullData.description_template || '',
@@ -1124,9 +1106,6 @@ const handleEdit = async (row) => {
       ram_options: row.ram_options || [],
       version_options: row.version_options || [],
       color_options: row.color_options || [],
-      screen_size: row.screen_size || '',
-      battery_capacity: row.battery_capacity || '',
-      charging_type: row.charging_type || '',
       default_cover_image: row.default_cover_image || '',
       default_detail_images: row.default_detail_images || [],
       description_template: row.description_template || '',

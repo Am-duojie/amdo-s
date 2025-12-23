@@ -54,6 +54,28 @@ const errorMessage = ref('')
 const orderId = ref(null)
 const orderType = ref('normal')
 
+const handleAuthenticationError = error => {
+  const status = error.response?.status
+  if ([400, 401, 403].includes(status)) {
+    result.value = 'failed'
+    errorMessage.value = error.response?.data?.error || '请先登录后在订单中查看支付结果'
+    processing.value = false
+    return true
+  }
+  return false
+}
+
+const notifyPaymentSuccess = () => {
+  if (!orderId.value) return
+  const key = `payment_status_${orderId.value}`
+  const payload = {
+    status: 'paid',
+    order_type: orderType.value,
+    ts: Date.now()
+  }
+  localStorage.setItem(key, JSON.stringify(payload))
+}
+
 onMounted(() => {
   // 从 URL 参数获取订单信息
   orderId.value = route.query.order_id
@@ -80,6 +102,9 @@ const checkPaymentResult = async () => {
     // 因为后端会主动查询支付宝接口获取最新状态
     await checkPaymentStatus(hasAlipayParams)
   } catch (error) {
+    if (handleAuthenticationError(error)) {
+      return
+    }
     console.error('检查支付结果失败:', error)
     result.value = 'failed'
     errorMessage.value = error.response?.data?.error || '查询支付状态失败'
@@ -94,6 +119,7 @@ const checkPaymentStatus = async (hasAlipayParams = false) => {
     if (res.data.success && res.data.paid) {
       result.value = 'success'
       processing.value = false
+      notifyPaymentSuccess()
       ElMessage.success('支付成功！')
       // 延迟跳转，让用户看到成功提示
       setTimeout(() => {
@@ -123,6 +149,7 @@ const checkPaymentStatus = async (hasAlipayParams = false) => {
           if (retryRes.data.success && retryRes.data.paid) {
             result.value = 'success'
             processing.value = false
+            notifyPaymentSuccess()
             ElMessage.success('支付成功！')
             setTimeout(() => {
               goToOrder()
@@ -132,6 +159,9 @@ const checkPaymentStatus = async (hasAlipayParams = false) => {
             await retryCheck()
           }
         } catch (error) {
+          if (handleAuthenticationError(error)) {
+            return
+          }
           console.error(`第${retryCount}次查询失败:`, error)
           // 继续重试
           await retryCheck()
@@ -142,6 +172,9 @@ const checkPaymentStatus = async (hasAlipayParams = false) => {
       await retryCheck()
     }
   } catch (error) {
+    if (handleAuthenticationError(error)) {
+      return
+    }
     console.error('查询支付状态失败:', error)
     result.value = 'processing'
     errorMessage.value = error.response?.data?.error || '查询支付状态失败，正在重试...'
@@ -199,5 +232,3 @@ const goBack = () => {
   justify-content: center;
 }
 </style>
-
-

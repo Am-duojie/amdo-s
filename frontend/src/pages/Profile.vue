@@ -352,6 +352,7 @@
                   <div class="order-time">{{ formatDate(order.created_at) }}</div>
                   <div class="order-actions">
                     <el-button size="small" plain @click.stop="handleContactVerifiedSeller(order)">联系卖家</el-button>
+                    <el-button v-if="order.status === 'pending' || order.status === 'paid'" size="small" plain @click.stop="handleVerifiedCancel(order)">取消订单</el-button>
                     <el-button v-if="order.status === 'pending'" size="small" type="warning" @click.stop="handleVerifiedPay(order)">立即付款</el-button>
                     <el-button v-if="order.status === 'shipped'" size="small" type="warning" @click.stop="handleVerifiedConfirmReceive(order)">确认收货</el-button>
                     <el-button size="small" plain @click.stop="goToVerifiedOrderDetail(order.id)">查看详情</el-button>
@@ -1599,11 +1600,24 @@ const handleVerifiedPay = () => {
 
 const handleVerifiedConfirmReceive = async (order) => {
   try {
-    await api.patch(`/verified-orders/${order.id}/`, { status: 'completed' })
+    await api.patch(`/verified-orders/${order.id}/update_status/`, { status: 'completed' })
     ElMessage.success('确认收货成功')
     await loadVerifiedOrders()
   } catch (error) {
     ElMessage.error('确认收货失败')
+  }
+}
+
+const handleVerifiedCancel = async (order) => {
+  try {
+    await ElMessageBox.confirm('确认取消订单？', '确认操作', { type: 'warning' })
+    await api.patch(`/verified-orders/${order.id}/update_status/`, { status: 'cancelled' })
+    ElMessage.success('订单已取消')
+    await loadVerifiedOrders()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.response?.data?.detail || '取消失败')
+    }
   }
 }
 

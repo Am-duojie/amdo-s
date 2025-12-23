@@ -70,9 +70,16 @@
 
     <el-dialog v-model="shipDialogVisible" title="发货信息" width="500px">
       <el-form :model="shipForm" label-width="100px">
-        <el-form-item label="物流公司" required>
-          <el-input v-model="shipForm.carrier" placeholder="请输入物流公司名称" />
-        </el-form-item>
+      <el-form-item label="物流公司" required>
+        <el-select v-model="shipForm.carrier" placeholder="请选择物流公司" style="width: 100%">
+          <el-option
+            v-for="company in logisticsCompanies"
+            :key="company"
+            :label="company"
+            :value="company"
+          />
+        </el-select>
+      </el-form-item>
         <el-form-item label="运单号" required>
           <el-input v-model="shipForm.tracking_number" placeholder="请输入运单号" />
         </el-form-item>
@@ -115,6 +122,7 @@ import { ref, reactive, onMounted } from 'vue'
 import adminApi from '@/utils/adminApi'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAdminAuthStore } from '@/stores/adminAuth'
+import { LOGISTICS_COMPANIES } from '@/constants/logistics'
 
 const admin = useAdminAuthStore()
 const hasPerm = (p) => admin.hasPerm(p)
@@ -134,6 +142,8 @@ const shipForm = reactive({
   carrier: '',
   tracking_number: ''
 })
+
+const logisticsCompanies = LOGISTICS_COMPANIES
 const getStatusType = (status) => {
   const map = {
     pending: 'warning',

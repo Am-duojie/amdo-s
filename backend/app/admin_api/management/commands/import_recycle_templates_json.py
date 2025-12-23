@@ -266,9 +266,6 @@ class Command(BaseCommand):
                 "ram_options": _normalize_str_list(t.get("ram_options")),
                 "version_options": _normalize_str_list(t.get("version_options")),
                 "color_options": _normalize_str_list(t.get("color_options")),
-                "screen_size": _normalize_spec_str(t.get("screen_size")),
-                "battery_capacity": _normalize_spec_str(t.get("battery_capacity")),
-                "charging_type": _normalize_spec_str(t.get("charging_type")),
                 "default_cover_image": _norm_space(t.get("default_cover_image", "")),
                 "default_detail_images": _normalize_str_list(t.get("default_detail_images")),
                 "description_template": _norm_space(t.get("description_template", "")),
@@ -317,4 +314,3 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(
                 f"Imported templates={len(templates)} created={stats.created} updated={stats.updated} skipped={stats.skipped}"
             ))
-

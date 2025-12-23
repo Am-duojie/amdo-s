@@ -1170,9 +1170,6 @@ class RecycleCatalogView(APIView):
                     'ram_options': template.ram_options or [],
                     'version_options': template.version_options or [],
                     'color_options': template.color_options or [],
-                    'screen_size': template.screen_size or '',
-                    'battery_capacity': template.battery_capacity or '',
-                    'charging_type': template.charging_type or '',
                     'default_cover_image': template.default_cover_image or '',
                 })
         
@@ -1901,6 +1898,25 @@ class VerifiedOrderViewSet(viewsets.ModelViewSet):
         """创建订单"""
         serializer.save(buyer=self.request.user)
 
+    def _relist_product(self, product):
+        if not product:
+            return
+        updated_fields = []
+        if product.status != 'active':
+            product.status = 'active'
+            updated_fields.append('status')
+        if product.stock <= 0:
+            product.stock = 1
+            updated_fields.append('stock')
+        if product.sales_count and product.sales_count > 0:
+            product.sales_count = product.sales_count - 1
+            updated_fields.append('sales_count')
+        if product.removed_reason:
+            product.removed_reason = ''
+            updated_fields.append('removed_reason')
+        if updated_fields:
+            product.save(update_fields=updated_fields + ['updated_at'])
+
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated])
     def update_status(self, request, pk=None):
         """更新订单状态"""
@@ -1912,6 +1928,51 @@ class VerifiedOrderViewSet(viewsets.ModelViewSet):
         if status_value not in dict(VerifiedOrder.STATUS_CHOICES).keys():
             return Response({'detail': '无效的状态值'}, status=status.HTTP_400_BAD_REQUEST)
         
+        if status_value == 'cancelled':
+            if order.status not in ['pending', 'paid']:
+                return Response({'detail': '当前状态不允许取消'}, status=status.HTTP_400_BAD_REQUEST)
+            if order.status == 'paid':
+                from app.secondhand_app.alipay_client import AlipayClient
+                from django.utils import timezone
+                alipay = AlipayClient()
+                out_request_no = f'refund_verified_{order.id}_{int(timezone.now().timestamp())}'
+                query_result = alipay.query_trade(f'verified_{order.id}')
+                if query_result.get('success'):
+                    trade_status = query_result.get('trade_status')
+                    trade_no = query_result.get('trade_no', '') or ''
+                    if trade_status not in ['TRADE_SUCCESS', 'TRADE_FINISHED']:
+                        order.status = 'cancelled'
+                        order.save(update_fields=['status', 'updated_at'])
+                        self._relist_product(order.product)
+                        serializer = VerifiedOrderSerializer(order)
+                        return Response(serializer.data)
+                    refund_result = alipay.refund_trade(
+                        out_trade_no=f'verified_{order.id}',
+                        refund_amount=order.total_price,
+                        refund_reason='用户取消订单',
+                        trade_no=trade_no or None,
+                        out_request_no=out_request_no
+                    )
+                else:
+                    refund_result = alipay.refund_trade(
+                        out_trade_no=f'verified_{order.id}',
+                        refund_amount=order.total_price,
+                        refund_reason='用户取消订单',
+                        out_request_no=out_request_no
+                    )
+                if not refund_result.get('success'):
+                    detail = refund_result.get('msg', '退款失败')
+                    sub_code = refund_result.get('sub_code')
+                    sub_msg = refund_result.get('sub_msg')
+                    if sub_code or sub_msg:
+                        detail = f'{detail} ({sub_code or "-"} {sub_msg or "-"})'
+                    return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+            order.status = 'cancelled'
+            order.save(update_fields=['status', 'updated_at'])
+            self._relist_product(order.product)
+            serializer = VerifiedOrderSerializer(order)
+            return Response(serializer.data)
+
         order.status = status_value
         order.save()
         # 官方验货订单完成后，同步触发分账（卖家为官方商品卖家）

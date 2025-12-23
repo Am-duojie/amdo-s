@@ -450,9 +450,7 @@ class VerifiedProduct(models.Model):
     ram = models.CharField(max_length=20, blank=True, verbose_name='运行内存')  # 6GB、8GB等
     version = models.CharField(max_length=50, blank=True, verbose_name='版本')  # 国行、港版等
     repair_status = models.CharField(max_length=100, blank=True, verbose_name='拆修和功能')  # 未拆未修、功能正常等
-    screen_size = models.CharField(max_length=20, blank=True, verbose_name='屏幕尺寸')
     battery_health = models.CharField(max_length=20, blank=True, verbose_name='电池健康度')
-    charging_type = models.CharField(max_length=50, blank=True, verbose_name='充电方式')
     verified_at = models.DateTimeField(null=True, blank=True, verbose_name='验货时间')
     verified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_products_verified', verbose_name='验货人')
     # 新增媒体与质检字段
@@ -731,9 +729,7 @@ def create_verified_product_from_device(device, status='active'):
         storage=storage,
         ram=ram,
         version=version,
-        screen_size=getattr(template, 'screen_size', ''),
         battery_health=device.battery_health or '',
-        charging_type=getattr(template, 'charging_type', ''),
         cover_image=cover_image or '',
         detail_images=detail_images,
         inspection_reports=device.inspection_reports or [],

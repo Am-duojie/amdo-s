@@ -107,6 +107,9 @@
             <el-button v-if="order.status === 'pending'" type="warning" size="large" @click="handlePay">
               立即付款
             </el-button>
+            <el-button v-if="order.status === 'pending' || order.status === 'paid'" type="danger" size="large" plain @click="handleCancel">
+              取消订单
+            </el-button>
             <el-button v-if="order.status === 'shipped'" type="success" size="large" @click="handleConfirmReceive">
               确认收货
             </el-button>
@@ -123,7 +126,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
 import OrderSteps from '@/components/OrderSteps.vue'
@@ -217,11 +220,24 @@ const handlePay = () => {
 
 const handleConfirmReceive = async () => {
   try {
-    await api.patch(`/verified-orders/${order.value.id}/`, { status: 'completed' })
+    await api.patch(`/verified-orders/${order.value.id}/update_status/`, { status: 'completed' })
     ElMessage.success('确认收货成功')
     await loadOrder()
   } catch (error) {
     ElMessage.error('确认收货失败')
+  }
+}
+
+const handleCancel = async () => {
+  try {
+    await ElMessageBox.confirm('确认取消订单？', '确认操作', { type: 'warning' })
+    await api.patch(`/verified-orders/${order.value.id}/update_status/`, { status: 'cancelled' })
+    ElMessage.success('订单已取消')
+    await loadOrder()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.response?.data?.detail || '取消失败')
+    }
   }
 }
 

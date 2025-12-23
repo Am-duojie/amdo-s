@@ -214,6 +214,9 @@ const qrcodeUrl = ref('')
 const checkingPayment = ref(false)
 const currentOrderId = ref(null)
 let paymentCheckTimer = null
+const paymentStorageKey = computed(() =>
+  currentOrderId.value ? `payment_status_${currentOrderId.value}` : ''
+)
 
 const totalPrice = computed(() => {
   return (parseFloat(product.value?.price || 0) * quantity.value).toFixed(2)
@@ -236,12 +239,15 @@ onMounted(async () => {
   
   // 加载保存的地址
   await loadAddresses()
+
+  window.addEventListener('storage', handlePaymentStorage)
 })
 
 onBeforeUnmount(() => {
   if (paymentCheckTimer) {
     clearInterval(paymentCheckTimer)
   }
+  window.removeEventListener('storage', handlePaymentStorage)
 })
 
 const loadProduct = async () => {
@@ -338,36 +344,25 @@ const createPayment = async () => {
     })
 
     if (res.data.success) {
+      startPaymentCheck()
       // 优先使用表单提交方式（更可靠）
       if (res.data.form_html) {
-        // 创建新窗口并写入表单HTML，自动提交
-        const newWindow = window.open('', '_blank')
-        if (newWindow) {
-          newWindow.document.write(res.data.form_html)
-          newWindow.document.close()
-        } else {
-          // 如果弹窗被阻止，使用当前窗口
-          document.write(res.data.form_html)
-          document.close()
-        }
+        // 同页提交表单，支付宝完成后回跳 return_url
+        document.write(res.data.form_html)
+        document.close()
         return
       }
       
       // 备用方案：如果返回支付URL（支付宝），直接跳转
       if (res.data.payment_url) {
-        // 尝试在新窗口打开
-        const newWindow = window.open(res.data.payment_url, '_blank')
-        if (!newWindow) {
-          // 如果弹窗被阻止，使用当前窗口
-          window.location.href = res.data.payment_url
-        }
+        // 同页跳转到支付宝
+        window.location.href = res.data.payment_url
         return
       }
       
       // 如果返回二维码（易支付），显示二维码
       if (res.data.qrcode) {
         qrcodeUrl.value = res.data.qrcode
-        startPaymentCheck()
         ElMessage.success('支付二维码已生成')
       } else {
         ElMessage.error('支付创建失败：未返回支付信息')
@@ -399,6 +394,9 @@ const checkPaymentStatus = async () => {
       clearInterval(paymentCheckTimer)
       ElMessage.success('支付成功')
       paymentDialogVisible.value = false
+      if (paymentStorageKey.value) {
+        localStorage.removeItem(paymentStorageKey.value)
+      }
       const successRoute = orderType.value === 'verified'
         ? '/profile?zone=verified&tab=verified-orders'
         : '/profile?tab=bought'
@@ -408,6 +406,20 @@ const checkPaymentStatus = async () => {
     console.error('查询支付状态失败:', error)
   } finally {
     checkingPayment.value = false
+  }
+}
+
+const handlePaymentStorage = (event) => {
+  if (!paymentStorageKey.value || event.key !== paymentStorageKey.value) {
+    return
+  }
+  try {
+    const payload = JSON.parse(event.newValue || '{}')
+    if (payload?.status === 'paid') {
+      checkPaymentStatus()
+    }
+  } catch {
+    // ignore invalid payloads
   }
 }
 

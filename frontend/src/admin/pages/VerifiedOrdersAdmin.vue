@@ -56,7 +56,14 @@
     <el-dialog v-model="shipDialogVisible" title="发货信息" width="500px">
       <el-form :model="shipForm" label-width="100px">
         <el-form-item label="物流公司" required>
-          <el-input v-model="shipForm.carrier" placeholder="请输入物流公司名称" />
+          <el-select v-model="shipForm.carrier" placeholder="请选择物流公司" style="width: 100%">
+            <el-option
+              v-for="company in logisticsCompanies"
+              :key="company"
+              :label="company"
+              :value="company"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="运单号" required>
           <el-input v-model="shipForm.tracking_number" placeholder="请输入运单号" />
@@ -75,6 +82,7 @@ import { ref, reactive, onMounted } from 'vue'
 import adminApi from '@/utils/adminApi'
 import { ElMessage } from 'element-plus'
 import { useAdminAuthStore } from '@/stores/adminAuth'
+import { LOGISTICS_COMPANIES } from '@/constants/logistics'
 
 const admin = useAdminAuthStore()
 const hasPerm = (p) => admin.hasPerm(p)
@@ -90,6 +98,8 @@ const shipForm = reactive({
   carrier: '',
   tracking_number: ''
 })
+
+const logisticsCompanies = LOGISTICS_COMPANIES
 
 const getStatusType = (status) => {
   const map = {
@@ -167,13 +177,16 @@ const doAction = async (row, action) => {
   try {
     const res = await adminApi.post(`/verified-orders/${row.id}/${action}`)
     const ok = res.data?.success
-    ElMessage[ok ? 'success' : 'error'](ok ? '操作成功' : '操作失败')
+    const detail = res.data?.detail || res.data?.error
+    ElMessage[ok ? 'success' : 'error'](ok ? '操作成功' : (detail || '操作失败'))
     await load()
   } catch (error) {
-    ElMessage.error('操作失败')
+    const data = error.response?.data
+    const detail = data?.detail || data?.error
+    const message = detail || (typeof data === 'string' ? data : '操作失败')
+    ElMessage.error(message)
   }
 }
 
 onMounted(load)
 </script>
-

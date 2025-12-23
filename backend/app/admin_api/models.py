@@ -81,9 +81,6 @@ class RecycleDeviceTemplate(models.Model):
     ram_options = models.JSONField(default=list, blank=True, verbose_name='运行内存选项', help_text='如：["6GB", "8GB", "12GB"]')
     version_options = models.JSONField(default=list, blank=True, verbose_name='版本选项', help_text='如：["国行", "港版", "美版"]')
     color_options = models.JSONField(default=list, blank=True, verbose_name='颜色选项', help_text='如：["黑色", "白色", "蓝色"]')
-    screen_size = models.CharField(max_length=20, blank=True, verbose_name='屏幕尺寸', help_text='如：6.1英寸')
-    battery_capacity = models.CharField(max_length=20, blank=True, verbose_name='电池容量', help_text='如：3095mAh')
-    charging_type = models.CharField(max_length=50, blank=True, verbose_name='充电方式', help_text='如：Lightning、Type-C')
     
     # 默认图片（用于官方验商品）
     default_cover_image = models.CharField(max_length=500, blank=True, verbose_name='默认封面图')

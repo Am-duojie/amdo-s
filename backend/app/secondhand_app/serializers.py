@@ -1,4 +1,6 @@
 from rest_framework import serializers
+from django.db import transaction
+from django.utils import timezone
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 import uuid
@@ -780,7 +782,7 @@ class VerifiedProductSerializer(serializers.ModelSerializer):
             'id', 'seller', 'category', 'category_id', 'title', 'description',
             'price', 'original_price', 'condition', 'status', 'device_type',
             'brand', 'model', 'storage', 'ram', 'version', 'repair_status',
-            'screen_size', 'battery_health', 'charging_type', 'verified_at',
+            'battery_health', 'verified_at',
             'verified_by', 'view_count', 'sales_count', 'images',
             'is_favorited', 'created_at', 'updated_at',
             'cover_image', 'detail_images', 'inspection_reports',
@@ -868,14 +870,25 @@ class VerifiedOrderSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         product_id = validated_data.pop('product_id')
         try:
-            product = VerifiedProduct.objects.get(id=product_id)
+            with transaction.atomic():
+                product = VerifiedProduct.objects.select_for_update().get(id=product_id)
+                if product.status != 'active' or product.stock <= 0:
+                    raise serializers.ValidationError({"product_id": "商品已下架或已售出"})
+
+                validated_data['product'] = product
+                validated_data['buyer'] = self.context['request'].user
+                validated_data['total_price'] = product.price
+
+                product.status = 'sold'
+                product.stock = max(product.stock - 1, 0)
+                product.sales_count = (product.sales_count or 0) + 1
+                if not product.published_at:
+                    product.published_at = timezone.now()
+                product.save(update_fields=['status', 'stock', 'sales_count', 'published_at', 'updated_at'])
+
+                return super().create(validated_data)
         except VerifiedProduct.DoesNotExist:
             raise serializers.ValidationError({"product_id": "商品不存在"})
-        
-        validated_data['product'] = product
-        validated_data['buyer'] = self.context['request'].user
-        validated_data['total_price'] = product.price
-        return super().create(validated_data)
 
 
 class VerifiedFavoriteSerializer(serializers.ModelSerializer):
@@ -937,9 +950,6 @@ class RecycleDeviceTemplateCatalogSerializer(serializers.Serializer):
     storages = serializers.ListField(child=serializers.CharField())
     base_prices = serializers.DictField()
     default_cover_image = serializers.CharField(allow_blank=True)
-    screen_size = serializers.CharField(allow_blank=True)
-    battery_capacity = serializers.CharField(allow_blank=True)
-    charging_type = serializers.CharField(allow_blank=True)
 
 
 class RecycleDeviceTemplateDetailSerializer(serializers.Serializer):
@@ -954,9 +964,6 @@ class RecycleDeviceTemplateDetailSerializer(serializers.Serializer):
     ram_options = serializers.ListField(child=serializers.CharField())
     version_options = serializers.ListField(child=serializers.CharField())
     color_options = serializers.ListField(child=serializers.CharField())
-    screen_size = serializers.CharField(allow_blank=True)
-    battery_capacity = serializers.CharField(allow_blank=True)
-    charging_type = serializers.CharField(allow_blank=True)
     default_cover_image = serializers.CharField(allow_blank=True)
     default_detail_images = serializers.ListField(child=serializers.CharField())
     description_template = serializers.CharField(allow_blank=True)

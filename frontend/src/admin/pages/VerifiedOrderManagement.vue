@@ -168,7 +168,14 @@
     >
       <el-form :model="shipForm" label-width="100px">
         <el-form-item label="物流公司" required>
-          <el-input v-model="shipForm.carrier" placeholder="请输入物流公司名称" />
+          <el-select v-model="shipForm.carrier" placeholder="请选择物流公司" style="width: 100%">
+            <el-option
+              v-for="company in logisticsCompanies"
+              :key="company"
+              :label="company"
+              :value="company"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="运单号" required>
           <el-input v-model="shipForm.tracking_number" placeholder="请输入运单号" />
@@ -199,6 +206,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import VerifiedOrderDetail from './components/VerifiedOrderDetail.vue'
 import { Search, Refresh } from '@element-plus/icons-vue'
+import { LOGISTICS_COMPANIES } from '@/constants/logistics'
 
 const admin = useAdminAuthStore()
 const hasPerm = (p) => admin.hasPerm(p)
@@ -218,6 +226,8 @@ const shipForm = reactive({
   tracking_number: '',
   note: ''
 })
+
+const logisticsCompanies = LOGISTICS_COMPANIES
 
 const statusMap = {
   pending: { text: '待付款', type: 'warning' },
@@ -275,7 +285,10 @@ const markPaid = async (row) => {
     await loadOrders()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('操作失败')
+      const data = error.response?.data
+      const detail = data?.detail || data?.error
+      const message = detail || (typeof data === 'string' ? data : '操作失败')
+      ElMessage.error(message)
     }
   }
 }
@@ -304,7 +317,10 @@ const confirmShip = async () => {
     resetShipForm()
     await loadOrders()
   } catch (error) {
-    ElMessage.error('发货失败')
+    const data = error.response?.data
+    const detail = data?.detail || data?.error
+    const message = detail || (typeof data === 'string' ? data : '发货失败')
+    ElMessage.error(message)
   } finally {
     shipping.value = false
   }
@@ -318,7 +334,10 @@ const completeOrder = async (row) => {
     await loadOrders()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('操作失败')
+      const data = error.response?.data
+      const detail = data?.detail || data?.error
+      const message = detail || (typeof data === 'string' ? data : '操作失败')
+      ElMessage.error(message)
     }
   }
 }
@@ -331,7 +350,10 @@ const cancelOrder = async (row) => {
     await loadOrders()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('操作失败')
+      const data = error.response?.data
+      const detail = data?.detail || data?.error
+      const message = detail || (typeof data === 'string' ? data : '操作失败')
+      ElMessage.error(message)
     }
   }
 }
@@ -450,13 +472,6 @@ onMounted(() => {
   color: #909399;
 }
 </style>
-
-
-
-
-
-
-
 
 
 

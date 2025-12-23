@@ -2859,7 +2859,65 @@ class VerifiedOrdersAdminView(APIView):
             vo.delivered_at = timezone.now()
             vo.status = 'completed'
         elif action == 'cancel':
+            if vo.status not in ['pending', 'paid']:
+                return Response({'success': False, 'detail': '当前状态不允许取消'}, status=400)
+            if vo.status == 'paid':
+                from app.secondhand_app.alipay_client import AlipayClient
+                alipay = AlipayClient()
+                out_request_no = f'refund_verified_{vo.id}_{int(timezone.now().timestamp())}'
+                query_result = alipay.query_trade(f'verified_{vo.id}')
+                if query_result.get('success'):
+                    trade_status = query_result.get('trade_status')
+                    trade_no = query_result.get('trade_no', '') or ''
+                    if trade_status not in ['TRADE_SUCCESS', 'TRADE_FINISHED']:
+                        vo.status = 'cancelled'
+                        product = getattr(vo, 'product', None)
+                        if product:
+                            if product.status != 'active':
+                                product.status = 'active'
+                            if product.stock <= 0:
+                                product.stock = 1
+                            if product.sales_count and product.sales_count > 0:
+                                product.sales_count = product.sales_count - 1
+                            if product.removed_reason:
+                                product.removed_reason = ''
+                            product.save(update_fields=['status', 'stock', 'sales_count', 'removed_reason', 'updated_at'])
+                        vo.save()
+                        AdminAuditLog.objects.create(actor=admin, target_type='VerifiedOrder', target_id=vo.id, action=action, snapshot_json={'status': vo.status})
+                        return Response({'success': True})
+                    refund_result = alipay.refund_trade(
+                        out_trade_no=f'verified_{vo.id}',
+                        refund_amount=vo.total_price,
+                        refund_reason='订单取消自动退款',
+                        trade_no=trade_no or None,
+                        out_request_no=out_request_no
+                    )
+                else:
+                    refund_result = alipay.refund_trade(
+                        out_trade_no=f'verified_{vo.id}',
+                        refund_amount=vo.total_price,
+                        refund_reason='订单取消自动退款',
+                        out_request_no=out_request_no
+                    )
+                if not refund_result.get('success'):
+                    detail = refund_result.get('msg', '退款失败')
+                    sub_code = refund_result.get('sub_code')
+                    sub_msg = refund_result.get('sub_msg')
+                    if sub_code or sub_msg:
+                        detail = f'{detail} ({sub_code or "-"} {sub_msg or "-"})'
+                    return Response({'success': False, 'detail': detail}, status=400)
             vo.status = 'cancelled'
+            product = getattr(vo, 'product', None)
+            if product:
+                if product.status != 'active':
+                    product.status = 'active'
+                if product.stock <= 0:
+                    product.stock = 1
+                if product.sales_count and product.sales_count > 0:
+                    product.sales_count = product.sales_count - 1
+                if product.removed_reason:
+                    product.removed_reason = ''
+                product.save(update_fields=['status', 'stock', 'sales_count', 'removed_reason', 'updated_at'])
         else:
             return Response({'success': False, 'detail': 'unknown action'}, status=400)
         vo.save()

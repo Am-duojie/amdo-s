@@ -109,7 +109,7 @@ const tradeSteps = computed(() => {
       title: '付款',
       time: order.paid_at ? formatTime(order.paid_at) : '',
       status: 'paid',
-      loading: order.status === 'paid' && !order.shipped_at
+      loading: false
     },
     {
       title: '发货',
@@ -138,7 +138,7 @@ const verifiedSteps = computed(() => {
       title: '付款',
       time: order.paid_at ? formatTime(order.paid_at) : '',
       status: 'paid',
-      loading: order.status === 'paid' && !order.shipped_at
+      loading: false
     },
     {
       title: '发货',
@@ -178,14 +178,14 @@ const activeStep = computed(() => {
   } else {
     // 二手交易和官翻商品订单状态映射
     const statusMap = {
-      'pending': 0,      // 下单
-      'paid': 1,         // 付款（进行中）
-      'shipped': 2,      // 发货（进行中）
-      'completed': 3,    // 完成
-      'cancelled': 0     // 已取消
+      pending: 1,      // 下单
+      paid: 2,         // 付款
+      shipped: 3,      // 发货
+      completed: 4,    // 完成
+      cancelled: 1     // 已取消（归位到下单）
     }
-    
-    return statusMap[status] ?? 0
+
+    return statusMap[status] ?? 1
   }
 })
 </script>

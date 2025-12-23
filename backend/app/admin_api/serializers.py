@@ -109,7 +109,6 @@ class RecycleDeviceTemplateSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'device_type', 'brand', 'model', 'storages', 'base_prices', 'series',
             'ram_options', 'version_options', 'color_options',
-            'screen_size', 'battery_capacity', 'charging_type',
             'default_cover_image', 'default_detail_images', 'description_template',
             'category', 'category_name',
             'is_active', 'created_by', 'created_by_username', 'questions',
@@ -127,7 +126,6 @@ class RecycleDeviceTemplateListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'device_type', 'brand', 'model', 'storages', 'base_prices', 'series',
             'ram_options', 'version_options', 'color_options',
-            'screen_size', 'battery_capacity', 'charging_type',
             'default_cover_image', 'category_name',
             'is_active', 'created_by_username', 'question_count',
             'created_at', 'updated_at'
