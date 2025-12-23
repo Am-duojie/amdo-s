@@ -320,8 +320,14 @@ const switchTab = (id) => {
 const goToPublish = () => router.push('/publish')
 const goToDetail = (id) => router.push(`/products/${id}`)
 const goToProfile = () => router.push('/profile')
-const goToVerifiedProducts = () => router.push('/verified-products')
-const goToVerifiedDetail = (id) => router.push(`/verified-products/${id}`)
+const goToVerifiedProducts = () => {
+  const newTab = window.open('/verified-products', '_blank', 'noopener,noreferrer')
+  if (newTab) newTab.opener = null
+}
+const goToVerifiedDetail = (id) => {
+  const newTab = window.open(`/verified-products/${id}`, '_blank', 'noopener,noreferrer')
+  if (newTab) newTab.opener = null
+}
 const goToRecycle = () => router.push('/recycle')
 
 // 处理用户菜单命令

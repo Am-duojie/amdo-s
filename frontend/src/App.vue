@@ -16,10 +16,19 @@ import SidebarQuickActions from '@/components/SidebarQuickActions.vue'
 import websocket from '@/utils/websocket'
 
 const route = useRoute()
+
+const inferAdminByPath = () => typeof window !== 'undefined' && window.location?.pathname?.startsWith('/admin')
+const inferVerifiedByPath = () => typeof window !== 'undefined' && window.location?.pathname?.startsWith('/verified')
+
+const isAdmin = computed(() =>
+  route.matched?.some(r => r.meta && r.meta.admin) === true || inferAdminByPath() === true
+)
+
+const verifiedMode = computed(() =>
+  route.meta?.verifiedMode === true || inferVerifiedByPath() === true || route.query?.zone === 'verified'
+)
+const theme = computed(() => (verifiedMode.value ? 'blue' : (route.meta?.theme === 'blue' ? 'blue' : 'yellow')))
 const hideSearch = computed(() => route.meta?.hideSearch === true)
-const theme = computed(() => (route.meta?.theme === 'blue' ? 'blue' : 'yellow'))
-const verifiedMode = computed(() => route.meta?.verifiedMode === true)
-const isAdmin = computed(() => route.matched?.some(r => r.meta && r.meta.admin) === true)
 
 const handleWsMessage = (data) => {
   if (data?.type === 'new_message' || data?.type === 'read_ack') {

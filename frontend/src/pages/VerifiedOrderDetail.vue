@@ -205,7 +205,7 @@ const loadOrder = async () => {
   } catch (error) {
     ElMessage.error('加载订单失败')
     console.error(error)
-    router.push('/verified-profile?menu=orders')
+    router.push('/profile?zone=verified&tab=verified-orders')
   } finally {
     loading.value = false
   }
@@ -230,7 +230,7 @@ const goBack = () => {
 }
 
 const goToProfile = () => {
-  router.push('/verified-profile?menu=orders')
+  router.push('/profile?zone=verified&tab=verified-orders')
 }
 
 onMounted(() => {

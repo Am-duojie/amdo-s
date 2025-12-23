@@ -456,8 +456,6 @@ class Command(BaseCommand):
                 bonus=bonus,
                 final_price_confirmed=final_price_confirmed,
                 status=status,
-                contact_name=f"测试用户{user.id}",
-                contact_phone=f"138{rng.randint(10000000, 99999999)}",
                 address="北京市朝阳区示例路 1 号（拟真数据）",
                 note=f"[{tag}] demo seed data; base={base_price}; impacts={impacts}",
                 shipping_carrier=(rng.choice(["顺丰", "圆通", "中通"]) if shipped_at else None),

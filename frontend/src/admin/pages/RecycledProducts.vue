@@ -12,7 +12,6 @@
       <el-table-column label="操作" width="220">
         <template #default="{row}">
           <el-space wrap>
-            <el-button v-if="hasPerm('recycled:write')" size="small" @click="publish(row)">发布官方验</el-button>
             <el-button v-if="hasPerm('recycled:write')" size="small" type="warning" @click="toggleStock(row)">上下架</el-button>
           </el-space>
         </template>
@@ -38,15 +37,6 @@ import { useAdminAuthStore } from '@/stores/adminAuth'
 const admin = useAdminAuthStore()
 const items = ref([])
 const pagination = ref({ current: 1, pageSize: 10, total: 0 })
-const publish = async (row) => {
-  try {
-    await adminApi.post(`/recycled-products/${row.id}/publish`)
-    ElMessage.success('已发布')
-    load()
-  } catch (error) {
-    ElMessage.error('发布失败')
-  }
-}
 
 const toggleStock = async (row) => {
   try {

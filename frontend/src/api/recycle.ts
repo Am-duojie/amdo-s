@@ -84,6 +84,7 @@ export const getRecycleQuestionTemplate = (params: { device_type: string; brand:
 
 // 创建回收订单
 export type CreateRecycleOrderPayload = {
+  template?: number | null
   device_type: string
   brand: string
   model: string
@@ -91,10 +92,15 @@ export type CreateRecycleOrderPayload = {
   condition?: string
   estimated_price?: number
   bonus?: number
-  contact_name: string
-  contact_phone: string
+  selected_storage?: string
+  selected_color?: string
+  selected_ram?: string
+  selected_version?: string
+  questionnaire_answers?: Record<string, any>
   address: string
   note?: string
+  payment_method?: string
+  payment_account?: string
 }
 
 export type RecycleOrderResponse = {
@@ -109,8 +115,6 @@ export type RecycleOrderResponse = {
   final_price?: number
   bonus?: number
   status: string
-  contact_name: string
-  contact_phone: string
   address: string
   note?: string
   created_at: string
@@ -120,8 +124,6 @@ export type RecycleOrderResponse = {
 export const createRecycleOrder = (payload: CreateRecycleOrderPayload) => {
   return api.post<RecycleOrderResponse>('/recycle-orders/', payload)
 }
-
-
 
 
 

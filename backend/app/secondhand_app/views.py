@@ -1514,8 +1514,7 @@ class RecycleOrderViewSet(viewsets.ModelViewSet):
 
     def _calculate_bonus(self):
         """计算加价（活动加价）"""
-        # 示例：活动期间加价150元
-        return 150
+        return 0
 
 
 class VerifiedProductViewSet(viewsets.ModelViewSet):

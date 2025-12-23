@@ -111,19 +111,11 @@
         </BaseCard>
 
         <!-- 联系信息 -->
-        <el-card class="info-card" v-if="order.contact_name || order.contact_phone || order.address">
+        <el-card class="info-card" v-if="order.address">
           <template #header>
             <span>联系信息</span>
           </template>
           <div class="contact-info">
-            <div class="info-item" v-if="order.contact_name">
-              <span class="label">联系人：</span>
-              <span class="value">{{ order.contact_name }}</span>
-            </div>
-            <div class="info-item" v-if="order.contact_phone">
-              <span class="label">联系电话：</span>
-              <span class="value">{{ order.contact_phone }}</span>
-            </div>
             <div class="info-item" v-if="order.address">
               <span class="label">收货地址：</span>
               <span class="value">{{ order.address }}</span>

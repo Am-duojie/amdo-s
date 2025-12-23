@@ -6,11 +6,13 @@ import json
 from django.utils import timezone
 from django.db.models import Count, Q, Sum, F, Value, FloatField, ExpressionWrapper
 from django.db.models.functions import TruncDate, Coalesce
+from django.db import IntegrityError
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from rest_framework import status
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from .models import (
     AdminUser, AdminRole, AdminInspectionReport, AdminAuditQueueItem, AdminAuditLog, AdminRefreshToken, AdminTokenBlacklist,
     RecycleDeviceTemplate, RecycleQuestionTemplate, RecycleQuestionOption
@@ -18,7 +20,7 @@ from .models import (
 from .permissions import PERMISSIONS, validate_permissions
 from app.secondhand_app.models import (
     RecycleOrder, VerifiedProduct, VerifiedOrder, Order, Category, Product, Message, Address,
-    VerifiedDevice, create_verified_device_from_recycle_order, create_verified_product_from_device
+    VerifiedDevice, create_verified_product_from_device
 )
 from app.secondhand_app.alipay_client import AlipayClient
 from .serializers import (
@@ -34,6 +36,27 @@ from django.utils.decorators import method_decorator
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 import os
+
+def _get_official_verified_seller():
+    """
+    管理端创建“官方验库存/商品”时使用的默认卖家账号。
+    - 避免 VerifiedDevice.seller 为空导致创建失败
+    - 统一官方验的商品/库存归属
+    """
+    username = getattr(settings, 'OFFICIAL_VERIFIED_SELLER_USERNAME', 'verified_seller')
+    email = getattr(settings, 'OFFICIAL_VERIFIED_SELLER_EMAIL', 'verified@example.com')
+    User = get_user_model()
+    seller, created = User.objects.get_or_create(
+        username=username,
+        defaults={'email': email, 'is_active': True}
+    )
+    if created:
+        try:
+            seller.set_unusable_password()
+        except Exception:
+            pass
+        seller.save()
+    return seller
 
 def get_admin_from_request(request):
     import logging
@@ -1211,8 +1234,6 @@ class InspectionOrderDetailView(APIView):
             'final_price': float(o.final_price) if o.final_price else None,
             'bonus': float(o.bonus) if o.bonus else 0,
             'total_price': float(o.final_price + o.bonus) if o.final_price else None,
-            'contact_name': o.contact_name,
-            'contact_phone': o.contact_phone,
             'address': o.address,
             'note': o.note or '',
             # 物流信息
@@ -1282,12 +1303,6 @@ class InspectionOrderDetailView(APIView):
                 action='status_change', 
                 snapshot_json={'old_status': old_status, 'new_status': status_val, 'reject_reason': reject_reason}
             )
-            # 允许从 received 状态直接进入 inspected 状态（质检完成后）
-            if o.status in ['received', 'inspected', 'completed']:
-                try:
-                    create_verified_device_from_recycle_order(o)
-                except Exception:
-                    pass
             return Response({'success': True})
         except RecycleOrder.DoesNotExist:
             return Response({'success': False})
@@ -1351,10 +1366,6 @@ class InspectionOrderDetailView(APIView):
             if not o.received_at:
                 o.received_at = timezone.now()
             o.save()
-            try:
-                create_verified_device_from_recycle_order(o)
-            except Exception:
-                pass
         AdminAuditLog.objects.create(
             actor=admin,
             target_type='RecycleOrder',
@@ -1586,44 +1597,8 @@ class InspectionOrderPaymentView(APIView):
         except RecycleOrder.DoesNotExist:
             return Response({'success': False, 'detail': 'Order not found'}, status=404)
 
-class InspectionOrderPublishVerifiedView(APIView):
-    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
-    authentication_classes = []
-    permission_classes = []
-    
-    @admin_required(['recycled:write', 'verified:write'])
-    def post(self, request, order_id):
-        admin = request.admin
-        try:
-            o = RecycleOrder.objects.get(id=order_id)
-            if o.status not in ['inspected', 'completed']:
-                return Response({'success': False, 'detail': '订单尚未完成质检'}, status=400)
-            category = Category.objects.filter(name__icontains='手机').first()
-            if not category:
-                category = Category.objects.first()
-            vp = VerifiedProduct.objects.create(
-                seller=o.user,
-                category=category,
-                title=f"{o.brand} {o.model} {o.storage or ''}".strip(),
-                description=f"回收自用户订单，已完成质检。设备类型：{o.device_type}，成色：{o.get_condition_display()}",
-                price=o.final_price * 1.3 if o.final_price else 0,
-                original_price=None,
-                condition='good' if o.condition in ['new', 'like_new'] else 'good',
-                status='active',
-                location='北京',
-                brand=o.brand,
-                model=o.model,
-                storage=o.storage,
-                verified_at=timezone.now(),
-                verified_by=None
-            )
-            AdminAuditLog.objects.create(actor=admin, target_type='RecycleOrder', target_id=o.id, action='publish_verified', snapshot_json={'verified_product_id': vp.id, 'title': vp.title})
-            return Response({'success': True, 'verified_product_id': vp.id, 'message': '发布成功'})
-        except RecycleOrder.DoesNotExist:
-            return Response({'success': False, 'detail': '订单不存在'}, status=404)
-        except Exception as e:
-            return Response({'success': False, 'detail': f'发布失败: {str(e)}'}, status=500)
-
+# 已移除“从回收订单侧直接发布官方验商品/入库”的接口：
+# 官方验库存改为在“官方验库存管理”中手动选择来源回收单入库，再从库存设备上架生成商品。
 @method_decorator(csrf_exempt, name='dispatch')
 class InspectionOrdersBatchUpdateView(APIView):
     # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
@@ -1767,45 +1742,6 @@ class AdminVerifiedProductUnpublishView(APIView):
         return Response(VerifiedProductSerializer(obj, context={'request': request}).data)
 
 
-# 官方验设备（SN级库存）
-@method_decorator(csrf_exempt, name='dispatch')
-class CreateVerifiedDeviceFromRecycleOrderView(APIView):
-    """
-    手动从回收订单生成官方验库存（与自动生成互补）
-    """
-    authentication_classes = []
-    permission_classes = []
-
-    @admin_required(['verified:write'])
-    def post(self, request, order_id):
-        admin = request.admin
-        try:
-            order = RecycleOrder.objects.get(id=order_id)
-        except RecycleOrder.DoesNotExist:
-            return Response({'detail': '订单不存在'}, status=404)
-
-        pre_exists = order.verified_devices.exists()
-        try:
-            device = create_verified_device_from_recycle_order(order)
-            AdminAuditLog.objects.create(
-                actor=admin,
-                target_type='RecycleOrder',
-                target_id=order.id,
-                action='create_verified_device',
-                snapshot_json={'device_id': getattr(device, 'id', None)}
-            )
-            serializer = VerifiedDeviceSerializer(device)
-            return Response(
-                {
-                    'detail': '已存在官方验库存' if pre_exists else '生成成功',
-                    'device': serializer.data
-                },
-                status=200 if pre_exists else 201
-            )
-        except Exception as e:
-            return Response({'detail': f'生成失败: {str(e)}'}, status=500)
-
-
 @method_decorator(csrf_exempt, name='dispatch')
 class AdminVerifiedDeviceView(APIView):
     authentication_classes = []
@@ -1814,7 +1750,7 @@ class AdminVerifiedDeviceView(APIView):
     @admin_required(['verified:read', 'verified:write'])
     def get(self, request):
         admin = request.admin
-        qs = VerifiedDevice.objects.all().order_by('-created_at')
+        qs = VerifiedDevice.objects.select_related('template').all().order_by('-created_at')
         search = request.GET.get('search') or request.GET.get('sn')
         status_filter = request.GET.get('status')
         if search:
@@ -1838,9 +1774,235 @@ class AdminVerifiedDeviceView(APIView):
         admin = request.admin
         serializer = VerifiedDeviceSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
-            obj = serializer.save()
+            obj = serializer.save(seller=_get_official_verified_seller())
             return Response(VerifiedDeviceSerializer(obj).data, status=201)
         return Response(serializer.errors, status=400)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminVerifiedDeviceAvailableRecycleOrdersView(APIView):
+    """
+    提供“已完成回收单”列表，用于在官方验库存新增时选择来源订单。
+    仅返回尚未被导入为 VerifiedDevice 的订单。
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    @admin_required(['verified:write', 'inspection:view'])
+    def get(self, request):
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 20))
+        search = (request.query_params.get('search') or '').strip()
+
+        qs = (
+            RecycleOrder.objects
+            .select_related('user')
+            .filter(status='completed')
+            .filter(verified_devices__isnull=True)
+            .order_by('-created_at')
+        )
+        if search:
+            qs = qs.filter(
+                Q(id__icontains=search) |
+                Q(user__username__icontains=search) |
+                Q(brand__icontains=search) |
+                Q(model__icontains=search)
+            )
+
+        total = qs.count()
+        start = (page - 1) * page_size
+        end = start + page_size
+        items = qs[start:end]
+
+        results = []
+        for o in items:
+            results.append({
+                'id': o.id,
+                'user': {'id': o.user.id, 'username': o.user.username},
+                'brand': o.brand,
+                'model': o.model,
+                'storage': o.storage or '',
+                'condition': o.condition,
+                'final_price': float(o.final_price) if o.final_price else None,
+                'bonus': float(o.bonus) if o.bonus else 0,
+                'total_price': float(o.final_price + o.bonus) if o.final_price else None,
+                'created_at': o.created_at.isoformat(),
+            })
+
+        return Response({'count': total, 'results': results})
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminVerifiedDeviceCreateFromRecycleOrderView(APIView):
+    """
+    从回收订单创建官方验库存设备（手动触发，避免回收侧自动生成）。
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    @admin_required(['verified:write', 'inspection:view'])
+    def post(self, request):
+        recycle_order_id = request.data.get('recycle_order_id')
+        sn = (request.data.get('sn') or '').strip()
+        imei = (request.data.get('imei') or '').strip()
+        location = (request.data.get('location') or '').strip()
+        inspection_note = (request.data.get('inspection_note') or '').strip()
+        suggested_price = request.data.get('suggested_price')
+
+        if not recycle_order_id:
+            return Response({'detail': 'recycle_order_id required'}, status=400)
+        if not sn:
+            return Response({'detail': 'SN required'}, status=400)
+
+        try:
+            o = RecycleOrder.objects.select_related('template', 'user').get(id=recycle_order_id)
+        except RecycleOrder.DoesNotExist:
+            return Response({'detail': '订单不存在'}, status=404)
+
+        if o.status != 'completed':
+            return Response({'detail': '仅支持从“已完成”的回收订单入库'}, status=400)
+        if VerifiedDevice.objects.filter(recycle_order=o).exists():
+            return Response({'detail': '该订单已入库，不能重复导入'}, status=400)
+        if not getattr(o, 'template', None):
+            return Response({'detail': '该订单未关联机型模板，无法入库'}, status=400)
+
+        template = o.template
+        def _norm_token(s):
+            return ''.join(ch for ch in str(s or '').strip().lower() if ch.isalnum())
+
+        def _clean_options(raw_options):
+            cleaned = []
+            seen = set()
+            for x in list(raw_options or []):
+                s = str(x or "").strip()
+                if not s:
+                    continue
+                key = _norm_token(s)
+                if key in seen:
+                    continue
+                cleaned.append(s)
+                seen.add(key)
+            return cleaned
+
+        def _ensure_option(value, options, field_name, allow_blank=False, aliases=None):
+            normalized = str(value or '').strip()
+            if not normalized:
+                if allow_blank:
+                    return ''
+                raise ValueError(f'{field_name} 不能为空')
+            if not options:
+                return normalized
+            option_index = {_norm_token(opt): str(opt).strip() for opt in (options or []) if str(opt).strip()}
+            hit = option_index.get(_norm_token(normalized))
+            if hit:
+                return hit
+            for a in (aliases or []):
+                hit = option_index.get(_norm_token(a))
+                if hit:
+                    return hit
+            preview = ' / '.join(list(option_index.values())[:8])
+            suffix = f'（允许：{preview}）' if preview else ''
+            raise ValueError(f'{field_name} 不在模板允许的选项中{suffix}')
+
+        color_aliases = {
+            'black': ['黑色', '黑'],
+            'white': ['白色', '白'],
+            'silver': ['银色', '银'],
+            'gold': ['金色', '金'],
+            'blue': ['蓝色', '蓝'],
+            'green': ['绿色', '绿'],
+            'purple': ['紫色', '紫'],
+            'red': ['红色', '红'],
+            'pink': ['粉色', '粉'],
+            'gray': ['灰色', '灰', '深空灰', '深灰'],
+            'grey': ['灰色', '灰', '深空灰', '深灰'],
+            'spacegray': ['深空灰', '深空灰色', '深灰'],
+        }
+        version_aliases = {
+            'cn': ['国行'],
+            'china': ['国行'],
+            'guohang': ['国行'],
+            'hk': ['港版'],
+            'hongkong': ['港版'],
+            'us': ['美版'],
+            'usa': ['美版'],
+            'jp': ['日版'],
+            'japan': ['日版'],
+        }
+
+        storages = _clean_options(getattr(template, 'storages', []) or [])
+        ram_options = _clean_options(getattr(template, 'ram_options', []) or [])
+        version_options = _clean_options(getattr(template, 'version_options', []) or [])
+        color_options = _clean_options(getattr(template, 'color_options', []) or [])
+
+        raw_storage = (getattr(o, 'selected_storage', '') or o.storage or '')
+        raw_ram = (getattr(o, 'selected_ram', '') or '')
+        raw_version = (getattr(o, 'selected_version', '') or '')
+        raw_color = (getattr(o, 'selected_color', '') or '')
+
+        try:
+            normalized_storage = _ensure_option(raw_storage, storages, '存储容量', allow_blank=False)
+            normalized_ram = _ensure_option(raw_ram, ram_options, '运行内存', allow_blank=(len(ram_options) == 0))
+            normalized_version = _ensure_option(
+                raw_version,
+                version_options,
+                '版本',
+                allow_blank=(len(version_options) == 0),
+                aliases=version_aliases.get(_norm_token(raw_version), [])
+            )
+            normalized_color = _ensure_option(
+                raw_color,
+                color_options,
+                '颜色',
+                allow_blank=(len(color_options) == 0),
+                aliases=color_aliases.get(_norm_token(raw_color), [])
+            )
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=400)
+
+        try:
+            suggested_price_val = float(suggested_price) if suggested_price not in [None, ''] else None
+        except (TypeError, ValueError):
+            return Response({'detail': 'suggested_price invalid'}, status=400)
+
+        seller = _get_official_verified_seller()
+        cost_price = None
+        try:
+            if o.final_price is not None:
+                cost_price = o.final_price + (o.bonus or 0)
+        except Exception:
+            cost_price = None
+
+        try:
+            device = VerifiedDevice.objects.create(
+                recycle_order=o,
+                template=template,
+                seller=seller,
+                category=getattr(template, 'category', None),
+                sn=sn,
+                imei=imei,
+                brand=o.brand,
+                model=o.model,
+                storage=normalized_storage,
+                ram=normalized_ram,
+                version=normalized_version,
+                color=normalized_color,
+                condition=o.condition,
+                status='pending',
+                location=location,
+                cost_price=cost_price,
+                suggested_price=suggested_price_val,
+                cover_image=getattr(template, 'default_cover_image', '') or '',
+                detail_images=getattr(template, 'default_detail_images', []) or [],
+                inspection_note=inspection_note or '',
+            )
+        except IntegrityError:
+            return Response({'detail': 'SN 已存在'}, status=400)
+
+        _audit(request.admin, 'create_verified_device_from_recycle_order', 'VerifiedDevice', device.id, snapshot={
+            'recycle_order_id': o.id,
+            'template_id': getattr(o.template, 'id', None),
+        })
+        return Response(VerifiedDeviceSerializer(device).data, status=201)
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -1945,6 +2107,41 @@ class AdminVerifiedDeviceActionView(APIView):
         device.status = target_status
         device.save(update_fields=['status', 'updated_at'])
         return Response({'detail': '操作成功', 'status': target_status})
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class RecycleDeviceTemplateResolveView(APIView):
+    """
+    根据品牌+型号解析到机型模板（用于官方验库存录入时强约束选项来源）。
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    @admin_required(['verified:write', 'recycle_template:view'])
+    def get(self, request):
+        brand = (request.query_params.get('brand') or '').strip()
+        model = (request.query_params.get('model') or '').strip()
+        if not brand or not model:
+            return Response({'detail': 'brand/model required'}, status=400)
+
+        tpl = RecycleDeviceTemplate.objects.filter(
+            is_active=True,
+            brand__iexact=brand,
+            model__iexact=model,
+        ).first()
+        if not tpl:
+            return Response({'detail': '未找到机型模板（请先在回收机型模板管理创建并启用）'}, status=404)
+
+        return Response({
+            'id': tpl.id,
+            'brand': tpl.brand,
+            'model': tpl.model,
+            'storages': tpl.storages or [],
+            'ram_options': tpl.ram_options or [],
+            'version_options': tpl.version_options or [],
+            'color_options': tpl.color_options or [],
+            'category_id': getattr(tpl, 'category_id', None),
+        })
 
 
 @method_decorator(csrf_exempt, name='dispatch')

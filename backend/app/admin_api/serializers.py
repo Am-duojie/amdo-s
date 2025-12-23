@@ -27,11 +27,15 @@ class VerifiedProductListSerializer(serializers.ModelSerializer):
 
 
 class VerifiedDeviceListSerializer(serializers.ModelSerializer):
+    linked_product_id = serializers.IntegerField(source='linked_product.id', read_only=True)
+    template_id = serializers.IntegerField(source='template.id', read_only=True)
+
     class Meta:
         model = VerifiedDevice
         fields = [
-            'id','sn','brand','model','storage','condition','status',
-            'cover_image','location','suggested_price','created_at','linked_product'
+            'id', 'sn', 'imei', 'brand', 'model', 'storage', 'ram', 'version', 'color',
+            'condition', 'status', 'cover_image', 'location', 'suggested_price',
+            'inspection_note', 'template_id', 'created_at', 'linked_product_id'
         ]
 
 

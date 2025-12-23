@@ -503,7 +503,7 @@ const goToProfile = () => {
   if (!authStore.user) {
     router.push('/login')
   } else {
-    router.push('/verified-profile')
+    router.push('/profile?zone=verified&tab=verified-orders')
   }
 }
 

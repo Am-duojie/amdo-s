@@ -2,7 +2,7 @@ from django.urls import path
 from .views import (
     LoginView, RefreshTokenView, LogoutView, DashboardMetricsView, StatisticsView,
     InspectionOrdersView, InspectionOrderDetailView, InspectionOrderLogisticsView, InspectionOrderPriceView,
-    InspectionOrderPaymentView, InspectionOrderPublishVerifiedView, InspectionOrdersBatchUpdateView,
+    InspectionOrderPaymentView, InspectionOrdersBatchUpdateView,
     RecycledProductsView, VerifiedListingsView, AuditQueueView, UsersView, AuditLogsView, RolesView,
     PaymentOrdersView, PaymentOrderDetailView, PaymentOrderActionView, PaymentOrderSettlementView,
     SettlementSummaryView, VerifiedOrdersAdminView, AuthMeView, ChangePasswordView,
@@ -13,10 +13,10 @@ from .views import (
     AdminVerifiedProductPublishView, AdminVerifiedProductUnpublishView,
     # 新增：官方验设备库存
     AdminVerifiedDeviceView, AdminVerifiedDeviceDetailView, AdminVerifiedDeviceListProductView, AdminVerifiedDeviceActionView,
+    AdminVerifiedDeviceAvailableRecycleOrdersView, AdminVerifiedDeviceCreateFromRecycleOrderView,
     AdminOfficialInventoryView,
-    CreateVerifiedDeviceFromRecycleOrderView,
     # 新增：回收机型模板管理
-    RecycleDeviceTemplateView, RecycleQuestionTemplateView, RecycleQuestionOptionView, 
+    RecycleDeviceTemplateView, RecycleDeviceTemplateResolveView, RecycleQuestionTemplateView, RecycleQuestionOptionView, 
     RecycleTemplateImportView, RecycleTemplateDownloadView
 )
 
@@ -38,9 +38,7 @@ urlpatterns = [
     path('inspection-orders/<int:order_id>/price', InspectionOrderPriceView.as_view()),
     path('inspection-orders/<int:order_id>/received', InspectionOrderLogisticsView.as_view()),
     path('inspection-orders/<int:order_id>/payment', InspectionOrderPaymentView.as_view()),
-    path('inspection-orders/<int:order_id>/publish-verified', InspectionOrderPublishVerifiedView.as_view()),
     path('inspection-orders/batch-update', InspectionOrdersBatchUpdateView.as_view()),
-    path('recycle-orders/<int:order_id>/create-verified-device/', CreateVerifiedDeviceFromRecycleOrderView.as_view()),
     path('recycled-products', RecycledProductsView.as_view()),
     path('recycled-products/<int:item_id>/publish', RecycledProductsView.as_view()),
     path('recycled-products/<int:item_id>/stock', RecycledProductsView.as_view()),
@@ -54,6 +52,8 @@ urlpatterns = [
     path('verified-listings/<int:pk>/unpublish/', AdminVerifiedProductUnpublishView.as_view()),
     # 官方验设备（SN级库存）
     path('verified-devices/', AdminVerifiedDeviceView.as_view()),
+    path('verified-devices/available-recycle-orders/', AdminVerifiedDeviceAvailableRecycleOrdersView.as_view()),
+    path('verified-devices/from-recycle-order/', AdminVerifiedDeviceCreateFromRecycleOrderView.as_view()),
     path('verified-devices/<int:pk>/', AdminVerifiedDeviceDetailView.as_view()),
     path('verified-devices/<int:pk>/list-product/', AdminVerifiedDeviceListProductView.as_view()),
     path('verified-devices/<int:pk>/<str:action>/', AdminVerifiedDeviceActionView.as_view()),
@@ -92,6 +92,7 @@ urlpatterns = [
     # 回收机型模板管理
     path('recycle-templates', RecycleDeviceTemplateView.as_view()),
     path('recycle-templates/<int:template_id>', RecycleDeviceTemplateView.as_view()),
+    path('recycle-templates/resolve', RecycleDeviceTemplateResolveView.as_view()),
     path('recycle-templates/download-template', RecycleTemplateDownloadView.as_view()),
     path('recycle-templates/import', RecycleTemplateImportView.as_view()),
     path('recycle-templates/<int:template_id>/questions', RecycleQuestionTemplateView.as_view()),

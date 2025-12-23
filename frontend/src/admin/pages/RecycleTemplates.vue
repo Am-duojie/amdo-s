@@ -103,6 +103,14 @@
             <el-tag v-for="s in row.storages" :key="s" size="small" style="margin-right: 4px">{{ s }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="运行内存" width="150">
+          <template #default="{ row }">
+            <template v-if="row.ram_options && row.ram_options.length > 0">
+              <el-tag v-for="s in row.ram_options" :key="s" size="small" style="margin-right: 4px">{{ s }}</el-tag>
+            </template>
+            <el-text v-else type="info" size="small">未配置</el-text>
+          </template>
+        </el-table-column>
         <el-table-column label="基础价格" width="200">
           <template #default="{ row }">
             <div v-if="row.base_prices && Object.keys(row.base_prices).length > 0" class="base-prices-display">
@@ -161,7 +169,7 @@
     <el-dialog
       v-model="dialogVisible"
       :title="isEdit ? '编辑机型模板' : '新增机型模板'"
-      width="700px"
+      width="920px"
       @close="handleDialogClose"
     >
       <el-form :model="form" label-width="120px" :rules="formRules" ref="formRef">
@@ -207,6 +215,23 @@
         <el-form-item label="系列">
           <el-input v-model="form.series" placeholder="请输入系列（可选）" />
         </el-form-item>
+        <el-form-item label="商品分类">
+          <el-select
+            v-model="form.category"
+            placeholder="可选"
+            clearable
+            filterable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="c in categories"
+              :key="c.id"
+              :label="c.name"
+              :value="c.id"
+            />
+          </el-select>
+          <div class="form-hint">用于“库存设备一键上架”时自动设置官方验商品分类</div>
+        </el-form-item>
         <el-form-item label="存储容量">
           <el-select
             v-model="form.storages"
@@ -224,6 +249,141 @@
             <el-option label="1TB" value="1TB" />
           </el-select>
           <div class="form-hint">可多选，也可以输入自定义容量</div>
+        </el-form-item>
+        <el-form-item label="运行内存" prop="ram_options">
+          <el-select
+            v-model="form.ram_options"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="选择或输入运行内存（RAM）"
+            style="width: 100%"
+          >
+            <el-option label="2GB" value="2GB" />
+            <el-option label="3GB" value="3GB" />
+            <el-option label="4GB" value="4GB" />
+            <el-option label="6GB" value="6GB" />
+            <el-option label="8GB" value="8GB" />
+            <el-option label="12GB" value="12GB" />
+            <el-option label="16GB" value="16GB" />
+            <el-option label="18GB" value="18GB" />
+            <el-option label="24GB" value="24GB" />
+          </el-select>
+          <div class="form-hint">用于区分同机型不同配置；会参与库存设备上架校验</div>
+        </el-form-item>
+        <el-form-item label="版本">
+          <el-select
+            v-model="form.version_options"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="选择或输入版本（可选）"
+            style="width: 100%"
+          >
+            <el-option label="标准版" value="标准版" />
+            <el-option label="Pro" value="Pro" />
+            <el-option label="Pro Max" value="Pro Max" />
+            <el-option label="Plus" value="Plus" />
+            <el-option label="Ultra" value="Ultra" />
+          </el-select>
+          <div class="form-hint">如不需要版本区分，可留空；配置后会参与库存设备上架校验</div>
+        </el-form-item>
+        <el-form-item label="颜色">
+          <el-select
+            v-model="form.color_options"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="选择或输入颜色（可选）"
+            style="width: 100%"
+          >
+            <el-option label="黑色" value="黑色" />
+            <el-option label="白色" value="白色" />
+            <el-option label="金色" value="金色" />
+            <el-option label="银色" value="银色" />
+            <el-option label="蓝色" value="蓝色" />
+            <el-option label="绿色" value="绿色" />
+            <el-option label="紫色" value="紫色" />
+            <el-option label="红色" value="红色" />
+            <el-option label="粉色" value="粉色" />
+          </el-select>
+          <div class="form-hint">如不需要颜色区分，可留空；配置后会参与库存设备上架校验</div>
+        </el-form-item>
+        <el-form-item label="屏幕尺寸">
+          <el-input v-model="form.screen_size" placeholder="例：6.1英寸（可选）" />
+        </el-form-item>
+        <el-form-item label="电池容量">
+          <el-input v-model="form.battery_capacity" placeholder="例：3279mAh（可选）" />
+        </el-form-item>
+        <el-form-item label="充电方式">
+          <el-input v-model="form.charging_type" placeholder="例：Lightning / Type-C（可选）" />
+        </el-form-item>
+        <el-form-item label="默认封面图">
+          <div style="width: 100%">
+            <el-input
+              v-model="form.default_cover_image"
+              placeholder="可直接粘贴图片URL，或使用右侧上传"
+              clearable
+              @change="syncTemplateImageLists"
+              @clear="syncTemplateImageLists"
+            >
+              <template #append>
+                <el-upload
+                  :show-file-list="false"
+                  :http-request="(opt) => handleTemplateUpload(opt, 'cover')"
+                  accept="image/*"
+                >
+                  <el-button type="primary">上传</el-button>
+                </el-upload>
+              </template>
+            </el-input>
+            <div v-if="form.default_cover_image" style="margin-top: 8px">
+              <el-image
+                :src="normalizeToUrl(form.default_cover_image)"
+                style="width: 120px; height: 120px; border-radius: 8px"
+                fit="cover"
+                :preview-src-list="[normalizeToUrl(form.default_cover_image)]"
+                preview-teleported
+              />
+            </div>
+            <div class="form-hint">用于生成官方验商品的封面图（库存设备未填写封面时会用这里）</div>
+          </div>
+        </el-form-item>
+        <el-form-item label="默认详情图">
+          <div style="width: 100%">
+            <el-upload
+              list-type="picture-card"
+              :file-list="detailFileList"
+              :http-request="(opt) => handleTemplateUpload(opt, 'detail')"
+              :on-remove="handleTemplateDetailRemove"
+              accept="image/*"
+            >
+              <el-icon><Plus /></el-icon>
+            </el-upload>
+            <el-select
+              v-model="form.default_detail_images"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              placeholder="也可粘贴图片URL后回车添加"
+              style="width: 100%; margin-top: 8px"
+              @change="syncTemplateImageLists"
+            />
+            <div class="form-hint">用于生成官方验商品的详情图（库存设备未填写详情图时会用这里）</div>
+          </div>
+        </el-form-item>
+        <el-form-item label="商品描述模板">
+          <el-input
+            v-model="form.description_template"
+            type="textarea"
+            :rows="4"
+            placeholder="可选：支持变量 {brand} {model} {storage} {condition} {ram} {version}"
+          />
+          <div class="form-hint">库存设备一键上架时，会用该模板生成官方验商品描述</div>
         </el-form-item>
         <el-form-item label="基础价格">
           <div class="base-prices-editor">
@@ -477,6 +637,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Plus, Search, Upload, Download } from '@element-plus/icons-vue'
 import adminApi from '@/utils/adminApi'
 import { useAdminAuthStore } from '@/stores/adminAuth'
+import { getImageUrl } from '@/utils/image'
 
 const admin = useAdminAuthStore()
 const hasPerm = (p) => admin.hasPerm(p)
@@ -493,6 +654,9 @@ const uploadFileRef = ref(null)
 // 动态选项数据
 const deviceTypeOptions = ref([])
 const brandOptions = ref([])
+const categories = ref([])
+const coverFileList = ref([])
+const detailFileList = ref([])
 
 // 分页
 const pagination = reactive({
@@ -521,6 +685,16 @@ const form = reactive({
   model: '',
   series: '',
   storages: [],
+  ram_options: [],
+  version_options: [],
+  color_options: [],
+  screen_size: '',
+  battery_capacity: '',
+  charging_type: '',
+  default_cover_image: '',
+  default_detail_images: [],
+  description_template: '',
+  category: null,
   base_prices: {},  // 基础价格表：{ "128GB": 4500, "256GB": 5200, ... }
   is_active: true,
 })
@@ -529,6 +703,50 @@ const formRules = {
   device_type: [{ required: true, message: '请选择设备类型', trigger: 'change' }],
   brand: [{ required: true, message: '请输入品牌', trigger: 'blur' }],
   model: [{ required: true, message: '请输入型号', trigger: 'blur' }],
+  ram_options: [{ type: 'array', required: true, min: 1, message: '请至少配置一个运行内存选项', trigger: 'change' }],
+}
+
+const uploadEndpoint = import.meta.env.VITE_ADMIN_UPLOAD_URL || '/uploads/images/'
+const normalizeToUrl = (url) => (url ? (getImageUrl(url) || url) : '')
+
+const syncTemplateImageLists = () => {
+  coverFileList.value = form.default_cover_image
+    ? [{ name: 'cover', url: normalizeToUrl(form.default_cover_image) }]
+    : []
+  detailFileList.value = (form.default_detail_images || [])
+    .filter(Boolean)
+    .map((u, idx) => ({ name: `detail-${idx + 1}`, url: normalizeToUrl(u) }))
+}
+
+const handleTemplateUpload = async (options, type) => {
+  const { file, onError, onSuccess } = options
+  const formData = new FormData()
+  formData.append('file', file)
+  try {
+    const res = await adminApi.post(uploadEndpoint, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    const url = res.data?.url || res.data?.image || res.data?.path
+    if (!url) throw new Error('上传返回空URL')
+    if (type === 'cover') {
+      form.default_cover_image = url
+    } else {
+      if (!Array.isArray(form.default_detail_images)) form.default_detail_images = []
+      form.default_detail_images.push(url)
+    }
+    syncTemplateImageLists()
+    onSuccess?.(res.data)
+  } catch (err) {
+    ElMessage.error('上传失败')
+    onError?.(err)
+  }
+}
+
+const handleTemplateDetailRemove = (file) => {
+  const target = file?.url
+  if (!target) return
+  form.default_detail_images = (form.default_detail_images || []).filter((u) => normalizeToUrl(u) !== target && u !== target)
+  syncTemplateImageLists()
 }
 
 // 问卷管理
@@ -837,6 +1055,7 @@ const loadCatalogOptions = async () => {
 // 创建
 const handleCreate = () => {
   loadCatalogOptions() // 加载选项
+  loadCategories()
   isEdit.value = false
   currentId.value = null
   Object.assign(form, {
@@ -845,9 +1064,20 @@ const handleCreate = () => {
     model: '',
     series: '',
     storages: [],
+    ram_options: [],
+    version_options: [],
+    color_options: [],
+    screen_size: '',
+    battery_capacity: '',
+    charging_type: '',
+    default_cover_image: '',
+    default_detail_images: [],
+    description_template: '',
+    category: null,
     base_prices: {},
     is_active: true,
   })
+  syncTemplateImageLists()
   dialogVisible.value = true
 }
 
@@ -858,6 +1088,7 @@ const handleEdit = async (row) => {
   
   // 加载选项
   loadCatalogOptions()
+  loadCategories()
   
   // 如果是编辑，需要获取完整数据（包含 base_prices）
   try {
@@ -869,6 +1100,16 @@ const handleEdit = async (row) => {
       model: fullData.model,
       series: fullData.series || '',
       storages: fullData.storages || [],
+      ram_options: fullData.ram_options || [],
+      version_options: fullData.version_options || [],
+      color_options: fullData.color_options || [],
+      screen_size: fullData.screen_size || '',
+      battery_capacity: fullData.battery_capacity || '',
+      charging_type: fullData.charging_type || '',
+      default_cover_image: fullData.default_cover_image || '',
+      default_detail_images: fullData.default_detail_images || [],
+      description_template: fullData.description_template || '',
+      category: fullData.category || null,
       base_prices: fullData.base_prices || {},
       is_active: fullData.is_active,
     })
@@ -880,10 +1121,21 @@ const handleEdit = async (row) => {
       model: row.model,
       series: row.series || '',
       storages: row.storages || [],
+      ram_options: row.ram_options || [],
+      version_options: row.version_options || [],
+      color_options: row.color_options || [],
+      screen_size: row.screen_size || '',
+      battery_capacity: row.battery_capacity || '',
+      charging_type: row.charging_type || '',
+      default_cover_image: row.default_cover_image || '',
+      default_detail_images: row.default_detail_images || [],
+      description_template: row.description_template || '',
+      category: row.category || null,
       base_prices: row.base_prices || {},
       is_active: row.is_active,
     })
   }
+  syncTemplateImageLists()
   dialogVisible.value = true
 }
 
@@ -930,6 +1182,8 @@ const handleDelete = async (row) => {
 // 对话框关闭
 const handleDialogClose = () => {
   formRef.value?.resetFields()
+  coverFileList.value = []
+  detailFileList.value = []
 }
 
 // 管理问卷
@@ -1280,6 +1534,3 @@ onMounted(() => {
   font-weight: 600;
 }
 </style>
-
-
-

@@ -2,8 +2,8 @@
   <header class="header-sticky" :class="{ 'blue-theme': props.theme === 'blue' }">
     <div class="header-content">
       <!-- Logo -->
-      <div class="brand-logo" @click="router.push('/')">
-        <span class="logo-text">易淘</span>
+      <div class="brand-logo" @click="goHome">
+        <span class="logo-text">{{ brandText }}</span>
       </div>
 
       
@@ -20,7 +20,7 @@
         <template v-if="authStore.user">
           <!-- 订单入口 -->
           <div class="order-link" @click="goToOrders">
-            <span class="order-icon">📋</span>
+            <el-icon class="order-icon"><Tickets /></el-icon>
             <span class="order-text">订单</span>
           </div>
           
@@ -80,6 +80,11 @@
                     <span class="menu-count">0</span>
                     <span class="menu-arrow">›</span>
                   </div>
+                  <div class="profile-menu-item" @click="switchZone">
+                    <span class="menu-text">{{ props.verifiedMode ? '切换到易淘' : '进入官方验' }}</span>
+                    <span class="menu-count"></span>
+                    <span class="menu-arrow">&gt;</span>
+                  </div>
                 </div>
                 
                 <!-- 退出登录 -->
@@ -102,6 +107,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Tickets } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import { useAuthStore } from '@/stores/auth'
 import SearchBox from '@/components/SearchBox.vue'
@@ -126,6 +132,7 @@ const props = defineProps({
 const router = useRouter()
 const authStore = useAuthStore()
 
+const brandText = computed(() => (props.verifiedMode ? '官方验' : '易淘'))
 const userDisplayName = computed(() => authStore.user?.nickname || authStore.user?.username || '易淘用户')
 const userInitial = computed(() => authStore.user?.username?.charAt(0)?.toUpperCase() || 'U')
 
@@ -139,15 +146,14 @@ const searchPlaceholder = computed(() => {
     const samples = hotWords.value.slice(0, 3)
     return `搜索好物，例如 ${samples.join(' / ')}`
   }
-  return '搜索二手好物'
+  return props.verifiedMode ? '搜索官方验好物' : '搜索二手好物'
 })
 
 // 加载热词 - 优化：使用防抖和缓存
 const loadHotWords = async () => {
   try {
-    const res = await api.get('/products/', { 
-      params: { status: 'active', page_size: 10 } // 减少请求数量
-    })
+    const endpoint = props.verifiedMode ? '/verified-products/' : '/products/'
+    const res = await api.get(endpoint, { params: { status: 'active', page_size: 10 } })
     const productList = res.data.results || res.data
     
     if (!productList || productList.length === 0) return
@@ -187,7 +193,7 @@ const handleUserMenuCommand = async (command) => {
     case 'trade':
       // 如果是官方验货模式，跳转到官方验货订单页面
       if (props.verifiedMode) {
-        router.push('/verified-profile?menu=orders')
+        router.push('/profile?zone=verified&tab=verified-orders')
       } else {
         router.push('/profile?tab=bought')  // 跳转到我的交易（默认显示我买到的）
       }
@@ -195,23 +201,18 @@ const handleUserMenuCommand = async (command) => {
     case 'favorites':
       // 如果是官方验货模式，跳转到官方验货收藏页面
       if (props.verifiedMode) {
-        router.push('/verified-profile?menu=favorites')
+        router.push('/profile?zone=verified&tab=verified-favorites')
       } else {
         router.push('/profile?tab=favorites')  // 跳转到我的收藏
       }
       break
     case 'settings':
-      // 如果是官方验货模式，跳转到官方验货个人中心
-      if (props.verifiedMode) {
-        router.push('/verified-profile')
-      } else {
-        router.push('/profile?tab=address')  // 跳转到账户设置（默认显示收货地址）
-      }
+      router.push('/profile?tab=address')  // 账户设置为账号共享
       break
     case 'products':
       // 如果是官方验货模式，跳转到官方验货个人中心
       if (props.verifiedMode) {
-        router.push('/verified-profile')
+        router.push('/profile?zone=verified&tab=verified-orders')
       } else {
         router.push('/profile')
       }
@@ -219,7 +220,7 @@ const handleUserMenuCommand = async (command) => {
     case 'orders':
       // 如果是官方验货模式，跳转到官方验货订单页面
       if (props.verifiedMode) {
-        router.push('/verified-profile?menu=orders')
+        router.push('/profile?zone=verified&tab=verified-orders')
       } else {
         router.push('/profile?tab=bought')
       }
@@ -230,7 +231,7 @@ const handleUserMenuCommand = async (command) => {
     case 'profile':
       // 如果是官方验货模式，跳转到官方验货个人中心
       if (props.verifiedMode) {
-        router.push('/verified-profile')
+        router.push('/profile?zone=verified&tab=verified-orders')
       } else {
         router.push('/profile')
       }
@@ -255,10 +256,23 @@ const handleUserMenuCommand = async (command) => {
 const goToLogin = () => router.push('/login')
 const goToRecycle = () => router.push('/recycle')
 
+const goHome = () => {
+  router.push(props.verifiedMode ? '/verified-products' : '/')
+}
+
+const switchZone = () => {
+  if (props.verifiedMode) {
+    router.push('/')
+    return
+  }
+  const newTab = window.open('/verified-products', '_blank', 'noopener,noreferrer')
+  if (newTab) newTab.opener = null
+}
+
 const goToOrders = () => {
   // 如果是官方验货模式，跳转到官方验货订单页面
   if (props.verifiedMode) {
-    router.push('/verified-profile?menu=orders')
+    router.push('/profile?zone=verified&tab=verified-orders')
   } else {
     router.push('/profile?tab=bought')
   }
@@ -688,8 +702,18 @@ onMounted(() => {
   font-size: 14px;
   color: #333;
   cursor: pointer;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.9);
+  transition: all 0.2s;
 }
-.order-link .order-icon { display: inline-flex; font-size: 14px; }
+
+.order-link:hover {
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.14);
+}
+.order-link .order-icon { display: inline-flex; font-size: 16px; }
 
 .login-btn {
   font-size: 14px;

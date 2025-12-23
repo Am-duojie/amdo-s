@@ -34,7 +34,7 @@ class Stats:
 
 
 class Command(BaseCommand):
-    help = "Sync the shared 'functional' question (step 13) for all recycle device templates."
+    help = "Sync the shared 'functional' question (step 14) for all recycle device templates."
 
     def add_arguments(self, parser):
         parser.add_argument("--dry-run", action="store_true", help="Preview changes without writing.")
@@ -55,7 +55,7 @@ class Command(BaseCommand):
                 else:
                     q = RecycleQuestionTemplate.objects.create(
                         device_template=t,
-                        step_order=13,
+                        step_order=14,
                         key="functional",
                         title="功能性问题（非必选，可多选）",
                         helper="",
@@ -66,8 +66,8 @@ class Command(BaseCommand):
                     stats.questions_created += 1
             else:
                 changed = False
-                if q.step_order != 13:
-                    q.step_order = 13
+                if q.step_order != 14:
+                    q.step_order = 14
                     changed = True
                 if q.title != "功能性问题（非必选，可多选）":
                     q.title = "功能性问题（非必选，可多选）"

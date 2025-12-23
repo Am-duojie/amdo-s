@@ -15,12 +15,21 @@
           <el-button :loading="loading" text :icon="Refresh" @click="handleRefresh">刷新</el-button>
           <el-button
             v-if="hasPerm('verified:write')"
+            type="success"
+            size="small"
+            :icon="Upload"
+            @click="openImportFromRecycle"
+          >
+            从回收订单入库
+          </el-button>
+          <el-button
+            v-if="hasPerm('verified:write')"
             type="primary"
             size="small"
             :icon="Plus"
             @click="openCreate"
           >
-            新增库存设备
+            手动新增库存设备
           </el-button>
         </el-space>
       </div>
@@ -152,14 +161,6 @@
                 编辑
               </el-button>
               <el-button
-                v-if="hasPerm('verified:write') && row.status === 'ready' && !row.linked_product_id"
-                size="small"
-                type="success"
-                @click="quickList(row)"
-              >
-                上架
-              </el-button>
-              <el-button
                 v-if="hasPerm('verified:write') && row.status === 'pending'"
                 size="small"
                 type="warning"
@@ -228,6 +229,9 @@
           <el-descriptions-item label="品牌">{{ currentDevice.brand }}</el-descriptions-item>
           <el-descriptions-item label="型号">{{ currentDevice.model }}</el-descriptions-item>
           <el-descriptions-item label="容量">{{ currentDevice.storage }}</el-descriptions-item>
+          <el-descriptions-item label="运行内存">{{ currentDevice.ram || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="版本/地区">{{ currentDevice.version || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="颜色">{{ currentDevice.color || '—' }}</el-descriptions-item>
           <el-descriptions-item label="成色">
             {{ getConditionText(currentDevice.condition) }}
           </el-descriptions-item>
@@ -263,27 +267,94 @@
       destroy-on-close
     >
       <el-form :model="deviceForm" label-width="110px" :inline="false">
-        <el-form-item label="演示模式" v-if="!editingDevice">
-          <el-switch v-model="autoGenerateSn" active-text="自动生成SN/IMEI" inactive-text="手动填写" />
-        </el-form-item>
         <el-form-item label="SN/序列号" required>
           <el-input
             v-model="deviceForm.sn"
-            placeholder="留空则自动生成"
-            :disabled="autoGenerateSn && !editingDevice"
+            placeholder="请填写唯一的 SN/序列号"
           />
         </el-form-item>
         <el-form-item label="IMEI/MEID">
           <el-input v-model="deviceForm.imei" placeholder="可选" />
         </el-form-item>
         <el-form-item label="品牌" required>
-          <el-input v-model="deviceForm.brand" placeholder="例：Apple" />
+          <el-input v-model="deviceForm.brand" placeholder="例：Apple" @blur="resolveTemplateForForm" />
         </el-form-item>
         <el-form-item label="型号" required>
-          <el-input v-model="deviceForm.model" placeholder="例：iPhone 14 Pro" />
+          <el-input v-model="deviceForm.model" placeholder="例：iPhone 14 Pro" @blur="resolveTemplateForForm" />
         </el-form-item>
         <el-form-item label="容量" required>
-          <el-input v-model="deviceForm.storage" placeholder="例：128GB" />
+          <el-select
+            v-model="deviceForm.storage"
+            placeholder="请选择（来源：机型模板）"
+            style="width: 100%;"
+            :disabled="!templateResolved"
+          >
+            <el-option
+              v-for="s in (templateInfo?.storages || [])"
+              :key="s"
+              :label="s"
+              :value="s"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="运行内存">
+          <el-select
+            v-model="deviceForm.ram"
+            filterable
+            clearable
+            placeholder="请选择（来源：机型模板）"
+            style="width: 100%;"
+            :disabled="!templateResolved || (templateInfo?.ram_options || []).length === 0"
+          >
+            <el-option
+              v-for="s in (templateInfo?.ram_options || [])"
+              :key="s"
+              :label="s"
+              :value="s"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="版本/地区">
+          <el-select
+            v-model="deviceForm.version"
+            filterable
+            clearable
+            placeholder="请选择（来源：机型模板）"
+            style="width: 100%;"
+            :disabled="!templateResolved || (templateInfo?.version_options || []).length === 0"
+          >
+            <el-option
+              v-for="s in (templateInfo?.version_options || [])"
+              :key="s"
+              :label="s"
+              :value="s"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="颜色">
+          <el-select
+            v-model="deviceForm.color"
+            filterable
+            clearable
+            placeholder="请选择（来源：机型模板）"
+            style="width: 100%;"
+            :disabled="!templateResolved || (templateInfo?.color_options || []).length === 0"
+          >
+            <el-option
+              v-for="s in (templateInfo?.color_options || [])"
+              :key="s"
+              :label="s"
+              :value="s"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="templateResolveError">
+          <el-alert
+            :title="templateResolveError"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
         </el-form-item>
         <el-form-item label="成色" required>
           <el-select v-model="deviceForm.condition" style="width: 100%;">
@@ -316,51 +387,93 @@
       </el-form>
       <template #footer>
         <el-button @click="showFormDialog = false">取消</el-button>
-        <el-button type="primary" :loading="formLoading" @click="submitForm">
+        <el-button type="primary" :loading="formLoading" :disabled="!templateResolved" @click="submitForm">
           {{ editingDevice ? '保存' : '创建' }}
         </el-button>
       </template>
     </el-dialog>
 
     <el-dialog
-      v-model="quickListDialogVisible"
-      title="快速上架商品"
-      width="520px"
+      v-model="importDialogVisible"
+      title="从回收订单入库"
+      width="920px"
       destroy-on-close
     >
-      <div v-if="currentDevice">
-        <el-alert
-          title="设备信息"
-          type="info"
-          :closable="false"
-          style="margin-bottom: 16px"
-        >
-          <div>{{ currentDevice.brand }} {{ currentDevice.model }} {{ currentDevice.storage }}</div>
-          <div style="font-size: 12px; margin-top: 4px;">SN: {{ currentDevice.sn }}</div>
-        </el-alert>
-        <el-form label-width="100px">
-          <el-form-item label="售价" required>
-            <el-input-number
-              v-model="quickPrice"
-              :min="0.01"
-              :precision="2"
-              style="width: 100%;"
-            />
-          </el-form-item>
-          <el-form-item label="划线价">
-            <el-input-number
-              v-model="quickOriginalPrice"
-              :min="0"
-              :precision="2"
-              style="width: 100%;"
-            />
-          </el-form-item>
-        </el-form>
+      <div class="import-toolbar">
+        <el-input
+          v-model="importSearch"
+          placeholder="输入 订单号 / 用户 / 品牌 / 型号 关键词"
+          clearable
+          style="width: 360px"
+          @keyup.enter="loadImportOrders"
+          @clear="loadImportOrders"
+        />
+        <el-button type="primary" :loading="importLoading" @click="loadImportOrders">查询订单</el-button>
+        <span class="import-hint">默认仅显示“已完成且未入库”的回收订单，可多选批量入库</span>
       </div>
+
+      <el-table
+        :data="importOrders"
+        v-loading="importLoading"
+        stripe
+        style="width: 100%"
+        @selection-change="handleImportSelectionChange"
+        empty-text="暂无可入库的回收订单"
+      >
+        <el-table-column type="selection" width="55" />
+        <el-table-column label="订单号" width="110">
+          <template #default="{ row }">
+            <span class="sn-text">#{{ row.id }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="用户" width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.user?.username || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="设备信息" min-width="240" show-overflow-tooltip>
+          <template #default="{ row }">
+            <div class="product-title">{{ row.brand }} {{ row.model }}</div>
+            <div class="product-sub">{{ row.storage }} · {{ getConditionText(row.condition) }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="回收成本" width="120" align="right">
+          <template #default="{ row }">
+            <span v-if="row.total_price">¥{{ row.total_price }}</span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="SN/序列号" width="200">
+          <template #default="{ row }">
+            <el-input v-model="importDraft(row.id).sn" placeholder="必填" size="small" clearable />
+          </template>
+        </el-table-column>
+        <el-table-column label="IMEI/MEID" width="200">
+          <template #default="{ row }">
+            <el-input v-model="importDraft(row.id).imei" placeholder="可选" size="small" clearable />
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="import-footer">
+        <div class="import-meta">已选择 {{ importSelected.length }} 条</div>
+        <div class="import-defaults">
+          <span class="import-default-label">默认仓位</span>
+          <el-input v-model="importDefaults.location" placeholder="可选，入库后可再编辑" style="width: 220px" />
+          <span class="import-default-label">建议售价</span>
+          <el-input-number
+            v-model="importDefaults.suggested_price"
+            :min="0"
+            :precision="2"
+            controls-position="right"
+            style="width: 220px"
+            placeholder="可选（留空=按订单成本）"
+          />
+        </div>
+      </div>
+
       <template #footer>
-        <el-button @click="quickListDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="quickLoading" @click="confirmQuickList">
-          确认上架
+        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="importSubmitting" @click="submitImport">
+          一键入库（选订单）
         </el-button>
       </template>
     </el-dialog>
@@ -373,7 +486,7 @@ import adminApi from '@/utils/adminApi'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import BatchActions from './components/BatchActions.vue'
-import { Search, Refresh, Plus, Box } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Box, Upload } from '@element-plus/icons-vue'
 
 const admin = useAdminAuthStore()
 const hasPerm = (p) => admin.hasPerm(p)
@@ -389,23 +502,70 @@ const currentDevice = ref(null)
 const showFormDialog = ref(false)
 const editingDevice = ref(null)
 const formLoading = ref(false)
-const autoGenerateSn = ref(true)
-const quickListDialogVisible = ref(false)
-const quickPrice = ref(null)
-const quickOriginalPrice = ref(null)
-const quickLoading = ref(false)
+const importDialogVisible = ref(false)
+const importLoading = ref(false)
+const importSubmitting = ref(false)
+const importSearch = ref('')
+const importOrders = ref([])
+const importSelected = ref([])
+const importDrafts = reactive({})
+const importDefaults = reactive({
+  location: '',
+  suggested_price: null
+})
+
+const templateInfo = ref(null)
+const templateResolveError = ref('')
+const templateResolved = computed(() => !!templateInfo.value?.id)
 
 const deviceForm = reactive({
+  template_id: null,
   sn: '',
   imei: '',
   brand: '',
   model: '',
   storage: '',
+  ram: '',
+  version: '',
+  color: '',
   condition: 'good',
   location: '',
   suggested_price: null,
   inspection_note: ''
 })
+
+const resolveTemplateForForm = async () => {
+  templateResolveError.value = ''
+  templateInfo.value = null
+  deviceForm.template_id = null
+
+  const brand = (deviceForm.brand || '').trim()
+  const model = (deviceForm.model || '').trim()
+  if (!brand || !model) return
+
+  try {
+    const res = await adminApi.get('/recycle-templates/resolve', { params: { brand, model } })
+    templateInfo.value = res.data
+    deviceForm.template_id = res.data?.id || null
+
+    const t = res.data || {}
+    const ensureIn = (val, options) => (options || []).includes(val) ? val : ''
+
+    if ((t.storages || []).length === 1) deviceForm.storage = deviceForm.storage || t.storages[0]
+    else deviceForm.storage = ensureIn(deviceForm.storage, t.storages)
+
+    if ((t.ram_options || []).length === 1) deviceForm.ram = deviceForm.ram || t.ram_options[0]
+    else deviceForm.ram = ensureIn(deviceForm.ram, t.ram_options)
+
+    if ((t.version_options || []).length === 1) deviceForm.version = deviceForm.version || t.version_options[0]
+    else deviceForm.version = ensureIn(deviceForm.version, t.version_options)
+
+    if ((t.color_options || []).length === 1) deviceForm.color = deviceForm.color || t.color_options[0]
+    else deviceForm.color = ensureIn(deviceForm.color, t.color_options)
+  } catch (error) {
+    templateResolveError.value = error?.response?.data?.detail || '未找到机型模板（请先创建并启用）'
+  }
+}
 
 const statusMap = {
   pending: { text: '待处理', type: 'warning' },
@@ -509,13 +669,18 @@ const viewDetail = (row) => {
 
 const openCreate = () => {
   editingDevice.value = null
-  autoGenerateSn.value = true
+  templateInfo.value = null
+  templateResolveError.value = ''
   Object.assign(deviceForm, {
+    template_id: null,
     sn: '',
     imei: '',
     brand: '',
     model: '',
     storage: '',
+    ram: '',
+    version: '',
+    color: '',
     condition: 'good',
     location: '',
     suggested_price: null,
@@ -526,21 +691,32 @@ const openCreate = () => {
 
 const openEdit = (row) => {
   editingDevice.value = row
+  templateInfo.value = null
+  templateResolveError.value = ''
   Object.assign(deviceForm, {
+    template_id: row.template_id || null,
     sn: row.sn,
     imei: row.imei || '',
     brand: row.brand,
     model: row.model,
     storage: row.storage,
+    ram: row.ram || '',
+    version: row.version || '',
+    color: row.color || '',
     condition: row.condition,
     location: row.location || '',
     suggested_price: row.suggested_price,
     inspection_note: row.inspection_note || ''
   })
+  resolveTemplateForForm()
   showFormDialog.value = true
 }
 
 const submitForm = async () => {
+  if (!deviceForm.sn) {
+    ElMessage.warning('请填写 SN/序列号')
+    return
+  }
   if (!deviceForm.brand || !deviceForm.model || !deviceForm.storage) {
     ElMessage.warning('请填写必填项')
     return
@@ -548,22 +724,29 @@ const submitForm = async () => {
 
   formLoading.value = true
   try {
-    const payload = { ...deviceForm }
-    if (!editingDevice.value && (autoGenerateSn.value || !payload.sn)) {
-      delete payload.sn
-    }
-
     if (editingDevice.value) {
-      await adminApi.put(`/verified-devices/${editingDevice.value.id}/`, payload)
+      const payload = { ...deviceForm }
+      await adminApi.patch(`/verified-devices/${editingDevice.value.id}/`, payload)
       ElMessage.success('更新成功')
     } else {
+      const payload = { ...deviceForm }
       await adminApi.post('/verified-devices/', payload)
       ElMessage.success('创建成功')
     }
     showFormDialog.value = false
     await loadDevices()
   } catch (error) {
-    ElMessage.error(error?.response?.data?.detail || '操作失败')
+    const data = error?.response?.data
+    const msg =
+      data?.detail ||
+      data?.template_id ||
+      data?.storage ||
+      data?.ram ||
+      data?.version ||
+      data?.color ||
+      (data && typeof data === 'object' ? Object.values(data).flat()?.[0] : null) ||
+      '操作失败'
+    ElMessage.error(msg)
   } finally {
     formLoading.value = false
   }
@@ -573,6 +756,92 @@ const resetForm = () => {
   editingDevice.value = null
 }
 
+const openImportFromRecycle = async () => {
+  importDialogVisible.value = true
+  await loadImportOrders()
+}
+
+const loadImportOrders = async () => {
+  importLoading.value = true
+  try {
+    const res = await adminApi.get('/verified-devices/available-recycle-orders/', {
+      params: { page: 1, page_size: 50, search: importSearch.value || '' }
+    })
+    importOrders.value = res.data?.results || []
+    for (const row of importOrders.value) {
+      if (!importDrafts[row.id]) {
+        importDrafts[row.id] = { sn: '', imei: '' }
+      }
+    }
+  } catch (e) {
+    importOrders.value = []
+  } finally {
+    importLoading.value = false
+  }
+}
+
+const handleImportSelectionChange = (selection) => {
+  importSelected.value = selection || []
+}
+
+const importDraft = (orderId) => {
+  if (!importDrafts[orderId]) {
+    importDrafts[orderId] = { sn: '', imei: '' }
+  }
+  return importDrafts[orderId]
+}
+
+const submitImport = async () => {
+  if (!importSelected.value.length) {
+    ElMessage.warning('请先选择要入库的回收订单')
+    return
+  }
+  for (const row of importSelected.value) {
+    const d = importDraft(row.id)
+    if (!d.sn || !String(d.sn).trim()) {
+      ElMessage.warning(`请填写订单 #${row.id} 的 SN/序列号`)
+      return
+    }
+  }
+
+  importSubmitting.value = true
+  try {
+    const tasks = importSelected.value.map((row) => {
+      const d = importDraft(row.id)
+      const suggested =
+        importDefaults.suggested_price !== null && importDefaults.suggested_price !== undefined && importDefaults.suggested_price !== ''
+          ? importDefaults.suggested_price
+          : (row.total_price ?? null)
+      return adminApi.post('/verified-devices/from-recycle-order/', {
+        recycle_order_id: row.id,
+        sn: String(d.sn).trim(),
+        imei: (d.imei || '').trim(),
+        location: (importDefaults.location || '').trim(),
+        suggested_price: suggested,
+        inspection_note: ''
+      })
+    })
+
+    const results = await Promise.allSettled(tasks)
+    const ok = results.filter(r => r.status === 'fulfilled').length
+    const failed = results.length - ok
+    if (failed === 0) {
+      ElMessage.success(`入库成功：${ok} 条`)
+      importDialogVisible.value = false
+    } else {
+      const firstFail = results.find(r => r.status === 'rejected')
+      const reason = firstFail?.reason?.response?.data?.detail || firstFail?.reason?.message || '部分订单入库失败'
+      ElMessage.warning(`入库成功：${ok} 条，失败：${failed} 条（${reason}）`)
+    }
+    await loadDevices()
+    await loadImportOrders()
+  } catch (e) {
+    ElMessage.error('入库失败')
+  } finally {
+    importSubmitting.value = false
+  }
+}
+
 const updateStatus = async (row, newStatus) => {
   try {
     await adminApi.patch(`/verified-devices/${row.id}/`, { status: newStatus })
@@ -580,35 +849,6 @@ const updateStatus = async (row, newStatus) => {
     await loadDevices()
   } catch (error) {
     ElMessage.error('操作失败')
-  }
-}
-
-const quickList = (row) => {
-  currentDevice.value = row
-  quickPrice.value = row.suggested_price || null
-  quickOriginalPrice.value = null
-  quickListDialogVisible.value = true
-}
-
-const confirmQuickList = async () => {
-  if (!quickPrice.value) {
-    ElMessage.warning('请输入售价')
-    return
-  }
-
-  quickLoading.value = true
-  try {
-    await adminApi.post(`/verified-devices/${currentDevice.value.id}/list-product/`, {
-      price: quickPrice.value,
-      original_price: quickOriginalPrice.value
-    })
-    ElMessage.success('上架成功')
-    quickListDialogVisible.value = false
-    await loadDevices()
-  } catch (error) {
-    ElMessage.error(error?.response?.data?.detail || '上架失败')
-  } finally {
-    quickLoading.value = false
   }
 }
 
@@ -759,6 +999,42 @@ onMounted(() => {
   font-family: 'Courier New', monospace;
   font-weight: 600;
   color: #111827;
+}
+
+.import-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.import-hint {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.import-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.import-meta {
+  color: #374151;
+  font-size: 13px;
+}
+
+.import-defaults {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.import-default-label {
+  color: #4b5563;
+  font-size: 12px;
 }
 
 .product-title {

@@ -194,6 +194,7 @@ import { getImageUrl } from '@/utils/image'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const orderType = computed(() => (route.query.order_type === 'verified' ? 'verified' : 'normal'))
 
 const loading = ref(true)
 const product = ref(null)
@@ -246,25 +247,30 @@ onBeforeUnmount(() => {
 const loadProduct = async () => {
   try {
     const productId = route.params.id
-    const res = await api.get(`/products/${productId}/`)
+    const endpoint = orderType.value === 'verified'
+      ? `/verified-products/${productId}/`
+      : `/products/${productId}/`
+    const res = await api.get(endpoint)
     product.value = res.data
-    
+    const fallbackProductRoute = orderType.value === 'verified' ? `/verified-products/${productId}` : `/products/${productId}`
+
     // 检查商品状态
     if (product.value.status !== 'active') {
       ElMessage.warning('商品已下架或已售出')
-      router.push(`/products/${productId}`)
+      router.push(fallbackProductRoute)
       return
     }
-    
+
     // 检查是否是自己的商品
     if (authStore.user?.id === product.value.seller?.id) {
       ElMessage.warning('不能购买自己的商品')
-      router.push(`/products/${productId}`)
+      router.push(fallbackProductRoute)
       return
     }
   } catch (error) {
     ElMessage.error('商品加载失败')
-    router.push('/products')
+    const fallbackListRoute = orderType.value === 'verified' ? '/verified-products' : '/products'
+    router.push(fallbackListRoute)
   } finally {
     loading.value = false
   }
@@ -301,15 +307,17 @@ const handleSubmit = async () => {
     const fullAddress = `${selectedAddr.province} ${selectedAddr.city} ${selectedAddr.district} ${selectedAddr.detail_address}`
     
     // 创建订单
+    const endpoint = orderType.value === 'verified' ? '/verified-orders/' : '/orders/'
     const orderData = {
       product_id: product.value.id,
       shipping_name: selectedAddr.name,
       shipping_phone: selectedAddr.phone,
       shipping_address: fullAddress,
-      note: orderNote.value
+      note: orderNote.value,
+      order_type: orderType.value
     }
     
-    const res = await api.post('/orders/', orderData)
+    const res = await api.post(endpoint, orderData)
     currentOrderId.value = res.data.id
     
     // 打开支付弹窗
@@ -326,7 +334,7 @@ const createPayment = async () => {
   try {
     const res = await api.post('/payment/create/', {
       order_id: currentOrderId.value,
-      order_type: 'normal'  // normal: 易淘订单, verified: 官方验订单
+      order_type: orderType.value
     })
 
     if (res.data.success) {
@@ -386,12 +394,15 @@ const checkPaymentStatus = async () => {
   
   checkingPayment.value = true
   try {
-    const res = await api.get(`/payment/query/${currentOrderId.value}/?order_type=normal`)
+    const res = await api.get(`/payment/query/${currentOrderId.value}/?order_type=${orderType.value}`)
     if (res.data.success && res.data.paid) {
       clearInterval(paymentCheckTimer)
       ElMessage.success('支付成功')
       paymentDialogVisible.value = false
-      router.push('/profile?tab=bought')
+      const successRoute = orderType.value === 'verified'
+        ? '/profile?zone=verified&tab=verified-orders'
+        : '/profile?tab=bought'
+      router.push(successRoute)
     }
   } catch (error) {
     console.error('查询支付状态失败:', error)
@@ -409,7 +420,10 @@ const closePaymentDialog = () => {
   }).then(() => {
     paymentDialogVisible.value = false
     if (paymentCheckTimer) clearInterval(paymentCheckTimer)
-    router.push('/profile?tab=bought')
+    const successRoute = orderType.value === 'verified'
+      ? '/profile?zone=verified&tab=verified-orders'
+      : '/profile?tab=bought'
+    router.push(successRoute)
   }).catch(() => {})
 }
 </script>

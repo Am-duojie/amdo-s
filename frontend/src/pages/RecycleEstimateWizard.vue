@@ -114,6 +114,7 @@ type StepKey =
   | "channel"
   | "color"
   | "storage"
+  | "ram"
   | "usage"
   | "accessories"
   | "screen_appearance"
@@ -209,10 +210,25 @@ function getDefaultSteps(): StepItem[] {
   },
   {
     key: "storage",
-    title: "内存 / 存储",
-    helper: "选容量以便精准估价",
+    title: "存储容量",
+    helper: "选择存储容量以便精准估价",
     is_required: true,
     options: storageOptions.value.length ? storageOptions.value : [],
+  },
+  {
+    key: "ram",
+    title: "运行内存",
+    helper: "必选：用于区分配置（不影响存储容量选择）",
+    is_required: true,
+    options: [
+      { value: "2GB", label: "2GB" },
+      { value: "3GB", label: "3GB" },
+      { value: "4GB", label: "4GB" },
+      { value: "6GB", label: "6GB" },
+      { value: "8GB", label: "8GB" },
+      { value: "12GB", label: "12GB" },
+      { value: "16GB", label: "16GB" },
+    ],
   },
   {
     key: "usage",
@@ -467,12 +483,23 @@ function selectOption(step: StepItem, option: StepOption) {
       draft.setSelectedConfig({ storage: option.value });
     } else if (step.key === "color") {
       draft.setSelectedConfig({ color: option.value });
+    } else if (step.key === "ram") {
+      draft.setSelectedConfig({ ram: option.value });
     }
     // 注意：ram 和 version 需要在问卷中有对应的问题才能保存
     // 如果后端模板中有这些问题，会自动保存
   }
   draft.setQuote(null, null);
   updateCondition();
+}
+
+function autoSelectSingleRam() {
+  const step = allSteps.value.find((s) => s.key === "ram");
+  if (!step) return;
+  if (step.is_required === false) return;
+  if (hasAnswer("ram")) return;
+  if (!Array.isArray(step.options) || step.options.length !== 1) return;
+  selectOption(step, step.options[0]);
 }
 
 // 处理选项选择（带自动跳转）
@@ -520,6 +547,14 @@ watch(activeCollapseStep, (newVal) => {
     draft.setCurrentStep(stepNum);
   }
 });
+
+watch(
+  () => allSteps.value,
+  () => {
+    autoSelectSingleRam();
+  },
+  { immediate: true }
+);
 
 function deriveCondition(ans: Record<string, any>): ConditionLevel {
   const options: StepOption[] = [];

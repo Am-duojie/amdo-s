@@ -1,7 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
-import uuid
 
 
 class Category(models.Model):
@@ -278,8 +277,6 @@ class RecycleOrder(models.Model):
     final_price_confirmed = models.BooleanField(default=False, verbose_name='最终价已确认')
     payment_retry_count = models.IntegerField(default=0, verbose_name='打款重试次数')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name='状态')
-    contact_name = models.CharField(max_length=50, verbose_name='联系人姓名')
-    contact_phone = models.CharField(max_length=20, verbose_name='联系电话')
     address = models.TextField(verbose_name='收货地址')
     note = models.TextField(blank=True, verbose_name='备注')
     
@@ -549,125 +546,8 @@ class VerifiedFavorite(models.Model):
         unique_together = ['user', 'product']
         ordering = ['-created_at']
 
-    def __str__(self):
+def __str__(self):
         return f"{self.user.username} 收藏了 {self.product.title}"
-
-
-def create_verified_device_from_recycle_order(order, status='ready', location='官方仓'):
-    """
-    根据回收订单生成一条官方验库存(VerifiedDevice)，用于自动/手动打通回收 -> 官方验。
-    如果已存在关联设备则直接返回，不重复创建。
-    """
-    if not order:
-        return None
-    existing = getattr(order, 'verified_devices', None)
-    if existing and existing.exists():
-        return existing.first()
-
-    # 优先使用回收单上的模板；没有则尝试按机型匹配
-    template = getattr(order, 'template', None)
-    if not template:
-        try:
-            from app.admin_api.models import RecycleDeviceTemplate
-            template = RecycleDeviceTemplate.objects.filter(
-                device_type=order.device_type,
-                brand=order.brand,
-                model=order.model,
-                is_active=True
-            ).first()
-        except Exception:
-            template = None
-
-    # 没有有效模板直接跳过，避免生成无模板设备
-    if not template or (hasattr(template, 'is_active') and not template.is_active):
-        return None
-
-    def _pick_from_template(value, options):
-        """如果用户选择不在模板选项里，则回落到模板首个可用值"""
-        if value and options:
-            normalized = str(value).strip().lower()
-            for opt in options:
-                if str(opt).strip().lower() == normalized:
-                    return opt
-        if options:
-            return options[0]
-        return value or ''
-
-    # 自动生成占位 SN，避免唯一约束报错
-    sn = f"AUTO-{uuid.uuid4().hex[:8].upper()}"
-
-    suggested_price = order.final_price or order.estimated_price
-    cost_price = order.final_price or order.estimated_price
-
-    # 从模板/订单决定具体配置
-    storage = _pick_from_template(order.storage, getattr(template, 'storages', []))
-    ram = _pick_from_template(getattr(order, 'selected_ram', ''), getattr(template, 'ram_options', []))
-    version = _pick_from_template(getattr(order, 'selected_version', ''), getattr(template, 'version_options', []))
-    color = _pick_from_template(getattr(order, 'selected_color', ''), getattr(template, 'color_options', []))
-
-    device = VerifiedDevice.objects.create(
-        recycle_order=order,
-        template=template,
-        seller=getattr(order, 'user', None),
-        category=getattr(template, 'category', None) if template else None,
-        sn=sn,
-        brand=getattr(template, 'brand', None) or order.brand,
-        model=getattr(template, 'model', None) or order.model,
-        storage=storage or '',
-        ram=ram or '',
-        version=version or '',
-        color=color or '',
-        condition=order.condition or 'good',
-        status=status,
-        location=location,
-        suggested_price=suggested_price,
-        cost_price=cost_price,
-        inspection_note=order.note or ''
-    )
-
-    # 同步回收订单的最新质检报告到库存，保证“官方验库存/商品详情”展示一致
-    try:
-        from app.admin_api.models import AdminInspectionReport
-
-        report = AdminInspectionReport.objects.filter(order=order).order_by('-created_at').first()
-        if report and report.check_items:
-            check_items = report.check_items
-            categories = []
-            if isinstance(check_items, list):
-                if len(check_items) and isinstance(check_items[0], dict) and ('title' in check_items[0] or 'groups' in check_items[0]):
-                    categories = check_items
-                else:
-                    categories = [{
-                        'title': '检测结果',
-                        'groups': [{
-                            'name': '',
-                            'items': [{
-                                'label': (item.get('label') or item.get('key') or ''),
-                                'value': item.get('value', ''),
-                                'pass': bool(item.get('pass')) if isinstance(item.get('pass'), bool) else (item.get('value') in ['pass', True])
-                            } for item in check_items if isinstance(item, dict)]
-                        }]
-                    }]
-            elif isinstance(check_items, dict):
-                categories = [{
-                    'title': '检测结果',
-                    'groups': [{
-                        'name': '',
-                        'items': [{
-                            'label': str(k),
-                            'value': v,
-                            'pass': (v == 'pass' or v is True)
-                        } for k, v in check_items.items()]
-                    }]
-                }]
-
-            if categories:
-                device.inspection_reports = categories
-                device.save(update_fields=['inspection_reports', 'updated_at'])
-    except Exception:
-        # 不影响主流程
-        pass
-    return device
 
 
 def create_verified_product_from_device(device, status='active'):
@@ -697,33 +577,137 @@ def create_verified_product_from_device(device, status='active'):
     if not template or (hasattr(template, 'is_active') and not template.is_active):
         raise ValueError('未关联有效的机型模板，无法生成官方验商品')
 
-    def _ensure_option(value, options, field_name):
+    def _norm_token(s):
+        return ''.join(ch for ch in str(s or '').strip().lower() if ch.isalnum())
+
+    def _ensure_option(value, options, field_name, allow_blank=False, aliases=None):
+        """
+        校验某个字段值是否在模板允许的选项中。
+        - allow_blank=True：值为空时跳过校验（用于 ram/version/color 等可选字段）
+        - allow_blank=False：值为空视为缺失（用于 storage 等必填字段）
+        """
+        normalized = str(value or '').strip()
+        if not normalized:
+            if allow_blank:
+                return value
+            raise ValueError(f'{field_name} 不能为空')
         if not options:
             return value
-        normalized = str(value or '').strip().lower()
-        for opt in options:
-            if str(opt).strip().lower() == normalized:
-                return value
-        raise ValueError(f'{field_name} 不在模板允许的选项中')
+        option_index = {_norm_token(opt): str(opt).strip() for opt in (options or []) if str(opt).strip()}
+        # 先按原值匹配（忽略大小写/空格/符号）
+        hit = option_index.get(_norm_token(normalized))
+        if hit:
+            return hit
+        # 再按别名匹配（比如 black -> 黑色）
+        for a in (aliases or []):
+            if not a:
+                continue
+            hit = option_index.get(_norm_token(a))
+            if hit:
+                return hit
+        preview = ' / '.join(list(option_index.values())[:8])
+        suffix = f'（允许：{preview}）' if preview else ''
+        raise ValueError(f'{field_name} 不在模板允许的选项中{suffix}')
 
-    _ensure_option(device.storage, getattr(template, 'storages', []), 'storage')
-    _ensure_option(device.ram, getattr(template, 'ram_options', []), 'ram')
-    _ensure_option(device.version, getattr(template, 'version_options', []), 'version')
-    _ensure_option(device.color, getattr(template, 'color_options', []), 'color')
+    storage = _ensure_option(device.storage, getattr(template, 'storages', []), '存储容量', allow_blank=False)
+
+    # RAM / 版本 / 颜色：当模板配置了可选项时，要求必须填写且需命中选项；
+    # 若模板未配置选项（或仅有空字符串等无效项），则允许留空。
+    def _clean_options(raw_options):
+        cleaned = []
+        seen = set()
+        for x in list(raw_options or []):
+            s = str(x or "").strip()
+            if not s:
+                continue
+            key = s.lower()
+            if key in seen:
+                continue
+            cleaned.append(s)
+            seen.add(key)
+        return cleaned
+
+    ram_options = _clean_options(getattr(template, 'ram_options', []) or [])
+    version_options = _clean_options(getattr(template, 'version_options', []) or [])
+    color_options = _clean_options(getattr(template, 'color_options', []) or [])
+
+    # 常见别名映射：允许库存里存的是英文/简写，但模板配置的是中文时仍能命中
+    color_aliases = {
+        'black': ['黑色', '黑'],
+        'white': ['白色', '白'],
+        'silver': ['银色', '银'],
+        'gold': ['金色', '金'],
+        'blue': ['蓝色', '蓝'],
+        'green': ['绿色', '绿'],
+        'purple': ['紫色', '紫'],
+        'red': ['红色', '红'],
+        'pink': ['粉色', '粉'],
+        'gray': ['灰色', '灰', '深空灰', '深灰'],
+        'grey': ['灰色', '灰', '深空灰', '深灰'],
+        'spacegray': ['深空灰', '深空灰色', '深灰'],
+    }
+    version_aliases = {
+        'cn': ['国行'],
+        'china': ['国行'],
+        'guohang': ['国行'],
+        'hk': ['港版'],
+        'hongkong': ['港版'],
+        'us': ['美版'],
+        'usa': ['美版'],
+        'jp': ['日版'],
+        'japan': ['日版'],
+    }
+
+    ram = _ensure_option(device.ram, ram_options, '运行内存', allow_blank=(len(ram_options) == 0))
+    version = _ensure_option(
+        device.version,
+        version_options,
+        '版本',
+        allow_blank=(len(version_options) == 0),
+        aliases=version_aliases.get(_norm_token(device.version), [])
+    )
+    color = _ensure_option(
+        device.color,
+        color_options,
+        '颜色',
+        allow_blank=(len(color_options) == 0),
+        aliases=color_aliases.get(_norm_token(device.color), [])
+    )
+
+    # 若命中别名/规范化，顺带回写库存设备，保证库存与模板一致
+    updated_fields = []
+    if storage is not None and (device.storage or '') != (storage or ''):
+        device.storage = storage or ''
+        updated_fields.append('storage')
+    if ram is not None and (device.ram or '') != (ram or ''):
+        device.ram = ram or ''
+        updated_fields.append('ram')
+    if version is not None and (device.version or '') != (version or ''):
+        device.version = version or ''
+        updated_fields.append('version')
+    if color is not None and (device.color or '') != (color or ''):
+        device.color = color or ''
+        updated_fields.append('color')
+    if updated_fields:
+        updated_fields.append('updated_at')
+        device.save(update_fields=updated_fields)
     title = f"{device.brand} {device.model}".strip()
     if device.storage:
         title = f"{title} {device.storage}"
 
     description = ''
     if template and getattr(template, 'description_template', ''):
-        description = template.description_template.format(
-            brand=device.brand or '',
-            model=device.model or '',
-            storage=device.storage or '',
-            condition=device.get_condition_display() if hasattr(device, 'get_condition_display') else device.condition,
-            ram=device.ram or '',
-            version=device.version or ''
-        )
+        try:
+            description = template.description_template.format(
+                brand=device.brand or '',
+                model=device.model or '',
+                storage=device.storage or '',
+                condition=device.get_condition_display() if hasattr(device, 'get_condition_display') else device.condition,
+                ram=device.ram or '',
+                version=device.version or ''
+            )
+        except Exception:
+            description = f"{device.brand} {device.model} {device.storage}".strip()
     else:
         description = f"{device.brand} {device.model} {device.storage}".strip()
 
@@ -744,9 +728,9 @@ def create_verified_product_from_device(device, status='active'):
         device_type=getattr(template, 'device_type', '') if template else '',
         brand=device.brand,
         model=device.model,
-        storage=device.storage,
-        ram=device.ram,
-        version=device.version,
+        storage=storage,
+        ram=ram,
+        version=version,
         screen_size=getattr(template, 'screen_size', ''),
         battery_health=device.battery_health or '',
         charging_type=getattr(template, 'charging_type', ''),

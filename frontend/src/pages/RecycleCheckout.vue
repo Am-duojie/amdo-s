@@ -75,6 +75,7 @@
                 </el-button>
               </div>
             </div>
+
           </div>
         </div>
 
@@ -84,21 +85,30 @@
             <div class="section-title">收款信息</div>
             <el-link type="primary" :underline="false" @click="editPayment" style="display: flex; align-items: center; gap: 4px;">
               <el-icon><Edit /></el-icon>
-              <span>修改收款信息</span>
+              <span>{{ isAlipayBound ? '修改收款信息' : '去绑定收款信息' }}</span>
             </el-link>
           </div>
+
+          <el-alert
+            v-if="!isAlipayBound"
+            type="warning"
+            :closable="false"
+            title="请先绑定支付宝收款账号"
+            description="回收打款会使用钱包中绑定的支付宝账号"
+            style="margin: 12px 0"
+          />
           
           <div class="payment-info">
             <div class="payment-method-label">收款方式</div>
             <div class="payment-account">
               <div class="payment-icon">💳</div>
-              <div class="payment-details">
-                <div class="account-name">{{ paymentAccount.name || '未设置' }}</div>
-                <div class="account-number">{{ paymentAccount.number || '请设置收款账户' }}</div>
+                <div class="payment-details">
+                  <div class="account-name">支付宝姓名：{{ alipayRealName || '未填写' }}</div>
+                  <div class="account-number">支付宝账号：{{ alipayLoginId || '未绑定' }}</div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
         <!-- 平台回收承担快递费用概览 -->
         <div class="fee-overview-section">
@@ -131,10 +141,13 @@ import { computed, ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Edit } from "@element-plus/icons-vue";
+import api from "@/utils/api";
+import { useAuthStore } from "@/stores/auth";
 import { useRecycleDraftStore, type ConditionLevel } from "@/stores/recycleDraft";
 import { estimateRecyclePrice, createRecycleOrder } from "@/api/recycle";
 
 const router = useRouter();
+const authStore = useAuthStore();
 const draft = useRecycleDraftStore();
 
 // 订单信息
@@ -181,11 +194,28 @@ const ready = computed(() => !!(draft.selection.device_type && draft.selection.b
 // 邮寄方式（仅支持自行邮寄）
 const shippingMethod = ref("self_post");
 
-// 收款信息
-const paymentAccount = ref({
-  name: "安多杰尚",
-  number: "17710113440",
-});
+// 收款信息：使用钱包中绑定的支付宝信息
+const walletAlipay = ref<{ login_id: string; real_name: string }>({ login_id: "", real_name: "" });
+
+const alipayLoginId = computed(() => walletAlipay.value.login_id || authStore.user?.alipay_login_id || "");
+const alipayRealName = computed(() => walletAlipay.value.real_name || authStore.user?.alipay_real_name || "");
+const isAlipayBound = computed(() => Boolean(alipayLoginId.value));
+
+const paymentAccount = computed(() => ({
+  name: alipayRealName.value || "支付宝",
+  number: alipayLoginId.value,
+}));
+
+const loadWalletAlipay = async () => {
+  try {
+    const res = await api.get("/users/me/");
+    walletAlipay.value.login_id = res.data?.alipay_login_id || "";
+    walletAlipay.value.real_name = res.data?.alipay_real_name || "";
+  } catch {
+    walletAlipay.value.login_id = authStore.user?.alipay_login_id || "";
+    walletAlipay.value.real_name = authStore.user?.alipay_real_name || "";
+  }
+};
 
 // 平台收件信息（自行邮寄时显示）
 const platformRecipient = ref({
@@ -211,8 +241,7 @@ const feeOverviewData = [
 
 // 编辑收款信息
 function editPayment() {
-  ElMessage.info("收款信息编辑功能待实现");
-  // TODO: 打开收款信息编辑对话框
+  router.push("/profile?tab=wallet-bind");
 }
 
 // 复制到剪贴板
@@ -238,6 +267,11 @@ async function copyToClipboard(text: string) {
 
 // 页面加载时，如果没有价格数据，重新触发估价
 onMounted(async () => {
+  if (!authStore.user) {
+    await authStore.init();
+  }
+  await loadWalletAlipay();
+
   // 检查是否有必要信息进行估价
   const hasBasicInfo = draft.selection.device_type && draft.selection.brand && draft.selection.model && draft.storage;
   
@@ -301,13 +335,18 @@ onMounted(async () => {
 
 // 是否可以提交
 const canSubmit = computed(() => {
-  return ready.value; // 自行邮寄不需要额外验证
+  return ready.value && isAlipayBound.value;
 });
 
 // 提交订单
 async function handleSubmit() {
   if (!canSubmit.value) {
-    ElMessage.warning("请完善所有必填信息");
+    if (!ready.value) {
+      ElMessage.warning("请完善机型与问卷信息");
+      return;
+    }
+    ElMessage.warning("请先在钱包绑定支付宝收款账号");
+    router.push("/profile?tab=wallet-bind");
     return;
   }
 
@@ -324,6 +363,12 @@ async function handleSubmit() {
 
   if (!draft.estimated_price || draft.estimated_price <= 0) {
     ElMessage.warning("价格信息不完整，请重新填写问卷");
+    return;
+  }
+
+  if (!isAlipayBound.value) {
+    ElMessage.warning("请先在钱包绑定支付宝收款账号");
+    router.push("/profile?tab=wallet-bind");
     return;
   }
 
@@ -358,18 +403,12 @@ async function handleSubmit() {
       condition: draft.condition || "good",
       estimated_price: draft.estimated_price,
       bonus: draft.bonus || 0,
-      // 联系人信息：使用收款账户信息作为默认值，实际应该从用户资料或表单获取
-      contact_name: paymentAccount.value.name || "用户",
-      contact_phone: paymentAccount.value.number || "",
       address: platformRecipient.value.address || "",
+      // 打款信息：使用钱包绑定的支付宝
+      payment_method: "alipay",
+      payment_account: alipayLoginId.value,
       note: `基础价格: ¥${draft.base_price || 0}, 成色: ${conditionText.value}`,
     };
-
-    // 验证联系人信息
-    if (!orderData.contact_phone) {
-      ElMessage.warning("请设置收款账户信息");
-      return;
-    }
 
     console.log("提交订单数据:", orderData);
 

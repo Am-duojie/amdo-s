@@ -36,16 +36,6 @@
         <div class="card-header">
         <span>订单信息</span>
         <div class="card-actions">
-          <el-button
-            v-if="detail.status === 'completed' && hasPerm('verified:write')"
-            size="small"
-            type="primary"
-            plain
-            :loading="creatingDevice"
-            @click="createVerifiedDevice"
-            >
-              生成官方验库存
-            </el-button>
              <el-tag :type="displayStatusTag.type" size="large">{{ displayStatusTag.text }}</el-tag>
             <el-tag v-if="detail.payment_status === 'failed'" type="danger" size="large" style="margin-left: 8px">打款失败</el-tag>
           </div>
@@ -92,8 +82,6 @@
           </span>
           <span v-else>-</span>
         </el-descriptions-item>
-        <el-descriptions-item label="联系人">{{ detail.contact_name }}</el-descriptions-item>
-        <el-descriptions-item label="联系电话">{{ detail.contact_phone }}</el-descriptions-item>
         <el-descriptions-item label="收货地址" :span="2">{{ detail.address }}</el-descriptions-item>
         <el-descriptions-item label="备注" :span="2">{{ detail.note || '-' }}</el-descriptions-item>
         <el-descriptions-item label="创建时间">{{ formatTime(detail.created_at) }}</el-descriptions-item>
@@ -137,7 +125,7 @@
           :key="key"
           :label="formatQuestionKey(key)"
         >
-          {{ value }}
+          <span class="answer-text">{{ formatAnswerValue(value) }}</span>
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
@@ -169,20 +157,11 @@
     </el-card>
 
     <!-- 价格管理 -->
-    <el-card v-if="canManagePrice && !isShippedStage" class="detail-section" shadow="never">
+    <el-card ref="priceSectionRef" v-if="canManagePrice && !isShippedStage" class="detail-section" shadow="never">
       <template #header>
         <span>价格管理</span>
       </template>
       <el-form :model="priceForm" label-width="120px" style="max-width: 600px">
-        <el-form-item label="预估价格">
-          <el-input-number
-            v-model="priceForm.estimated_price"
-            :precision="2"
-            :min="0"
-            style="width: 100%"
-            :disabled="detail.status !== 'pending'"
-          />
-        </el-form-item>
         <el-form-item label="最终价格" required>
           <el-input-number
             v-model="priceForm.final_price"
@@ -208,14 +187,6 @@
           </div>
         </el-form-item>
         <el-form-item>
-          <el-button 
-            v-if="detail.status === 'pending' && hasPerm('inspection:price')"
-            type="primary" 
-            :loading="savingPrice" 
-            @click="saveEstimatedPrice"
-          >
-            设置预估价格并标记为已估价
-          </el-button>
           <el-button 
             v-if="detail.status === 'inspected' && hasPerm('inspection:price')"
             type="primary" 
@@ -265,15 +236,6 @@
         <span>流程操作</span>
       </template>
       <div class="action-buttons">
-        <!-- 估价操作 -->
-        <el-button
-          v-if="detail.status === 'pending' && hasPerm('inspection:write')"
-          type="primary"
-          @click="showPriceDialog('estimated')"
-        >
-          给出预估价格
-        </el-button>
-        
         <!-- 确认收货操作 -->
         <el-button
           v-if="detail.status === 'shipped' && !detail.received_at && hasPerm('inspection:write')"
@@ -336,16 +298,6 @@
         >
           {{ paymentBlockedReason }}
         </el-tag>
-        
-        <!-- 发布为官方验商品 -->
-        <el-button
-          v-if="detail.status === 'inspected' && detail.final_price && hasPerm('recycled:write')"
-          type="success"
-          @click="publishToVerified"
-          :loading="publishing"
-        >
-          发布为官方验商品
-        </el-button>
         
         <!-- 取消订单 -->
         <el-button
@@ -644,35 +596,6 @@
       </template>
     </el-dialog>
 
-    <!-- 价格对话框 -->
-    <el-dialog
-      v-model="priceDialogVisible"
-      title="设置预估价格"
-      width="500px"
-      @close="priceDialogVisible = false"
-    >
-      <el-form :model="priceForm" label-width="120px">
-        <el-form-item label="预估价格" required>
-          <el-input-number
-            v-model="priceForm.estimated_price"
-            :precision="2"
-            :min="0"
-            style="width: 100%"
-            placeholder="请输入预估价格"
-          />
-          <div style="font-size: 12px; color: #909399; margin-top: 4px">
-            设置预估价格（订单提交后已自动进入"已寄出"状态）
-          </div>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="priceDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="savingPrice" @click="saveEstimatedPrice">
-          保存
-        </el-button>
-      </template>
-    </el-dialog>
-
     <!-- 打款对话框 -->
     <el-dialog
       v-model="showPaymentDialog"
@@ -736,7 +659,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import adminApi from '@/utils/adminApi'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -752,6 +675,10 @@ const props = defineProps({
   orderId: {
     type: Number,
     required: true
+  },
+  initialAction: {
+    type: String,
+    default: ''
   }
 })
 
@@ -768,17 +695,14 @@ const markingReceived = ref(false)
 const updatingStatus = ref(false)
 const completing = ref(false)
 const processingPayment = ref(false)
-const publishing = ref(false)
-const creatingDevice = ref(false)
 
 const showReportDialog = ref(false)
-const priceDialogVisible = ref(false)
 const showPaymentDialog = ref(false)
 const inspectionPreviewVisible = ref(false)
 const inspectionPreviewSrcList = ref([])
+const priceSectionRef = ref(null)
 
 const priceForm = reactive({
-  estimated_price: 0,
   final_price: 0,
   bonus: 0
 })
@@ -1153,7 +1077,7 @@ const processSteps = [
 ]
 
 const statusMap = {
-  pending: { text: '待估价', type: 'info' },
+  pending: { text: '待寄出', type: 'info' },
   received: { text: '已收货', type: 'success' },
   shipped: { text: '已寄出', type: 'primary' },
   inspected: { text: '已检测', type: 'success' },
@@ -1211,7 +1135,8 @@ const canCreateReport = computed(() => {
 })
 
 const canManagePrice = computed(() => {
-  return detail.value && ['pending', 'received', 'inspected'].includes(detail.value.status)
+  // 用户未寄出阶段（pending）不允许管理端“估价/改预估价”
+  return detail.value && detail.value.status === 'inspected'
 })
 
 const isShippedStage = computed(() => detail.value?.status === 'shipped')
@@ -1222,7 +1147,6 @@ const loadDetail = async () => {
     const res = await adminApi.get(`/inspection-orders/${props.orderId}`)
     if (res.data?.success) {
       detail.value = res.data.item || {}
-      priceForm.estimated_price = detail.value.estimated_price || 0
       priceForm.final_price = detail.value.final_price || 0
       priceForm.bonus = detail.value.bonus || 0
       
@@ -1242,14 +1166,48 @@ const loadDetail = async () => {
   }
 }
 
+const applyInitialAction = async () => {
+  const action = (props.initialAction || '').trim()
+  if (!action) return
+
+  if (action === 'report') {
+    if (canCreateReport.value) {
+      showReportDialog.value = true
+    }
+    return
+  }
+
+  if (action === 'payment') {
+    if (detail.value?.status === 'completed' && detail.value?.payment_status !== 'paid') {
+      openPaymentDialog()
+    }
+    return
+  }
+
+  if (action === 'final-price') {
+    await nextTick()
+    const el = priceSectionRef.value?.$el || priceSectionRef.value
+    el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  }
+}
+
 watch(
   () => props.orderId,
-  (val) => {
+  async (val) => {
     if (val) {
-      loadDetail()
+      await loadDetail()
+      await applyInitialAction()
     }
   },
   { immediate: true }
+)
+
+watch(
+  () => props.initialAction,
+  async () => {
+    if (!detail.value?.id) return
+    await applyInitialAction()
+  }
 )
 
 const markReceived = async () => {
@@ -1276,58 +1234,6 @@ const markReceived = async () => {
     ElMessage.error(errorMsg)
   } finally {
     markingReceived.value = false
-  }
-}
-
-const showPriceDialog = (type) => {
-  if (type === 'estimated') {
-    priceForm.estimated_price = detail.value.estimated_price || 0
-  }
-  priceDialogVisible.value = true
-}
-
-const saveEstimatedPrice = async () => {
-  if (!priceForm.estimated_price || priceForm.estimated_price <= 0) {
-    ElMessage.warning('请输入有效的预估价格')
-    return
-  }
-  
-  // 检查token是否存在
-  const token = localStorage.getItem('ADMIN_TOKEN')
-  if (!token) {
-    ElMessage.error('登录已过期，请重新登录')
-    setTimeout(() => {
-      window.location.href = '/admin/login'
-    }, 1000)
-    return
-  }
-  
-  try {
-    savingPrice.value = true
-    
-    // 直接发送请求，让拦截器处理token
-    await adminApi.put(`/inspection-orders/${props.orderId}/price`, {
-      price_type: 'estimated',
-      estimated_price: priceForm.estimated_price
-    })
-    ElMessage.success('预估价格设置成功')
-    priceDialogVisible.value = false
-    await loadDetail()
-    emit('updated')
-  } catch (error) {
-    console.error('保存预估价格失败:', error, error.response)
-    
-    // 如果是401错误，拦截器已经处理了跳转和错误提示，这里不需要重复处理
-    if (error.response?.status === 401) {
-      // 拦截器已经显示了错误提示并会跳转，这里不需要额外处理
-      return
-    }
-    
-    // 其他错误显示具体错误信息
-    const errorMsg = error.response?.data?.detail || error.response?.data?.error || error.message || '保存失败'
-    ElMessage.error(errorMsg)
-  } finally {
-    savingPrice.value = false
   }
 }
 
@@ -1463,42 +1369,7 @@ const processPayment = async () => {
   }
 }
 
-const createVerifiedDevice = async () => {
-  try {
-    creatingDevice.value = true
-    const res = await adminApi.post(`/recycle-orders/${props.orderId}/create-verified-device/`)
-    const msg = res.data?.detail || '已生成官方验库存'
-    ElMessage.success(msg)
-    await loadDetail()
-    emit('updated')
-  } catch (error) {
-    const msg = error.response?.data?.detail || '生成失败，请稍后重试'
-    ElMessage.error(msg)
-  } finally {
-    creatingDevice.value = false
-  }
-}
-
-const publishToVerified = async () => {
-  try {
-    await ElMessageBox.confirm(
-      '确认将此回收商品发布为官方验商品吗？',
-      '确认发布',
-      { type: 'warning' }
-    )
-    publishing.value = true
-    await adminApi.post(`/inspection-orders/${props.orderId}/publish-verified`)
-    ElMessage.success('发布成功')
-    await loadDetail()
-    emit('updated')
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('发布失败')
-    }
-  } finally {
-    publishing.value = false
-  }
-}
+// 已移除“从回收订单侧发起的官方验发布/入库”能力：库存导入改为在“官方验库存管理”中手动选择来源回收单。
 
 const cancelOrder = async () => {
   try {
@@ -1547,6 +1418,16 @@ const formatTime = (time) => {
 // 格式化问卷问题的 key 为可读文本
 const formatQuestionKey = (key) => {
   const keyMap = {
+    body: '机身外观',
+    usage: '使用情况',
+    repair: '维修情况',
+    display: '屏幕显示',
+    functional: '功能状况',
+    accessories: '配件情况',
+    rear_camera: '后置摄像头',
+    front_camera: '前置摄像头',
+    screen_repair: '屏幕维修',
+    screen_appearance: '屏幕外观',
     channel: '购买渠道',
     color: '颜色',
     storage: '存储容量',
@@ -1562,6 +1443,57 @@ const formatQuestionKey = (key) => {
     water_damage: '进水情况'
   }
   return keyMap[key] || key
+}
+
+const tryParseJsonLike = (text) => {
+  if (!text) return null
+  const trimmed = String(text).trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    // 兼容历史/种子数据：Python dict 字符串（单引号）
+    try {
+      const fixed = trimmed
+        .replace(/\bNone\b/g, 'null')
+        .replace(/\bTrue\b/g, 'true')
+        .replace(/\bFalse\b/g, 'false')
+        .replace(/'/g, '"')
+      return JSON.parse(fixed)
+    } catch {
+      return null
+    }
+  }
+}
+
+const normalizeAnswerValue = (value) => {
+  if (value == null) return null
+  if (typeof value === 'string') {
+    const parsed = tryParseJsonLike(value)
+    return parsed ?? value
+  }
+  return value
+}
+
+const formatAnswerValue = (raw) => {
+  const value = normalizeAnswerValue(raw)
+  if (value == null) return '-'
+  if (Array.isArray(value)) {
+    return value.map(v => formatAnswerValue(v)).filter(Boolean).join('、') || '-'
+  }
+  if (typeof value === 'object') {
+    const label = value.label || value.desc || value.name
+    const code = value.value
+    if (label) return String(label)
+    if (code) {
+      const s = String(code)
+      // 只剩英文 code 时，不展示英文
+      if (/^[\x00-\x7F]+$/.test(s)) return '未知'
+      return s
+    }
+    return JSON.stringify(value)
+  }
+  return String(value)
 }
 
 onMounted(() => {
@@ -1597,6 +1529,11 @@ onMounted(() => {
   margin: 0;
   max-height: 300px;
   overflow: auto;
+}
+
+.answer-text {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .action-buttons {

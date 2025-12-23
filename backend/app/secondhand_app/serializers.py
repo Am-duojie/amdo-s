@@ -6,8 +6,8 @@ import uuid
 from .models import (
     Category, Product, ProductImage, Order, Message, Favorite, Address, UserProfile, RecycleOrder,
     VerifiedProduct, VerifiedProductImage, VerifiedOrder, VerifiedFavorite, Shop, VerifiedDevice,
-    create_verified_device_from_recycle_order
 )
+from app.admin_api.models import RecycleDeviceTemplate
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -495,7 +495,7 @@ class RecycleOrderSerializer(serializers.ModelSerializer):
             'selected_storage', 'selected_color', 'selected_ram', 'selected_version',
             'questionnaire_answers',
             'condition', 'estimated_price', 'final_price', 'bonus',
-            'status', 'contact_name', 'contact_phone', 'address',
+            'status', 'address',
             'note', 'shipping_carrier', 'tracking_number', 'shipped_at',
             'received_at', 'inspected_at', 'paid_at', 'payment_status',
             'payment_method', 'payment_account', 'payment_note',
@@ -586,14 +586,6 @@ class RecycleOrderSerializer(serializers.ModelSerializer):
         # 这些字段已经在fields中定义，应该可以正常更新
         updated_order = super().update(instance, validated_data)
 
-        # 自动：收货/质检/完成后，生成官方验库存（避免重复）
-        if updated_order.status in ['received', 'inspected', 'completed']:
-            try:
-                create_verified_device_from_recycle_order(updated_order)
-            except Exception:
-                # 避免影响主流程，失败可在后台查看日志后手动触发
-                pass
-
         return updated_order
 
 
@@ -609,27 +601,145 @@ class VerifiedDeviceSerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
     category_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     seller = UserSerializer(read_only=True)
+    template_id = serializers.PrimaryKeyRelatedField(
+        source='template',
+        queryset=RecycleDeviceTemplate.objects.all(),
+        required=False,
+        allow_null=True
+    )
 
     class Meta:
         model = VerifiedDevice
         fields = [
-            'id', 'sn', 'imei', 'brand', 'model', 'storage', 'condition', 'status',
+            'id', 'sn', 'imei', 'brand', 'model', 'storage', 'ram', 'version', 'color', 'condition', 'status',
             'location', 'barcode', 'cost_price', 'suggested_price',
             'cover_image', 'detail_images', 'inspection_reports',
             'inspection_result', 'inspection_date', 'inspection_staff', 'inspection_note',
             'battery_health', 'screen_condition', 'repair_history',
             'recycle_order', 'category', 'category_id', 'seller',
+            'template_id',
             'linked_product', 'created_at', 'updated_at'
         ]
         read_only_fields = ['seller', 'linked_product', 'created_at', 'updated_at']
 
     def validate(self, attrs):
+        instance = getattr(self, 'instance', None)
         category_id = attrs.get('category_id')
         if category_id:
             try:
                 attrs['category'] = Category.objects.get(id=category_id)
             except Category.DoesNotExist:
                 raise serializers.ValidationError({'category_id': '分类不存在'})
+
+        # ---- 机型模板强关联：杜绝库存与模板不一致 ----
+        template = attrs.get('template') or getattr(instance, 'template', None)
+        brand = (attrs.get('brand') or getattr(instance, 'brand', '') or '').strip()
+        model = (attrs.get('model') or getattr(instance, 'model', '') or '').strip()
+        if not template and brand and model:
+            template = RecycleDeviceTemplate.objects.filter(
+                is_active=True,
+                brand__iexact=brand,
+                model__iexact=model,
+            ).first()
+            if template:
+                attrs['template'] = template
+
+        if not template:
+            raise serializers.ValidationError({'template_id': '未匹配到机型模板，请先在回收机型模板管理创建并启用'})
+
+        def _norm_token(s):
+            return ''.join(ch for ch in str(s or '').strip().lower() if ch.isalnum())
+
+        def _clean_options(raw_options):
+            cleaned = []
+            seen = set()
+            for x in list(raw_options or []):
+                s = str(x or "").strip()
+                if not s:
+                    continue
+                key = _norm_token(s)
+                if key in seen:
+                    continue
+                cleaned.append(s)
+                seen.add(key)
+            return cleaned
+
+        def _ensure_option(value, options, field_key, field_label, allow_blank=False, aliases=None):
+            normalized = str(value or '').strip()
+            if not normalized:
+                if allow_blank:
+                    return ''
+                raise serializers.ValidationError({field_key: f'{field_label}不能为空'})
+            if not options:
+                return normalized
+            option_index = {_norm_token(opt): str(opt).strip() for opt in (options or []) if str(opt).strip()}
+            hit = option_index.get(_norm_token(normalized))
+            if hit:
+                return hit
+            for a in (aliases or []):
+                hit = option_index.get(_norm_token(a))
+                if hit:
+                    return hit
+            raise serializers.ValidationError({field_key: f'{field_label}不在模板允许的选项中'})
+
+        color_aliases = {
+            'black': ['黑色', '黑'],
+            'white': ['白色', '白'],
+            'silver': ['银色', '银'],
+            'gold': ['金色', '金'],
+            'blue': ['蓝色', '蓝'],
+            'green': ['绿色', '绿'],
+            'purple': ['紫色', '紫'],
+            'red': ['红色', '红'],
+            'pink': ['粉色', '粉'],
+            'gray': ['灰色', '灰', '深空灰', '深灰'],
+            'grey': ['灰色', '灰', '深空灰', '深灰'],
+            'spacegray': ['深空灰', '深空灰色', '深灰'],
+        }
+        version_aliases = {
+            'cn': ['国行'],
+            'china': ['国行'],
+            'guohang': ['国行'],
+            'hk': ['港版'],
+            'hongkong': ['港版'],
+            'us': ['美版'],
+            'usa': ['美版'],
+            'jp': ['日版'],
+            'japan': ['日版'],
+        }
+
+        storages = _clean_options(getattr(template, 'storages', []) or [])
+        ram_options = _clean_options(getattr(template, 'ram_options', []) or [])
+        version_options = _clean_options(getattr(template, 'version_options', []) or [])
+        color_options = _clean_options(getattr(template, 'color_options', []) or [])
+
+        storage_val = attrs.get('storage') if 'storage' in attrs else getattr(instance, 'storage', '')
+        ram_val = attrs.get('ram') if 'ram' in attrs else getattr(instance, 'ram', '')
+        version_val = attrs.get('version') if 'version' in attrs else getattr(instance, 'version', '')
+        color_val = attrs.get('color') if 'color' in attrs else getattr(instance, 'color', '')
+
+        attrs['storage'] = _ensure_option(storage_val, storages, 'storage', '存储容量', allow_blank=False)
+        attrs['ram'] = _ensure_option(ram_val, ram_options, 'ram', '运行内存', allow_blank=(len(ram_options) == 0))
+        attrs['version'] = _ensure_option(
+            version_val,
+            version_options,
+            'version',
+            '版本',
+            allow_blank=(len(version_options) == 0),
+            aliases=version_aliases.get(_norm_token(version_val), [])
+        )
+        attrs['color'] = _ensure_option(
+            color_val,
+            color_options,
+            'color',
+            '颜色',
+            allow_blank=(len(color_options) == 0),
+            aliases=color_aliases.get(_norm_token(color_val), [])
+        )
+
+        # 自动补分类（若模板有分类且库存未填）
+        if getattr(template, 'category_id', None) and not (attrs.get('category') or getattr(instance, 'category_id', None)):
+            attrs['category'] = template.category
         return attrs
 
     def create(self, validated_data):

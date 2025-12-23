@@ -5,76 +5,115 @@
       <!-- 左侧边栏 -->
       <div class="sidebar">
         <div class="sidebar-menu">
-          <!-- 我的易淘 -->
-          <div class="menu-item" :class="{ active: activeMenu === 'home' }" @click="switchMenu('home')">
-            <el-icon><User /></el-icon>
-            <span>我的易淘</span>
-          </div>
+          <template v-if="!isVerifiedZone">
+            <!-- 我的易淘 -->
+            <div class="menu-item" :class="{ active: activeMenu === 'home' }" @click="switchMenu('home')">
+              <el-icon><User /></el-icon>
+              <span>我的易淘</span>
+            </div>
 
-          <!-- 我的交易 -->
-          <div class="menu-group">
-            <div class="menu-header" @click="toggleMenu('trade')">
-              <el-icon><ShoppingBag /></el-icon>
-              <span>我的交易</span>
-              <el-icon class="arrow" :class="{ expanded: expandedMenus.trade }"><ArrowDown /></el-icon>
+            <!-- 官方验入口（账号信息共享，订单独立） -->
+            <div class="menu-item" @click="goToVerifiedProfile">
+              <el-icon><DocumentChecked /></el-icon>
+              <span>我的官方验</span>
             </div>
-            <div class="submenu" v-show="expandedMenus.trade">
-              <div class="submenu-item" :class="{ active: activeMenu === 'published' }" @click="switchMenu('published')">
-                我发布的
-              </div>
-              <div class="submenu-item" :class="{ active: activeMenu === 'sold' }" @click="switchMenu('sold')">
-                我卖出的
-              </div>
-              <div class="submenu-item" :class="{ active: activeMenu === 'bought' }" @click="switchMenu('bought')">
-                我买到的
-              </div>
-            </div>
-          </div>
 
-          <!-- 我的收藏 -->
-          <div class="menu-item" :class="{ active: activeMenu === 'favorites' }" @click="switchMenu('favorites')">
-            <el-icon><Star /></el-icon>
-            <span>我的收藏</span>
-          </div>
+            <!-- 我的交易 -->
+            <div class="menu-group">
+              <div class="menu-header" @click="toggleMenu('trade')">
+                <el-icon><ShoppingBag /></el-icon>
+                <span>我的交易</span>
+                <el-icon class="arrow" :class="{ expanded: expandedMenus.trade }"><ArrowDown /></el-icon>
+              </div>
+              <div class="submenu" v-show="expandedMenus.trade">
+                <div class="submenu-item" :class="{ active: activeMenu === 'published' }" @click="switchMenu('published')">
+                  我发布的
+                </div>
+                <div class="submenu-item" :class="{ active: activeMenu === 'sold' }" @click="switchMenu('sold')">
+                  我卖出的
+                </div>
+                <div class="submenu-item" :class="{ active: activeMenu === 'bought' }" @click="switchMenu('bought')">
+                  我买到的
+                </div>
+              </div>
+            </div>
 
-          <!-- 我的钱包 -->
-          <div class="menu-group">
-            <div class="menu-header" @click="toggleMenu('wallet')">
-              <el-icon><Wallet /></el-icon>
-              <span>我的钱包</span>
-              <el-icon class="arrow" :class="{ expanded: expandedMenus.wallet }"><ArrowDown /></el-icon>
+            <!-- 我的收藏 -->
+            <div class="menu-item" :class="{ active: activeMenu === 'favorites' }" @click="switchMenu('favorites')">
+              <el-icon><Star /></el-icon>
+              <span>我的收藏</span>
             </div>
-            <div class="submenu" v-show="expandedMenus.wallet">
-              
-              <div class="submenu-item" :class="{ active: activeMenu === 'wallet-transactions' }" @click="switchMenu('wallet-transactions')">
-                交易记录
-              </div>
-              
-              <div class="submenu-item" :class="{ active: activeMenu === 'wallet-bind' }" @click="switchMenu('wallet-bind')">
-                绑定支付宝
-              </div>
-            </div>
-          </div>
 
-          <!-- 账户设置 -->
-          <div class="menu-group">
-            <div class="menu-header" @click="toggleMenu('settings')">
-              <el-icon><Setting /></el-icon>
-              <span>账户设置</span>
-              <el-icon class="arrow" :class="{ expanded: expandedMenus.settings }"><ArrowDown /></el-icon>
+            <!-- 我的钱包 -->
+            <div class="menu-group">
+              <div class="menu-header" @click="toggleMenu('wallet')">
+                <el-icon><Wallet /></el-icon>
+                <span>我的钱包</span>
+                <el-icon class="arrow" :class="{ expanded: expandedMenus.wallet }"><ArrowDown /></el-icon>
+              </div>
+              <div class="submenu" v-show="expandedMenus.wallet">
+                <div class="submenu-item" :class="{ active: activeMenu === 'wallet-transactions' }" @click="switchMenu('wallet-transactions')">
+                  交易记录
+                </div>
+
+                <div class="submenu-item" :class="{ active: activeMenu === 'wallet-bind' }" @click="switchMenu('wallet-bind')">
+                  绑定支付宝
+                </div>
+              </div>
             </div>
-            <div class="submenu" v-show="expandedMenus.settings">
-              <div class="submenu-item" :class="{ active: activeMenu === 'profile' }" @click="switchMenu('profile')">
-                个人资料
+
+            <!-- 账户设置 -->
+            <div class="menu-group">
+              <div class="menu-header" @click="toggleMenu('settings')">
+                <el-icon><Setting /></el-icon>
+                <span>账户设置</span>
+                <el-icon class="arrow" :class="{ expanded: expandedMenus.settings }"><ArrowDown /></el-icon>
               </div>
-              <div class="submenu-item" :class="{ active: activeMenu === 'address' }" @click="switchMenu('address')">
-                收货地址
-              </div>
-              <div class="submenu-item" :class="{ active: activeMenu === 'security' }" @click="switchMenu('security')">
-                账号与安全
+              <div class="submenu" v-show="expandedMenus.settings">
+                <div class="submenu-item" :class="{ active: activeMenu === 'profile' }" @click="switchMenu('profile')">
+                  个人资料
+                </div>
+                <div class="submenu-item" :class="{ active: activeMenu === 'address' }" @click="switchMenu('address')">
+                  收货地址
+                </div>
+                <div class="submenu-item" :class="{ active: activeMenu === 'security' }" @click="switchMenu('security')">
+                  账号与安全
+                </div>
               </div>
             </div>
-          </div>
+          </template>
+
+          <template v-else>
+            <div class="menu-item" @click="switchToSecondhandProfile">
+              <el-icon><User /></el-icon>
+              <span>返回易淘</span>
+            </div>
+
+            <div class="menu-item" :class="{ active: activeMenu === 'verified-orders' }" @click="switchMenu('verified-orders')">
+              <el-icon><ShoppingCart /></el-icon>
+              <span>官方验订单</span>
+            </div>
+
+            <div class="menu-item" :class="{ active: activeMenu === 'verified-favorites' }" @click="switchMenu('verified-favorites')">
+              <el-icon><Star /></el-icon>
+              <span>收藏/想要</span>
+            </div>
+
+            <div class="menu-item" :class="{ active: activeMenu === 'verified-history' }" @click="switchMenu('verified-history')">
+              <el-icon><Clock /></el-icon>
+              <span>浏览记录</span>
+            </div>
+
+            <div class="menu-item" :class="{ active: activeMenu === 'verified-recycle' }" @click="switchMenu('verified-recycle')">
+              <el-icon><Tickets /></el-icon>
+              <span>我的回收订单</span>
+            </div>
+
+            <div class="menu-item" :class="{ active: activeMenu === 'verified-service' }" @click="switchMenu('verified-service')">
+              <el-icon><Headset /></el-icon>
+              <span>联系客服</span>
+            </div>
+          </template>
         </div>
       </div>
 
@@ -239,6 +278,254 @@
                         查看详情
                       </el-button>
                     </template>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 官方验：订单 -->
+        <div class="orders-section" v-if="activeMenu === 'verified-orders'">
+          <div class="section-header">
+            <h2 class="section-title">官方验订单</h2>
+          </div>
+
+          <div class="order-search-bar">
+            <el-input
+              v-model="verifiedOrderSearch"
+              clearable
+              placeholder="搜索订单号 / 商品标题 / 卖家"
+            />
+          </div>
+
+          <div class="order-status-tabs">
+            <div
+              v-for="tab in orderStatusTabs"
+              :key="tab.value"
+              class="status-tab"
+              :class="{ active: verifiedCurrentOrderStatus === tab.value }"
+              @click="filterVerifiedOrdersByStatus(tab.value)"
+            >
+              {{ tab.label }}<span v-if="getVerifiedOrderStatusCount(tab.value) > 0">({{ getVerifiedOrderStatusCount(tab.value) }})</span>
+            </div>
+          </div>
+
+          <div class="orders-list-wrapper">
+            <div v-if="loading" class="loading-wrapper">
+              <el-skeleton :rows="3" animated />
+            </div>
+            <div v-else-if="filteredVerifiedOrders.length === 0" class="empty-wrapper">
+              <el-empty description="暂无官方验订单">
+                <el-button type="primary" @click="openVerifiedProducts">去逛逛官方验</el-button>
+              </el-empty>
+            </div>
+            <div v-else class="orders-list">
+              <div v-for="order in filteredVerifiedOrders" :key="order.id" class="order-card-large">
+                <div class="order-card-header">
+                  <div class="seller-info">
+                    <el-avatar :size="24" :src="order.product?.seller?.avatar">
+                      {{ order.product?.seller?.username?.[0]?.toUpperCase() || 'X' }}
+                    </el-avatar>
+                    <span class="seller-name">{{ order.product?.seller?.username || '匿名用户' }}</span>
+                    <el-tag size="small" type="warning">卖家</el-tag>
+                  </div>
+                  <div class="order-status-text" :class="getStatusClass(order.status)">
+                    {{ getVerifiedOrderStatusLabel(order.status) }}
+                  </div>
+                </div>
+
+                <div class="order-card-body" @click="goToVerifiedOrderDetail(order.id)">
+                  <div class="order-product-image">
+                    <img v-if="order.product?.images?.length" :src="getImageUrl(order.product.images[0].image)" />
+                    <el-icon v-else><PictureFilled /></el-icon>
+                  </div>
+                  <div class="order-product-info">
+                    <div class="order-product-title">{{ order.product?.title || '商品已下架' }}</div>
+                    <div class="order-product-desc">{{ order.product?.description?.slice(0, 50) }}...</div>
+                    <div class="order-product-price">￥{{ order.total_price }}</div>
+                  </div>
+                  <el-button class="more-btn" size="small" plain>更多</el-button>
+                </div>
+
+                <div class="order-card-footer">
+                  <div class="order-time">{{ formatDate(order.created_at) }}</div>
+                  <div class="order-actions">
+                    <el-button size="small" plain @click.stop="handleContactVerifiedSeller(order)">联系卖家</el-button>
+                    <el-button v-if="order.status === 'pending'" size="small" type="warning" @click.stop="handleVerifiedPay(order)">立即付款</el-button>
+                    <el-button v-if="order.status === 'shipped'" size="small" type="warning" @click.stop="handleVerifiedConfirmReceive(order)">确认收货</el-button>
+                    <el-button size="small" plain @click.stop="goToVerifiedOrderDetail(order.id)">查看详情</el-button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 官方验：收藏 -->
+        <div class="content-section" v-if="activeMenu === 'verified-favorites'">
+          <div class="section-header">
+            <h2 class="section-title">官方验收藏</h2>
+            <span class="section-count">共 {{ verifiedFavorites.length }} 件</span>
+          </div>
+
+          <div v-if="loading" class="loading-wrapper">
+            <el-skeleton :rows="3" animated />
+          </div>
+          <div v-else-if="verifiedFavorites.length === 0" class="empty-wrapper">
+            <el-empty description="暂无收藏">
+              <el-button type="primary" @click="openVerifiedProducts">去逛逛官方验</el-button>
+            </el-empty>
+          </div>
+          <div v-else class="products-grid">
+            <div
+              v-for="fav in verifiedFavorites"
+              :key="fav.id"
+              class="product-card"
+              @click="goToVerifiedProductDetail(fav.product?.id)"
+            >
+              <div class="product-image">
+                <img v-if="fav.product?.images?.length" :src="getImageUrl(fav.product.images[0].image)" :alt="fav.product?.title" />
+                <el-icon v-else class="no-image"><PictureFilled /></el-icon>
+              </div>
+              <div class="product-info">
+                <div class="product-title">{{ fav.product?.title }}</div>
+                <div class="product-price">￥{{ fav.product?.price }}</div>
+                <div style="margin-top:8px;">
+                  <el-button size="small" plain @click.stop="removeVerifiedFavorite(fav)">取消收藏</el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 官方验：浏览记录 -->
+        <div class="content-section" v-if="activeMenu === 'verified-history'">
+          <div class="section-header">
+            <h2 class="section-title">官方验浏览记录</h2>
+            <div class="header-actions">
+              <span class="section-count">共 {{ verifiedBrowseHistory.length }} 条</span>
+              <el-button v-if="verifiedBrowseHistory.length > 0" size="small" text @click="clearVerifiedBrowseHistory">清空</el-button>
+            </div>
+          </div>
+
+          <div v-if="verifiedBrowseHistory.length === 0" class="empty-wrapper">
+            <el-empty description="暂无浏览记录">
+              <el-button type="primary" @click="openVerifiedProducts">去逛逛官方验</el-button>
+            </el-empty>
+          </div>
+          <div v-else class="history-list">
+            <div
+              v-for="(item, index) in verifiedBrowseHistory"
+              :key="`${item.productId}_${item.timestamp}`"
+              class="history-item"
+              @click="goToVerifiedProductDetail(item.productId)"
+            >
+              <img :src="item.image || defaultImage" class="history-image" />
+              <div class="history-info">
+                <div class="history-title">{{ item.title }}</div>
+                <div class="history-meta">
+                  <span class="history-price">￥{{ item.price }}</span>
+                  <span class="history-time">{{ formatBrowseTime(item.timestamp) }}</span>
+                </div>
+              </div>
+              <el-button class="history-remove" size="small" text @click.stop="removeVerifiedHistoryItem(index)">删除</el-button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 官方验：客服 -->
+        <div class="content-section" v-if="activeMenu === 'verified-service'">
+          <div class="section-header">
+            <h2 class="section-title">联系客服</h2>
+          </div>
+
+          <el-card shadow="never" style="margin-bottom: 16px;">
+            <div style="display:flex; gap:12px; flex-wrap: wrap; align-items:center;">
+              <el-button type="primary" plain @click="openOnlineChat">在线客服</el-button>
+              <el-button type="success" plain @click="openPhoneService">客服电话</el-button>
+              <el-button type="info" plain @click="openEmailService">邮件支持</el-button>
+              <span style="color:#999;">常见问题在下方</span>
+            </div>
+          </el-card>
+
+          <el-card shadow="never">
+            <div v-for="(faq, idx) in verifiedFaqList" :key="idx" class="faq-item">
+              <div class="faq-q" @click="toggleVerifiedFaq(idx)">{{ faq.question }}</div>
+              <div v-if="faq.expanded" class="faq-a">{{ faq.answer }}</div>
+            </div>
+          </el-card>
+        </div>
+
+        <!-- 官方验：回收订单（内嵌） -->
+        <div class="orders-section" v-if="activeMenu === 'verified-recycle'">
+          <div class="section-header">
+            <h2 class="section-title">我的回收订单</h2>
+          </div>
+
+          <div class="order-search-bar">
+            <el-input
+              v-model="verifiedRecycleSearch"
+              clearable
+              placeholder="搜索订单号 / 品牌 / 机型"
+            />
+          </div>
+
+          <div class="order-status-tabs">
+            <div
+              v-for="tab in verifiedRecycleStatusTabs"
+              :key="tab.value"
+              class="status-tab"
+              :class="{ active: verifiedRecycleStatus === tab.value }"
+              @click="filterVerifiedRecycleByStatus(tab.value)"
+            >
+              {{ tab.label }}<span v-if="getVerifiedRecycleStatusCount(tab.value) > 0">({{ getVerifiedRecycleStatusCount(tab.value) }})</span>
+            </div>
+          </div>
+
+          <div class="orders-list-wrapper">
+            <div v-if="loading" class="loading-wrapper">
+              <el-skeleton :rows="3" animated />
+            </div>
+            <div v-else-if="filteredVerifiedRecycleOrders.length === 0" class="empty-wrapper">
+              <el-empty description="暂无回收订单">
+                <el-button type="warning" @click="$router.push('/recycle')">去回收</el-button>
+              </el-empty>
+            </div>
+            <div v-else class="orders-list">
+              <div
+                v-for="order in filteredVerifiedRecycleOrders"
+                :key="order.id"
+                class="order-card-large"
+                @click="$router.push(`/recycle-order/${order.id}`)"
+              >
+                <div class="order-card-header">
+                  <div class="seller-info">
+                    <span class="seller-name">回收单号：{{ order.id }}</span>
+                  </div>
+                  <div class="order-status-text" :class="getRecycleStatusClass(order)">
+                    {{ getRecycleStatusText(order) }}
+                  </div>
+                </div>
+
+                <div class="order-card-body">
+                  <div class="order-product-info" style="padding: 8px 0;">
+                    <div class="order-product-title">{{ order.brand }} {{ order.model }}</div>
+                    <div class="order-product-desc">
+                      {{ order.device_type }} · {{ getConditionText(order.condition) }}<span v-if="order.storage"> · {{ order.storage }}</span>
+                    </div>
+                    <div class="order-product-price">
+                      <span v-if="order.final_price">￥{{ order.final_price }}</span>
+                      <span v-else-if="order.estimated_price">￥{{ order.estimated_price }}</span>
+                      <span v-else>—</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="order-card-footer">
+                  <div class="order-time">{{ formatDate(order.created_at) }}</div>
+                  <div class="order-actions">
+                    <el-button size="small" plain @click.stop="$router.push(`/recycle-order/${order.id}`)">查看详情</el-button>
                   </div>
                 </div>
               </div>
@@ -566,13 +853,17 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { User, ShoppingBag, Star, Setting, ArrowDown, Location, PictureFilled, Wallet } from '@element-plus/icons-vue'
+import { User, ShoppingBag, Star, Setting, ArrowDown, Location, PictureFilled, Wallet, DocumentChecked, ShoppingCart, Clock, Tickets, Headset } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
+import { getRecycleStatusTag } from '@/utils/recycleFlow'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+
+const isVerifiedZone = computed(() => route.query?.zone === 'verified' || String(route.query?.tab || '').startsWith('verified-'))
+const defaultImage = 'https://via.placeholder.com/200x200?text=No+Image'
 
 // 菜单状态
 const activeMenu = ref('home')
@@ -581,6 +872,10 @@ const expandedMenus = reactive({
   wallet: true,
   settings: true
 })
+
+const goToVerifiedProfile = () => {
+  router.push('/profile?zone=verified&tab=verified-orders')
+}
 
 // 头像上传相关
 const avatarInput = ref(null)
@@ -598,6 +893,113 @@ const orderStatusTabs = [
   { label: '已完成', value: 'completed' },
   { label: '已取消', value: 'cancelled' }
 ]
+
+// 官方验（合并到个人中心内）
+const verifiedCurrentOrderStatus = ref('all')
+const verifiedOrderSearch = ref('')
+const verifiedOrders = ref([])
+const verifiedFavorites = ref([])
+const verifiedBrowseHistory = ref([])
+
+const verifiedRecycleStatus = ref('all')
+const verifiedRecycleSearch = ref('')
+const verifiedRecycleOrders = ref([])
+const verifiedRecycleStatusTabs = [
+  { label: '全部', value: 'all' },
+  { label: '待寄出', value: 'to_ship' },
+  { label: '待确认价格', value: 'price_confirm' },
+  { label: '已完成', value: 'completed' }
+]
+
+const verifiedFaqList = ref([
+  {
+    question: '什么是官方验货？',
+    answer: '官方验货是指平台对商品进行专业质检，确保成色、功能、真伪符合描述。',
+    expanded: false
+  },
+  {
+    question: '官方验货支持哪些成色？',
+    answer: '通常为全新、99成新、95成新（以商品详情为准）。',
+    expanded: false
+  },
+  {
+    question: '如何申请售后/退款？',
+    answer: '请在订单详情页发起申请，或联系在线客服协助处理。',
+    expanded: false
+  }
+])
+
+const verifiedOrderStats = computed(() => ({
+  total: verifiedOrders.value.length,
+  pending: verifiedOrders.value.filter(o => o.status === 'pending').length,
+  paid: verifiedOrders.value.filter(o => o.status === 'paid').length,
+  shipped: verifiedOrders.value.filter(o => o.status === 'shipped').length,
+  completed: verifiedOrders.value.filter(o => o.status === 'completed').length,
+  cancelled: verifiedOrders.value.filter(o => o.status === 'cancelled').length
+}))
+
+const getVerifiedOrderStatusCount = (status) => {
+  if (status === 'all') return verifiedOrderStats.value.total
+  return verifiedOrderStats.value[status] || 0
+}
+
+const verifiedRecycleStats = computed(() => ({
+  total: verifiedRecycleOrders.value.length,
+  to_ship: verifiedRecycleOrders.value.filter(o => o.status === 'pending').length,
+  price_confirm: verifiedRecycleOrders.value.filter(o => Boolean(o.final_price) && !o.final_price_confirmed && o.status !== 'cancelled' && o.status !== 'completed').length,
+  completed: verifiedRecycleOrders.value.filter(o => o.status === 'completed').length
+}))
+
+const getVerifiedRecycleStatusCount = (status) => {
+  if (status === 'all') return verifiedRecycleStats.value.total
+  return verifiedRecycleStats.value[status] || 0
+}
+
+const filteredVerifiedOrders = computed(() => {
+  const kw = verifiedOrderSearch.value.trim().toLowerCase()
+  const list = verifiedCurrentOrderStatus.value === 'all'
+    ? verifiedOrders.value
+    : verifiedOrders.value.filter(order => order.status === verifiedCurrentOrderStatus.value)
+
+  if (!kw) return list
+  return list.filter((order) => {
+    const idText = String(order.id || '').toLowerCase()
+    const titleText = String(order.product?.title || '').toLowerCase()
+    const sellerText = String(order.product?.seller?.username || '').toLowerCase()
+    return idText.includes(kw) || titleText.includes(kw) || sellerText.includes(kw)
+  })
+})
+
+const filteredVerifiedRecycleOrders = computed(() => {
+  const kw = verifiedRecycleSearch.value.trim().toLowerCase()
+
+  const statusFiltered = (() => {
+    switch (verifiedRecycleStatus.value) {
+      case 'to_ship':
+        return verifiedRecycleOrders.value.filter(order => order.status === 'pending')
+      case 'price_confirm':
+        return verifiedRecycleOrders.value.filter(order =>
+          Boolean(order.final_price) &&
+          !order.final_price_confirmed &&
+          order.status !== 'cancelled' &&
+          order.status !== 'completed'
+        )
+      case 'completed':
+        return verifiedRecycleOrders.value.filter(order => order.status === 'completed')
+      case 'all':
+      default:
+        return verifiedRecycleOrders.value
+    }
+  })()
+
+  if (!kw) return statusFiltered
+  return statusFiltered.filter((order) => {
+    const idText = String(order.id || '').toLowerCase()
+    const brandText = String(order.brand || '').toLowerCase()
+    const modelText = String(order.model || '').toLowerCase()
+    return idText.includes(kw) || brandText.includes(kw) || modelText.includes(kw)
+  })
+})
 
 // 数据
 const loading = ref(false)
@@ -924,7 +1326,11 @@ const formatTime = (time) => {
 
 const switchMenu = (menu) => {
   activeMenu.value = menu
-  currentOrderStatus.value = 'all'
+  if (menu === 'verified-orders') {
+    verifiedCurrentOrderStatus.value = 'all'
+  } else {
+    currentOrderStatus.value = 'all'
+  }
   loadContent(menu)
 }
 
@@ -932,10 +1338,28 @@ const filterOrdersByStatus = (status) => {
   currentOrderStatus.value = status
 }
 
+const filterVerifiedOrdersByStatus = (status) => {
+  verifiedCurrentOrderStatus.value = status
+}
+
 const loadContent = async (menu) => {
   loading.value = true
   try {
     switch(menu) {
+      case 'verified-orders':
+        await loadVerifiedOrders()
+        break
+      case 'verified-favorites':
+        await loadVerifiedFavorites()
+        break
+      case 'verified-history':
+        loadVerifiedBrowseHistory()
+        break
+      case 'verified-recycle':
+        await loadVerifiedRecycleOrders()
+        break
+      case 'verified-service':
+        break
       case 'home':
       case 'published':
         await loadProducts()
@@ -982,6 +1406,17 @@ const loadOrders = async () => {
   }
 }
 
+const loadVerifiedOrders = async () => {
+  try {
+    const res = await api.get('/verified-orders/')
+    verifiedOrders.value = res.data?.results || res.data || []
+  } catch (error) {
+    console.error('加载官方验订单失败:', error)
+    verifiedOrders.value = []
+    ElMessage.error('加载官方验订单失败')
+  }
+}
+
 const loadFavorites = async () => {
   try {
     const res = await api.get('/favorites/')
@@ -989,6 +1424,77 @@ const loadFavorites = async () => {
     stats.favorites = favorites.value.length
   } catch (error) {
     console.error('加载收藏失败:', error)
+  }
+}
+
+const loadVerifiedFavorites = async () => {
+  try {
+    const res = await api.get('/verified-favorites/')
+    verifiedFavorites.value = res.data?.results || res.data || []
+  } catch (error) {
+    console.error('加载官方验收藏失败:', error)
+    verifiedFavorites.value = []
+  }
+}
+
+const removeVerifiedFavorite = async (fav) => {
+  try {
+    await api.delete(`/verified-favorites/${fav.id}/`)
+    verifiedFavorites.value = verifiedFavorites.value.filter(f => f.id !== fav.id)
+    ElMessage.success('已取消收藏')
+  } catch (error) {
+    ElMessage.error('取消收藏失败')
+  }
+}
+
+const loadVerifiedRecycleOrders = async () => {
+  try {
+    const res = await api.get('/recycle-orders/')
+    verifiedRecycleOrders.value = res.data?.results || res.data || []
+  } catch (error) {
+    console.error('加载回收订单失败:', error)
+    verifiedRecycleOrders.value = []
+  }
+}
+
+const loadVerifiedBrowseHistory = () => {
+  const historyKey = `browse_history_verified_${authStore.user?.id}`
+  const stored = localStorage.getItem(historyKey)
+  if (stored) {
+    try {
+      verifiedBrowseHistory.value = JSON.parse(stored) || []
+    } catch (e) {
+      console.error('加载浏览历史失败:', e)
+      verifiedBrowseHistory.value = []
+    }
+  } else {
+    verifiedBrowseHistory.value = []
+  }
+}
+
+const saveVerifiedBrowseHistory = () => {
+  const historyKey = `browse_history_verified_${authStore.user?.id}`
+  localStorage.setItem(historyKey, JSON.stringify(verifiedBrowseHistory.value))
+}
+
+const removeVerifiedHistoryItem = (index) => {
+  verifiedBrowseHistory.value.splice(index, 1)
+  saveVerifiedBrowseHistory()
+  ElMessage.success('已删除')
+}
+
+const clearVerifiedBrowseHistory = async () => {
+  try {
+    await ElMessageBox.confirm('确定要清空所有浏览历史吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    verifiedBrowseHistory.value = []
+    saveVerifiedBrowseHistory()
+    ElMessage.success('已清空')
+  } catch {
+    // 取消
   }
 }
 
@@ -1024,10 +1530,119 @@ const getOrderStatusLabel = (status) => {
   return labels[status] || status
 }
 
+const getConditionText = (condition) => {
+  const map = {
+    new: '全新',
+    like_new: '99成新',
+    good: '95成新',
+    fair: '9成新',
+    poor: '8成新'
+  }
+  return map[condition] || condition || '-'
+}
+
 const formatDate = (dateStr) => {
   if (!dateStr) return ''
   const date = new Date(dateStr)
   return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+}
+
+const formatBrowseTime = (timestamp) => {
+  if (!timestamp) return ''
+  const now = Date.now()
+  const diff = now - timestamp
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes}分钟前`
+  if (hours < 24) return `${hours}小时前`
+  if (days < 7) return `${days}天前`
+
+  const d = new Date(timestamp)
+  return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
+const getVerifiedOrderStatusLabel = (status) => {
+  const map = {
+    pending: '待付款',
+    paid: '待发货',
+    shipped: '待收货',
+    completed: '已完成',
+    cancelled: '已取消'
+  }
+  return map[status] || status
+}
+
+const openVerifiedProducts = () => {
+  router.push('/verified-products')
+}
+
+const goToVerifiedOrderDetail = (id) => {
+  router.push(`/verified-order/${id}`)
+}
+
+const goToVerifiedProductDetail = (id) => {
+  if (!id) return
+  router.push(`/verified-products/${id}`)
+}
+
+const handleContactVerifiedSeller = (order) => {
+  const sellerId = typeof order.product?.seller === 'object' ? order.product.seller.id : order.product?.seller
+  router.push(`/messages?user_id=${sellerId}&product_id=${order.product?.id}`)
+}
+
+const handleVerifiedPay = () => {
+  ElMessage.info('支付功能开发中...')
+}
+
+const handleVerifiedConfirmReceive = async (order) => {
+  try {
+    await api.patch(`/verified-orders/${order.id}/`, { status: 'completed' })
+    ElMessage.success('确认收货成功')
+    await loadVerifiedOrders()
+  } catch (error) {
+    ElMessage.error('确认收货失败')
+  }
+}
+
+const switchToSecondhandProfile = () => {
+  router.push('/profile')
+}
+
+const toggleVerifiedFaq = (index) => {
+  verifiedFaqList.value[index].expanded = !verifiedFaqList.value[index].expanded
+}
+
+const openOnlineChat = () => {
+  ElMessage.info('在线客服功能开发中...')
+}
+
+const openPhoneService = () => {
+  ElMessage.info('客服电话：400-888-8888')
+}
+
+const openEmailService = () => {
+  window.location.href = 'mailto:service@verified.com'
+}
+
+const filterVerifiedRecycleByStatus = (status) => {
+  verifiedRecycleStatus.value = status
+}
+
+const getRecycleStatusText = (order) => getRecycleStatusTag(order).text
+const getRecycleStatusClass = (order) => {
+  const type = getRecycleStatusTag(order).type
+  const map = {
+    success: 'status-success',
+    warning: 'status-warning',
+    danger: 'status-danger',
+    primary: 'status-primary',
+    info: 'status-info',
+    '': 'status-info'
+  }
+  return map[type] || ''
 }
 
 // 操作处理
@@ -1288,6 +1903,43 @@ const clearTempAvatar = () => {
   }
 }
 
+const syncMenuFromRoute = async () => {
+  if (!authStore.user) return
+
+  const zone = route.query.zone
+  const tab = route.query.tab
+  const verifiedTabs = ['verified-orders', 'verified-favorites', 'verified-history', 'verified-recycle', 'verified-service']
+
+  if (zone === 'verified' || verifiedTabs.includes(tab)) {
+    const target = verifiedTabs.includes(tab) ? tab : 'verified-orders'
+    activeMenu.value = target
+    await loadContent(target)
+    return
+  }
+
+  if (tab === 'sold') {
+    activeMenu.value = 'sold'
+    expandedMenus.trade = true
+  } else if (tab === 'bought') {
+    activeMenu.value = 'bought'
+    expandedMenus.trade = true
+  } else if (tab === 'wallet-transactions') {
+    activeMenu.value = 'wallet-transactions'
+    expandedMenus.wallet = true
+  } else if (tab === 'wallet-bind') {
+    activeMenu.value = 'wallet-bind'
+    expandedMenus.wallet = true
+  } else if (tab === 'favorites') {
+    activeMenu.value = 'favorites'
+  } else if (tab === 'address') {
+    activeMenu.value = 'address'
+  } else {
+    activeMenu.value = 'home'
+  }
+
+  await loadContent(activeMenu.value)
+}
+
 onMounted(async () => {
   if (!authStore.user) {
     await authStore.init()
@@ -1299,25 +1951,7 @@ onMounted(async () => {
     return
   }
   
-  // 检查URL参数，决定显示哪个菜单
-  const tab = route.query.tab
-  if (tab === 'sold') {
-    activeMenu.value = 'sold'
-    expandedMenus.trade = true
-    loadOrders()
-  } else if (tab === 'bought') {
-    activeMenu.value = 'bought'
-    expandedMenus.trade = true
-    loadOrders()
-  } else if (tab === 'favorites') {
-    activeMenu.value = 'favorites'
-    loadFavorites()
-  } else if (tab === 'address') {
-    activeMenu.value = 'address'
-    loadAddresses()
-  } else {
-    loadProducts()
-  }
+  await syncMenuFromRoute()
   
   initEditForm()
   userLocation.value = localStorage.getItem('user_location') || '未设置'
@@ -1325,6 +1959,13 @@ onMounted(async () => {
   // 初始化绑定表单数据
   loadUserInfo()
 })
+
+watch(
+  () => [route.query.zone, route.query.tab],
+  async () => {
+    await syncMenuFromRoute()
+  }
+)
 </script>
 
 <style scoped>
@@ -1456,6 +2097,8 @@ onMounted(async () => {
   border-bottom: 1px solid var(--border-color);
 }
 
+.header-actions { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+
 .section-title { font-size: 18px; font-weight: 600; color: var(--text-primary); margin: 0; }
 .section-count { font-size: 14px; color: var(--text-muted); }
 
@@ -1513,6 +2156,10 @@ onMounted(async () => {
   margin-bottom: 20px;
 }
 
+.order-search-bar {
+  margin-bottom: 12px;
+}
+
 .status-tab {
   font-size: 15px;
   color: var(--text-secondary);
@@ -1555,6 +2202,7 @@ onMounted(async () => {
 .status-info { color: #2196f3; }
 .status-success { color: #4caf50; }
 .status-danger { color: #f44336; }
+.status-primary { color: #1890ff; }
 
 .order-card-body {
   padding: 16px;
@@ -1588,6 +2236,31 @@ onMounted(async () => {
 
 .order-time { font-size: 12px; color: var(--text-muted); }
 .order-actions { display: flex; gap: 12px; }
+
+/* 官方验：浏览记录 */
+.history-list { display: flex; flex-direction: column; gap: 12px; }
+.history-item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-white);
+  cursor: pointer;
+}
+.history-image { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: #f2f2f2; flex-shrink: 0; }
+.history-info { flex: 1; min-width: 0; }
+.history-title { font-size: 14px; color: var(--text-primary); font-weight: 600; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-meta { display: flex; gap: 10px; font-size: 12px; color: var(--text-muted); }
+.history-price { color: var(--price-color); font-weight: 600; }
+.history-remove { margin-left: auto; }
+
+/* 官方验：客服 FAQ */
+.faq-item { padding: 10px 0; border-bottom: 1px solid var(--border-color); }
+.faq-item:last-child { border-bottom: none; }
+.faq-q { font-weight: 700; color: var(--text-primary); cursor: pointer; }
+.faq-a { margin-top: 8px; color: var(--text-secondary); line-height: 1.6; }
 
 /* 个人资料表单 */
 .profile-form, .security-form { max-width: 500px; margin-top: 20px; }

@@ -38,21 +38,16 @@
         </div>
 
         <div class="info">
-          <div class="badges">
-            <el-tag type="success" effect="plain">官方验</el-tag>
-            <el-tag type="info" effect="plain">正品保障</el-tag>
-            <el-tag type="warning" effect="plain">质检报告</el-tag>
-          </div>
           <h1 class="title">{{ product.title }}</h1>
-          <p class="sub">{{ product.brand }} {{ product.model }} {{ product.storage || '' }}</p>
-          <div class="price-row">
-            <span class="price">¥{{ product.price }}</span>
-            <span v-if="product.original_price" class="orig">¥{{ product.original_price }}</span>
-          </div>
-          <div class="meta">库存：{{ product.stock ?? '—' }} · 所在地：{{ product.location || '官方仓' }}</div>
-          <div class="attrs">
-            <div>保障：官方质检 · 7天无理由</div>
-          </div>
+        <div class="price-row">
+          <span class="price">¥{{ product.price }}</span>
+          <span v-if="product.original_price" class="orig">¥{{ product.original_price }}</span>
+        </div>
+        <div class="action-row">
+          <el-button type="warning" size="large" class="buy-btn" @click="handleBuyVerified">
+            立即购买
+          </el-button>
+        </div>
           <!-- 主要规格 -->
           <div class="main-specs">
             <div class="specs-title">主要规格</div>
@@ -117,26 +112,27 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { PictureFilled, Document, ArrowDown, ArrowUp, Picture, Lightning, Monitor } from '@element-plus/icons-vue'
+import { PictureFilled } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
 import InspectionReport from '@/components/InspectionReport.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 
 const product = ref(null)
 const loading = ref(false)
 const error = ref(null)
 const currentImage = ref(0)
-const specsExpanded = ref(false)
 
 const conditionMap = {
-  excellent: '九九新',
-  good: '九成新',
-  fair: '八五新',
-  poor: '八成新',
-  verified: '官方验'
+  new: '全新',
+  like_new: '几乎全新',
+  good: '成色良好',
+  fair: '成色一般',
+  poor: '成色较旧'
 }
 
 const images = computed(() => {
@@ -151,21 +147,7 @@ const detailImages = computed(() => {
   return arr.map(img => resolveImageField(img)).filter(Boolean)
 })
 
-const reports = computed(() => {
-  if (!product.value) return []
-  return (product.value.inspection_reports || []).map(normalizeFile).filter(Boolean)
-})
-
-const conditionText = computed(() => conditionMap[product.value?.condition] || '官方验')
-const inspectionAvailable = computed(() => product.value && (product.value.inspection_result || reports.value.length))
-const inspectionText = computed(() => product.value?.inspection_result || '已完成质检')
-const inspectionResultText = computed(() => {
-  const result = product.value?.inspection_result
-  if (result === 'pass') return '合格'
-  if (result === 'warn') return '警告'
-  if (result === 'fail') return '不合格'
-  return result || '已完成'
-})
+const conditionText = computed(() => conditionMap[product.value?.condition] || '—')
 
 function resolveImageField(img) {
   if (!img) return null
@@ -175,29 +157,6 @@ function resolveImageField(img) {
   if (img.image_url) return getImageUrl(img.image_url)
   if (img.imageUrl) return getImageUrl(img.imageUrl)
   return null
-}
-
-function normalizeFile(f) {
-  if (!f) return null
-  if (typeof f === 'string') return { url: getImageUrl(f) }
-  if (f.url) return { ...f, url: getImageUrl(f.url) }
-  if (f.image) return { ...f, url: getImageUrl(f.image) }
-  return null
-}
-
-function getReportName(r) {
-  if (!r?.url) return '查看报告'
-  try {
-    const u = new URL(r.url, window.location.origin)
-    return decodeURIComponent(u.pathname.split('/').pop() || '报告')
-  } catch {
-    return '报告'
-  }
-}
-
-function previewReport(r) {
-  if (!r?.url) return
-  window.open(r.url, '_blank')
 }
 
 function normalizeProduct(data) {
@@ -226,6 +185,7 @@ async function loadProduct() {
   try {
     const res = await api.get(`/verified-products/${route.params.id}/`)
     product.value = normalizeProduct(res.data)
+    addToVerifiedBrowseHistory(product.value)
   } catch (err) {
     error.value = err
     ElMessage.error('商品加载失败')
@@ -233,6 +193,46 @@ async function loadProduct() {
   } finally {
     loading.value = false
   }
+}
+
+function handleBuyVerified() {
+  if (!authStore.user) {
+    ElMessage.warning('请先登录')
+    router.push('/login')
+    return
+  }
+  if (authStore.user.id === product.value?.seller?.id) {
+    ElMessage.warning('不能购买自己的商品')
+    return
+  }
+  if (product.value?.status !== 'active') {
+    ElMessage.warning('商品已下架或已售出')
+    return
+  }
+  router.push(`/checkout/${route.params.id}?order_type=verified`)
+}
+
+function addToVerifiedBrowseHistory(p) {
+  if (!authStore.user || !p) return
+  const historyKey = `browse_history_verified_${authStore.user?.id}`
+  const stored = localStorage.getItem(historyKey)
+  let list = []
+  if (stored) {
+    try { list = JSON.parse(stored) || [] } catch { list = [] }
+  }
+
+  const historyItem = {
+    productId: p.id,
+    title: p.title,
+    price: p.price,
+    image: p.images?.length ? getImageUrl(p.images[0].image) : null,
+    timestamp: Date.now()
+  }
+
+  list = list.filter(item => item.productId !== p.id)
+  list.unshift(historyItem)
+  if (list.length > 50) list = list.slice(0, 50)
+  localStorage.setItem(historyKey, JSON.stringify(list))
 }
 
 onMounted(loadProduct)
@@ -341,6 +341,12 @@ onMounted(loadProduct)
   color: #444;
   margin-bottom: 12px;
 }
+.action-row {
+  margin-top: 18px;
+}
+.buy-btn {
+  width: 100%;
+}
 /* 主要规格 */
 .main-specs {
   padding: 16px;
@@ -431,13 +437,6 @@ onMounted(loadProduct)
   margin-bottom: 30px;
 }
 </style>
-
-
-
-
-
-
-
 
 
 

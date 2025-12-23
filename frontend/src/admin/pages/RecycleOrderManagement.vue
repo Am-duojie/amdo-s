@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <div class="page-title">回收订单管理</div>
-        <div class="page-desc">查看、估价、质检、打款等全流程操作</div>
+        <div class="page-desc">查看、质检、定价、打款等全流程操作</div>
       </div>
       <el-space>
         <el-button :loading="loading" text :icon="Refresh" @click="handleRefresh">刷新</el-button>
@@ -15,7 +15,7 @@
         <el-form-item label="订单状态">
           <el-select v-model="statusFilter" placeholder="全部" clearable style="width: 160px" @change="handleSearch">
             <el-option label="全部" value="" />
-            <el-option label="待估价" value="pending" />
+            <el-option label="待寄出" value="pending" />
             <el-option label="已寄出" value="shipped" />
             <el-option label="已收货" value="received" />
             <el-option label="已检测" value="inspected" />
@@ -88,7 +88,7 @@
         <el-table-column type="selection" width="55" />
         <el-table-column prop="id" label="订单号" width="100" fixed="left">
           <template #default="{ row }">
-            <el-link type="primary" @click="viewDetail(row)">#{{ row.id }}</el-link>
+            <el-link type="primary" @click="openDetail(row)">#{{ row.id }}</el-link>
           </template>
         </el-table-column>
         <el-table-column label="用户" width="120">
@@ -156,18 +156,29 @@
             {{ formatTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right" align="center">
+        <el-table-column label="操作" width="240" fixed="right" align="center">
           <template #default="{ row }">
             <el-space wrap>
-              <el-button size="small" @click="viewDetail(row)">详情</el-button>
+              <el-button size="small" @click="openDetail(row)">详情</el-button>
               <el-button
-                v-if="canOperate(row)"
+                v-if="getPrimaryAction(row)"
                 size="small"
-                type="primary"
-                @click="viewDetail(row)"
+                :type="getPrimaryAction(row).type || 'primary'"
+                @click="handlePrimaryAction(row)"
               >
-                {{ getActionText(row) }}
+                {{ getPrimaryAction(row).label }}
               </el-button>
+              <el-dropdown trigger="click" @command="(cmd) => handleMoreCommand(cmd, row)">
+                <el-button size="small">
+                  更多
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="detail">查看详情</el-dropdown-item>
+                    <el-dropdown-item command="copy">复制订单号</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </el-space>
           </template>
         </el-table-column>
@@ -200,6 +211,7 @@
     <RecycleOrderDetail
       v-if="currentOrder"
       :order-id="currentOrder.id"
+      :initial-action="detailInitialAction"
       @updated="handleOrderUpdated"
     />
   </el-dialog>
@@ -227,6 +239,7 @@ const paymentFilter = ref('')
 const pagination = ref({ current: 1, pageSize: 20, total: 0 })
 const detailDialogVisible = ref(false)
 const currentOrder = ref(null)
+const detailInitialAction = ref('')
 const stats = ref({
   pending: 0,
   shipped: 0,
@@ -235,14 +248,14 @@ const stats = ref({
 })
 
 const statItems = computed(() => [
-  { key: 'pending', label: '待估价', value: stats.value.pending },
+  { key: 'pending', label: '待寄出', value: stats.value.pending },
   { key: 'shipped', label: '已寄出', value: stats.value.shipped },
   { key: 'inspected', label: '已检测', value: stats.value.inspected },
   { key: 'completed', label: '已完成', value: stats.value.completed }
 ])
 
 const statusMap = {
-  pending: { text: '待估价', type: 'info' },
+  pending: { text: '待寄出', type: 'info' },
   received: { text: '已收货', type: 'success' },
   shipped: { text: '已寄出', type: 'primary' },
   inspected: { text: '已检测', type: 'success' },
@@ -298,21 +311,13 @@ const isStepActive = (row, stepValue) => {
   return isRecycleStepActive(row, stepValue)
 }
 
-const canOperate = (row) => {
-  return ['pending', 'shipped', 'received', 'inspected', 'completed'].includes(row.status)
-}
-
-const getActionText = (row) => {
-  if (row.status === 'pending') return '估价'
-  if (row.status === 'shipped') return '确认收货'
-  if (row.status === 'received') return '质检'
-  if (row.status === 'inspected') return '完成订单'
-  if (row.status === 'completed' && row.payment_status !== 'paid') {
-    if (row.price_dispute) return '处理异议'
-    if (row.final_price && row.final_price_confirmed !== true) return '等待确认'
-    return '打款'
-  }
-  return '处理'
+const getPrimaryAction = (row) => {
+  if (!row) return null
+  if (row.status === 'shipped' && !row.received_at) return { label: '确认收货', type: 'success', action: 'receive' }
+  if (row.status === 'received') return { label: '开始质检', type: 'primary', action: 'report' }
+  if (row.status === 'inspected') return { label: '设置最终价', type: 'warning', action: 'final-price' }
+  if (row.status === 'completed' && row.payment_status !== 'paid') return { label: '打款', type: 'primary', action: 'payment' }
+  return null
 }
 
 const loadOrders = async () => {
@@ -388,14 +393,16 @@ const resetFilters = () => {
   handleSearch()
 }
 
-const viewDetail = (row) => {
+const openDetail = (row, initialAction = '') => {
   currentOrder.value = row
+  detailInitialAction.value = initialAction || ''
   detailDialogVisible.value = true
 }
 
 const closeDetailDialog = () => {
   detailDialogVisible.value = false
   currentOrder.value = null
+  detailInitialAction.value = ''
 }
 
 const handleOrderUpdated = () => {
@@ -405,6 +412,46 @@ const handleOrderUpdated = () => {
 
 const handleSelectionChange = (selection) => {
   selectedOrders.value = selection
+}
+
+const handlePrimaryAction = async (row) => {
+  const action = getPrimaryAction(row)
+  if (!action) return
+  if (action.action === 'receive') {
+    try {
+      await ElMessageBox.confirm('确认已收到用户寄出的设备？确认后将更新订单状态为“已收货”。', '确认收货', {
+        type: 'warning',
+        confirmButtonText: '确认',
+        cancelButtonText: '取消'
+      })
+      await adminApi.post(`/inspection-orders/${row.id}/logistics`, { action: 'receive' })
+      ElMessage.success('已确认收货')
+      await loadOrders()
+    } catch (error) {
+      if (error !== 'cancel') {
+        const msg = error.response?.data?.detail || '操作失败'
+        ElMessage.error(msg)
+      }
+    }
+    return
+  }
+  openDetail(row, action.action)
+}
+
+const handleMoreCommand = async (command, row) => {
+  if (command === 'detail') {
+    openDetail(row)
+    return
+  }
+  if (command === 'copy') {
+    const text = `#${row.id}`
+    try {
+      await navigator.clipboard.writeText(text)
+      ElMessage.success('已复制订单号')
+    } catch {
+      ElMessage.success(text)
+    }
+  }
 }
 
 const batchUpdateStatus = async (items, newStatus) => {

@@ -46,14 +46,23 @@ DEFAULT_QUESTIONS = [
     {
         'step_order': 3,
         'key': 'storage',
-        'title': '内存 / 存储',
-        'helper': '选容量以便精准估价',
+        'title': '存储容量',
+        'helper': '选择存储容量以便精准估价',
         'question_type': 'single',
         'is_required': True,
         'options': []  # 存储容量选项会从模板的 storages 字段动态生成
     },
     {
         'step_order': 4,
+        'key': 'ram',
+        'title': '运行内存',
+        'helper': '必选：用于区分配置（不影响存储容量选择）',
+        'question_type': 'single',
+        'is_required': True,
+        'options': []  # RAM 选项会从模板的 ram_options 字段动态生成
+    },
+    {
+        'step_order': 5,
         'key': 'usage',
         'title': '使用情况',
         'helper': '',
@@ -67,7 +76,7 @@ DEFAULT_QUESTIONS = [
         ]
     },
     {
-        'step_order': 5,
+        'step_order': 6,
         'key': 'accessories',
         'title': '有无配件',
         'helper': '',
@@ -80,7 +89,7 @@ DEFAULT_QUESTIONS = [
         ]
     },
     {
-        'step_order': 6,
+        'step_order': 7,
         'key': 'screen_appearance',
         'title': '屏幕外观',
         'helper': '',
@@ -95,7 +104,7 @@ DEFAULT_QUESTIONS = [
         ]
     },
     {
-        'step_order': 7,
+        'step_order': 8,
         'key': 'body',
         'title': '机身外壳',
         'helper': '',
@@ -110,7 +119,7 @@ DEFAULT_QUESTIONS = [
         ]
     },
     {
-        'step_order': 8,
+        'step_order': 9,
         'key': 'display',
         'title': '屏幕显示',
         'helper': '',
@@ -124,7 +133,7 @@ DEFAULT_QUESTIONS = [
         ]
     },
     {
-        'step_order': 9,
+        'step_order': 10,
         'key': 'front_camera',
         'title': '前摄拍照',
         'helper': '',
@@ -137,7 +146,7 @@ DEFAULT_QUESTIONS = [
         ]
     },
     {
-        'step_order': 10,
+        'step_order': 11,
         'key': 'rear_camera',
         'title': '后摄拍照',
         'helper': '',
@@ -150,7 +159,7 @@ DEFAULT_QUESTIONS = [
         ]
     },
     {
-        'step_order': 11,
+        'step_order': 12,
         'key': 'repair',
         'title': '维修情况（机身）',
         'helper': '',
@@ -164,7 +173,7 @@ DEFAULT_QUESTIONS = [
         ]
     },
     {
-        'step_order': 12,
+        'step_order': 13,
         'key': 'screen_repair',
         'title': '屏幕维修情况',
         'helper': '',
@@ -176,7 +185,7 @@ DEFAULT_QUESTIONS = [
         ]
     },
     {
-        'step_order': 13,
+        'step_order': 14,
         'key': 'functional',
         'title': '功能性问题（非必选，可多选）',
         'helper': '',
@@ -293,8 +302,8 @@ class Command(BaseCommand):
                     # 如果模板还没有问卷，创建默认问卷
                     if not template.questions.exists():
                         for q_data in DEFAULT_QUESTIONS:
-                            # 如果是存储容量问题，动态生成选项
-                            if q_data['key'] == 'storage':
+                            # 对“存储容量 / 运行内存”问题：选项从模板字段动态生成
+                            if q_data['key'] in ('storage', 'ram'):
                                 question = RecycleQuestionTemplate.objects.create(
                                     device_template=template,
                                     step_order=q_data['step_order'],
@@ -305,15 +314,21 @@ class Command(BaseCommand):
                                     is_required=q_data['is_required'],
                                     is_active=True,
                                 )
-                                # 为存储容量问题创建选项
-                                for storage in storages:
+                                total_questions += 1
+
+                                if q_data['key'] == 'storage':
+                                    options_source = storages
+                                else:
+                                    options_source = (template.ram_options or [])
+
+                                for idx, opt in enumerate(options_source):
                                     RecycleQuestionOption.objects.create(
                                         question_template=question,
-                                        value=storage.lower().replace('gb', 'gb').replace('tb', 'tb'),
-                                        label=storage,
+                                        value=str(opt).strip(),
+                                        label=str(opt).strip(),
                                         desc='',
                                         impact='',
-                                        option_order=storages.index(storage),
+                                        option_order=idx,
                                         is_active=True,
                                     )
                                     total_options += 1
@@ -358,9 +373,6 @@ class Command(BaseCommand):
         if m:
             return f"{m.group(1)}系列"
         return ''
-
-
-
 
 
 

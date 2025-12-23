@@ -30,6 +30,11 @@ class AlipayClient:
         self.charset = 'utf-8'
         self.sign_type = 'RSA2'
         self.version = '1.0'
+        self.session = requests.Session()
+        self.session.trust_env = False
+
+    def _post(self, url, data, timeout=10):
+        return self.session.post(url, data=data, timeout=timeout)
     
     def validate_config(self):
         """
@@ -420,7 +425,7 @@ class AlipayClient:
         
         try:
             # 使用官方推荐的 POST 方式调用开放平台网关
-            response = requests.post(self.gateway_url, data=params, timeout=10)
+            response = self._post(self.gateway_url, params)
             result = response.json()
             
             logger.info(f'查询订单结果: {result}')
@@ -534,7 +539,7 @@ class AlipayClient:
         logger.info(f'完整参数: {params}')
         
         try:
-            response = requests.post(self.gateway_url, data=params, timeout=10)
+            response = self._post(self.gateway_url, params)
             result = response.json()
             
             logger.info(f'转账响应: {result}')
@@ -717,7 +722,7 @@ class AlipayClient:
             logger.info(f'请求URL（含charset）: {url_with_charset}')
             logger.info(f'POST body参数数量: {len(params)}')
             
-            response = requests.post(url_with_charset, data=params, timeout=10)
+            response = self._post(url_with_charset, params)
             result = response.json()
             logger.info(f'分账结算响应: {result}')
 
@@ -809,7 +814,7 @@ class AlipayClient:
             query_string = f'charset={charset_encoded}'
             url_with_charset = f"{self.gateway_url}?{query_string}"
             
-            response = requests.post(url_with_charset, data=params, timeout=10)
+            response = self._post(url_with_charset, params)
             result = response.json()
             logger.info(f'分账关系绑定响应: {result}')
             

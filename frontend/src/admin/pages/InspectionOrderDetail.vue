@@ -41,8 +41,6 @@
         <el-descriptions-item label="型号">{{ detail.model || '-' }}</el-descriptions-item>
         <el-descriptions-item label="存储容量">{{ detail.storage || '-' }}</el-descriptions-item>
         <el-descriptions-item label="成色">{{ getConditionText(detail.condition) }}</el-descriptions-item>
-        <el-descriptions-item label="联系人">{{ detail.contact_name || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="联系电话">{{ detail.contact_phone || '-' }}</el-descriptions-item>
         <el-descriptions-item label="收货地址" :span="2">{{ detail.address || '-' }}</el-descriptions-item>
         <el-descriptions-item label="备注" :span="2">{{ detail.note || '-' }}</el-descriptions-item>
         <el-descriptions-item label="创建时间">{{ formatTime(detail.created_at) }}</el-descriptions-item>
@@ -168,24 +166,6 @@
       <!-- 操作按钮区域 -->
       <el-divider content-position="left">操作</el-divider>
       <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px">
-        <!-- 估价操作：给出预估价格（设置价格后自动变为已估价状态） -->
-        <el-button
-          v-if="detail.status === 'pending'"
-          type="primary"
-          @click="showPriceDialog('estimated')"
-        >
-          给出预估价格
-        </el-button>
-        
-        <!-- 快速标记为已估价（如果已有预估价格） -->
-        <el-button
-          v-if="detail.status === 'pending' && detail.estimated_price"
-          type="warning"
-          @click="quickMarkQuoted"
-        >
-          标记为已估价
-        </el-button>
-
         <!-- 确认收到设备 -->
         <el-button
           v-if="detail.status === 'shipped' && !detail.received_at"
@@ -222,16 +202,6 @@
           完成订单
         </el-button>
 
-        <!-- 发布为官方验商品 -->
-        <el-button
-          v-if="['inspected', 'completed'].includes(detail.status) && detail.final_price"
-          type="primary"
-          @click="publishToVerified"
-          :loading="publishing"
-        >
-          发布为官方验商品
-        </el-button>
-
         <!-- 取消订单 -->
         <el-button
           v-if="!['completed', 'cancelled'].includes(detail.status)"
@@ -246,21 +216,11 @@
     <!-- 价格设置对话框 -->
     <el-dialog
       v-model="priceDialogVisible"
-      :title="priceDialogType === 'estimated' ? '设置预估价格' : '设置最终价格'"
+      title="设置最终价格"
       width="500px"
     >
       <el-form :model="priceForm" label-width="120px">
-        <el-form-item v-if="priceDialogType === 'estimated'" label="预估价格" required>
-          <el-input-number
-            v-model="priceForm.estimated_price"
-            :precision="2"
-            :min="0"
-            :step="100"
-            style="width: 100%"
-            placeholder="请输入预估价格"
-          />
-        </el-form-item>
-        <el-form-item v-if="priceDialogType === 'final'" label="最终价格" required>
+        <el-form-item label="最终价格" required>
           <el-input-number
             v-model="priceForm.final_price"
             :precision="2"
@@ -270,7 +230,7 @@
             placeholder="请输入最终价格"
           />
         </el-form-item>
-        <el-form-item v-if="priceDialogType === 'final'" label="加价">
+        <el-form-item label="加价">
           <el-input-number
             v-model="priceForm.bonus"
             :precision="2"
@@ -404,7 +364,6 @@ const orderId = parseInt(route.params.id)
 
 const loading = ref(false)
 const detail = ref({})
-const publishing = ref(false)
 
 const statusTag = computed(() => getRecycleStatusTag(detail.value))
 const processSteps = computed(() => getRecycleProcessSteps(detail.value))
@@ -412,10 +371,8 @@ const activeStep = computed(() => getRecycleStageIndex(detail.value))
 
 // 价格对话框
 const priceDialogVisible = ref(false)
-const priceDialogType = ref('estimated') // estimated 或 final
 const savingPrice = ref(false)
 const priceForm = reactive({
-  estimated_price: null,
   final_price: null,
   bonus: 0
 })
@@ -557,7 +514,6 @@ const loadDetail = async () => {
         reportForm.checkItemsJson = JSON.stringify(detail.value.report.check_items || {}, null, 2)
         reportForm.remarks = detail.value.report.remarks || ''
       }
-      priceForm.estimated_price = detail.value.estimated_price
       priceForm.final_price = detail.value.final_price
       priceForm.bonus = detail.value.bonus || 0
     }
@@ -569,14 +525,9 @@ const loadDetail = async () => {
   }
 }
 
-const showPriceDialog = (type) => {
-  priceDialogType.value = type
-  if (type === 'estimated') {
-    priceForm.estimated_price = detail.value.estimated_price || 0
-  } else {
-    priceForm.final_price = detail.value.final_price || detail.value.estimated_price || 0
-    priceForm.bonus = detail.value.bonus || 0
-  }
+const showPriceDialog = () => {
+  priceForm.final_price = detail.value.final_price || detail.value.estimated_price || 0
+  priceForm.bonus = detail.value.bonus || 0
   priceDialogVisible.value = true
 }
 
@@ -584,22 +535,14 @@ const savePrice = async () => {
   savingPrice.value = true
   try {
     const data = {
-      price_type: priceDialogType.value
+      price_type: 'final'
     }
-    if (priceDialogType.value === 'estimated') {
-      if (!priceForm.estimated_price) {
-        ElMessage.warning('请输入预估价格')
-        return
-      }
-      data.estimated_price = priceForm.estimated_price
-    } else {
-      if (!priceForm.final_price) {
-        ElMessage.warning('请输入最终价格')
-        return
-      }
-      data.final_price = priceForm.final_price
-      data.bonus = priceForm.bonus
+    if (!priceForm.final_price) {
+      ElMessage.warning('请输入最终价格')
+      return
     }
+    data.final_price = priceForm.final_price
+    data.bonus = priceForm.bonus
     
     await adminApi.put(`/inspection-orders/${orderId}/price`, data)
     ElMessage.success('价格更新成功')
@@ -650,17 +593,6 @@ const markReceived = async () => {
     ElMessage.error('保存失败')
   } finally {
     savingReport.value = false
-  }
-}
-
-const quickMarkQuoted = async () => {
-  try {
-    // 已移除"已估价"状态，订单提交后直接进入"已寄出"状态
-    await loadDetail()
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('操作失败')
-    }
   }
 }
 
@@ -809,29 +741,7 @@ const executePayment = async () => {
   }
 }
 
-const publishToVerified = async () => {
-  try {
-    await ElMessageBox.confirm(
-      '确认将此回收商品发布为官方验商品吗？发布后商品将自动上架。',
-      '确认发布',
-      { type: 'warning' }
-    )
-    publishing.value = true
-    const res = await adminApi.post(`/inspection-orders/${orderId}/publish-verified`)
-    if (res.data?.success) {
-      ElMessage.success(`发布成功！商品ID：${res.data.verified_product_id}`)
-      await loadDetail()
-    } else {
-      ElMessage.error(res.data?.detail || '发布失败')
-    }
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.detail || '发布失败')
-    }
-  } finally {
-    publishing.value = false
-  }
-}
+// 已移除“从回收订单侧发起的官方验发布/入库”能力：库存导入改为在“官方验库存管理”中手动选择来源回收单。
 
 const cancelOrder = async () => {
   try {

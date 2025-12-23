@@ -55,7 +55,7 @@ const routes = [
     path: '/verified-products/:id',
     name: 'VerifiedProductDetail',
     component: () => import('@/pages/VerifiedProductDetail.vue'),
-    meta: { theme: 'yellow', hideSearch: false }
+    meta: { theme: 'blue', hideSearch: false, verifiedMode: true }
   },
   {
     path: '/publish',
@@ -126,8 +126,8 @@ const routes = [
   {
     path: '/my-recycle-orders',
     name: 'MyRecycleOrders',
-    component: () => import('@/pages/MyRecycleOrders.vue'),
-    meta: { requiresAuth: true, theme: 'yellow', hideSearch: false }
+    redirect: () => ({ path: '/profile', query: { zone: 'verified', tab: 'verified-recycle' } }),
+    meta: { requiresAuth: true, theme: 'blue', hideSearch: false, verifiedMode: true }
   },
   {
     path: '/recycle-order/:id',
@@ -144,7 +144,7 @@ const routes = [
   {
     path: '/verified-profile',
     name: 'VerifiedProfile',
-    component: () => import('@/pages/VerifiedProfile.vue'),
+    redirect: () => ({ path: '/profile', query: { zone: 'verified', tab: 'verified-orders' } }),
     meta: { requiresAuth: true, theme: 'blue', hideSearch: false, verifiedMode: true }
   },
   {

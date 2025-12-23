@@ -10,7 +10,7 @@
 ## 2. 业务主线（概要）
 1) 用户发起回收：填写设备信息 → 估价 → 创建回收单。  
 2) 后台质检：收货 → 录入质检报告 → 确认最终价 → 完结回收单。  
-3) 自动/手动生成官方验库存：回收单到达 inspected/completed 时创建 `VerifiedDevice`；或后台按钮手动触发。  
+3) 手动生成官方验库存：在“官方验设备（SN 级库存）”页面手动录入 `VerifiedDevice`。  
 4) SN 级库存管理：搜索、批量操作（锁/解锁/售出/移除/送修等）、打印条码。  
 5) 一键上架：从库存生成 `VerifiedProduct`，并更新设备状态（通常锁定或售出）。  
 6) 销售锁控：下单前锁定设备，支付成功标售出，取消/失败解锁，避免超卖。
@@ -31,26 +31,18 @@
   - 关联 `verified_device`（一键上架时使用），含价格/成色/封面/图片/库存等字段。
 
 ### 3.2 关键函数
-- `create_verified_device_from_recycle_order(order, status='ready', location='官方仓')`
-  - 幂等：若回收单已有关联设备直接返回。
-  - 无 SN 自动生成 `AUTO-XXXXXXXX`。
-  - 字段取值：brand/model/storage/condition/price/inspection_note 来源于回收单；`seller=order.user`。
-  - 作用：自动/手动打通回收 → 官方验库存。
+- 已移除“从回收订单自动生成官方验库存”的功能，库存改为手动录入 `VerifiedDevice`。
 
 ### 3.3 序列化器（`backend/app/secondhand_app/serializers.py`）
 - `RecycleOrderSerializer`
   - 暴露新字段：`final_price_confirmed`、`payment_retry_count`。
   - 状态校验：仅允许用户态流转 quoted→confirmed/shipped；confirmed→shipped；inspected→completed；pending/quoted/confirmed→cancelled。
-  - 当状态变为 inspected/completed 时，尝试调用 `create_verified_device_from_recycle_order`（异常吞掉，避免影响主流程）。
 - `VerifiedDeviceSerializer`
   - `create` 时未传 `sn` 则自动生成占位 SN。
 
 ### 3.4 管理端视图与路由（`backend/app/admin_api`）
-- `urls.py`：新增 `POST /admin-api/recycle-orders/<id>/create-verified-device/`（手动生成库存）。
 - `InspectionOrderDetailView`
-  - `post/put`：提交报告或完成时，当回收单状态进入 inspected/completed 触发自动生成库存。
-- `CreateVerifiedDeviceFromRecycleOrderView`
-  - 手动触发从回收单生成 `VerifiedDevice`（后台按钮）。
+  - `post/put`：提交报告或完成（不再自动生成库存）。
 - `AdminVerifiedDeviceView` / `AdminVerifiedDeviceDetailView`
   - 库存列表与 CRUD。
 - `AdminVerifiedDeviceActionView`
@@ -84,7 +76,7 @@
 
 ## 5. 前端管理端
 - `src/admin/pages/RecycleOrderManagement.vue`：回收单列表/筛选，进度条高亮修正（completed 显示为完成）。
-- `src/admin/pages/components/RecycleOrderDetail.vue`：后台回收单详情；收货、提交质检报告、设置最终价、更新状态；按钮“生成官方验库存”调用 `/admin-api/recycle-orders/{id}/create-verified-device/`。
+- `src/admin/pages/components/RecycleOrderDetail.vue`：后台回收单详情；收货、提交质检报告、设置最终价、更新状态（不再提供一键从回收单生成库存）。
 - `src/admin/pages/VerifiedDeviceInventory.vue`：官方验库存（SN 级）列表；搜索/筛选；批量锁/解锁/售出/移除/送修；单条操作；打印条码。
 - `src/admin/pages/VerifiedProductManagement.vue`：官方验商品列表；“新增设备”支持演示模式自动生成 SN/IMEI；支持一键上架。
 - `src/admin/pages/components/VerifiedProductForm.vue`：官方验商品表单（新增/编辑）；一键上架可带入库存设备信息预填。
@@ -103,9 +95,9 @@
 
 ## 8. 自测建议（示例流）
 1) 用户登录，调用 `/api/recycle-orders/estimate/` 使用有价格数据的组合（如：device_type=手机、brand=苹果、model=iPhone 15 Pro Max、storage=256GB、condition=good）。  
-2) 创建回收单 `/api/recycle-orders/`（填 estimated_price/bonus/联系人/电话/地址）。  
+2) 创建回收单 `/api/recycle-orders/`（填 estimated_price/bonus/地址）。  
 3) 管理端登录后：收货 `POST /admin-api/inspection-orders/{id}/received` → 提交质检报告 `POST /admin-api/inspection-orders/{id}` → 设置最终价 `PUT /admin-api/inspection-orders/{id}/price` → 完成 `PUT /admin-api/inspection-orders/{id}` status=completed。  
-4) 检查自动生成 `VerifiedDevice`（也可手动 `POST /admin-api/recycle-orders/{id}/create-verified-device/`）。  
+4) 在“官方验设备（SN 级库存）”页面手动创建 `VerifiedDevice`。  
 5) 在库存页执行一键上架，生成 `VerifiedProduct`；确认设备状态随之更新（锁/售出）。  
 6) 前台 `GET /api/verified-products/` 能看到上架商品，详情页展示质检/图片。
 
@@ -137,7 +129,7 @@
   ```
 - 创建回收单：`POST /api/recycle-orders/`  
   ```json
-  {"device_type":"手机","brand":"苹果","model":"iPhone 15 Pro Max","storage":"256GB","condition":"good","estimated_price":7200,"bonus":100,"contact_name":"张三","contact_phone":"13800000000","address":"上海市..."}
+  {"device_type":"手机","brand":"苹果","model":"iPhone 15 Pro Max","storage":"256GB","condition":"good","estimated_price":7200,"bonus":100,"address":"上海市..."}
   ```
 - 质检报告：`POST /admin-api/inspection-orders/{id}`  
   ```json
@@ -147,8 +139,8 @@
   ```json
   {"price_type":"final","final_price":7200,"bonus":100}
   ```
-- 完成并尝试生成库存：`PUT /admin-api/inspection-orders/{id}` with `{"status":"completed"}`  
-- 手动生成库存：`POST /admin-api/recycle-orders/{id}/create-verified-device/`
+- 完成：`PUT /admin-api/inspection-orders/{id}` with `{"status":"completed"}`  
+- 手动创建库存：在“官方验设备（SN 级库存）”页面新增 `VerifiedDevice`
 - 一键上架：`POST /admin-api/verified-devices/{id}/list-product`（若接口路由为 AdminVerifiedDeviceListProductView）
 - 库存批量操作：`POST /admin-api/verified-devices/actions/`  
   ```json
@@ -197,7 +189,7 @@
   - 提交质检报告：RecycleOrderDetail.vue → `POST /admin-api/inspection-orders/{id}`
   - 设置最终价：RecycleOrderDetail.vue → `PUT /admin-api/inspection-orders/{id}/price`
   - 完成回收单：RecycleOrderDetail.vue → `PUT /admin-api/inspection-orders/{id}`（status=completed）
-  - 手动生成库存：RecycleOrderDetail.vue → `POST /admin-api/recycle-orders/{id}/create-verified-device/`
+  - 手动创建库存：VerifiedDeviceInventory.vue → `POST /admin-api/verified-devices/`
   - 库存列表/操作：VerifiedDeviceInventory.vue → `GET /admin-api/verified-devices/`；动作 `POST /admin-api/verified-devices/actions/`
   - 库存单条操作：VerifiedDeviceInventory.vue → `POST /admin-api/verified-devices/{id}/actions/`（若后端支持）
   - 一键上架：VerifiedDeviceInventory.vue 或 VerifiedProductManagement.vue → `POST /admin-api/verified-devices/{id}/list-product`
@@ -257,14 +249,14 @@
 
 ## 23. 前端页面与数据流（更细粒度）
 - 用户端
-  - Recycle.vue：表单 `device_type/brand/model/storage/condition`；`submitEstimate` → `/api/recycle-orders/estimate/`；`createRecycleOrder` → `/api/recycle-orders/`（需补联系人/电话/地址必填）。
+  - Recycle.vue：表单 `device_type/brand/model/storage/condition`；`submitEstimate` → `/api/recycle-orders/estimate/`；`createRecycleOrder` → `/api/recycle-orders/`。
   - MyRecycleOrders.vue：`GET /api/recycle-orders/`（status 分页）；展示支付 tag；点击跳转详情。
   - RecycleOrderDetail.vue：`loadOrderDetail` + `loadInspectionReport`；动作 `PATCH /api/recycle-orders/{id}/`（confirm/shipping/dispute/final/cancel）；`GET /inspection-report/`；质检报告展示 check_items/score/备注。
   - VerifiedProducts.vue：筛选条件（category/brand/condition/search）；`GET /api/verified-products/`（status=active，ordering=-created_at）；分页。
   - VerifiedProductDetail.vue：`GET /api/verified-products/{id}/`；图片兜底（cover/detail/images）；质检信息/报告列表；成色映射需对齐 new/like_new/good/fair/poor。
 - 管理端
   - RecycleOrderManagement.vue：列表筛选；进度条 active/completed 逻辑；`GET /admin-api/inspection-orders/`。
-  - RecycleOrderDetail.vue（admin 组件）：`GET /admin-api/inspection-orders/{id}`；收货 `POST .../received`；质检报告 `POST .../{id}`；定价 `PUT .../{id}/price`；完成 `PUT .../{id}` status=completed；手动生成库存 `POST /admin-api/recycle-orders/{id}/create-verified-device/`。
+  - RecycleOrderDetail.vue（admin 组件）：`GET /admin-api/inspection-orders/{id}`；收货 `POST .../received`；质检报告 `POST .../{id}`；定价 `PUT .../{id}/price`；完成 `PUT .../{id}` status=completed。
   - VerifiedDeviceInventory.vue：`GET /admin-api/verified-devices/`；批量动作 `POST /admin-api/verified-devices/actions/`（lock/unlock/sold/remove/ready/repair）；单条动作同接口（或 detail/actions）；打印条码。
   - VerifiedProductManagement.vue：官方验商品列表；新增设备（演示模式自动生成 SN/IMEI）；一键上架入口调用 `list-product`；下架/删除等操作。
   - VerifiedProductForm.vue：商品表单（标题/价格/原价/成色/分类/描述/封面/图片/库存/关联设备）；一键上架预填库存信息。

@@ -240,9 +240,6 @@
 - `DELETE,GET,POST` `/admin-api/products/<int:pid>`
 - `DELETE,GET,POST` `/admin-api/products`
 
-### `recycle-orders`
-- `POST` `/admin-api/recycle-orders/<int:order_id>/create-verified-device/`
-
 ### `recycle-templates`
 - `DELETE,GET,POST,PUT` `/admin-api/recycle-templates/<int:template_id>/questions/<int:question_id>/options/<int:option_id>`
 - `DELETE,GET,POST,PUT` `/admin-api/recycle-templates/<int:template_id>/questions/<int:question_id>/options`
