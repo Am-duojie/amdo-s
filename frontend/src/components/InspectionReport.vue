@@ -1,6 +1,6 @@
 <template>
   <div class="inspection-report" :class="{ compact }">
-    <template v-if="!compact">
+    <template v-if="!compact && showSidebar">
       <aside class="sidebar">
         <div class="summary-card">
           <div class="cover-img">
@@ -29,7 +29,7 @@
         </div>
       </div>
 
-      <div v-if="compact" class="compact-summary">
+      <div v-if="compact && showCompactSummary" class="compact-summary">
         <div class="tag-row">
           <el-tag size="small" type="success">{{ baseInfo.level }}</el-tag>
           <el-tag size="small" type="info" v-if="baseInfo.spec">{{ baseInfo.spec }}</el-tag>
@@ -137,6 +137,18 @@ const props = defineProps({
   compact: {
     type: Boolean,
     default: false
+  },
+  defaultExpanded: {
+    type: Boolean,
+    default: true
+  },
+  showCompactSummary: {
+    type: Boolean,
+    default: true
+  },
+  showSidebar: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -150,7 +162,7 @@ const baseInfo = ref({
 })
 
 const reportData = ref([])
-const isAllExpanded = ref(true)
+const isAllExpanded = ref(props.defaultExpanded)
 const imageViewerVisible = ref(false)
 const currentImage = ref('')
 
@@ -170,7 +182,7 @@ const openImageViewer = (img) => {
   imageViewerVisible.value = true
 }
 
-const processReportData = (categories = []) => {
+const processReportData = (categories = [], expanded = true) => {
   return categories.map(cat => {
     const groups = cat.groups || []
     const items = groups.flatMap(g => g.items || [])
@@ -179,7 +191,7 @@ const processReportData = (categories = []) => {
     return {
       ...cat,
       groups,
-      expanded: true,
+      expanded,
       totalCount,
       issueCount,
       hasIssues: issueCount > 0
@@ -211,11 +223,11 @@ const fetchInspectionReport = async () => {
 onMounted(async () => {
   if (props.reportDataProp) {
     baseInfo.value = props.reportDataProp.baseInfo || baseInfo.value
-    reportData.value = processReportData(props.reportDataProp.categories || [])
+    reportData.value = processReportData(props.reportDataProp.categories || [], props.defaultExpanded)
   } else {
     const data = await fetchInspectionReport()
     baseInfo.value = data.baseInfo || baseInfo.value
-    reportData.value = processReportData(data.categories || [])
+    reportData.value = processReportData(data.categories || [], props.defaultExpanded)
   }
 })
 </script>

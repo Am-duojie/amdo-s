@@ -350,6 +350,29 @@ payment_status = paid（打款完成）
 
 ## 关键字段说明
 
+### 阶段必填数据（建议后端校验）
+
+| 阶段 | 触发动作 | 必填字段 |
+|------|------|------|
+| pending | 创建回收订单 | template_id 或 device_type/brand/model，storage，condition，address |
+| shipped | 填写物流信息 | shipping_carrier，tracking_number |
+| received | 管理端确认收货 | 无（自动写 received_at） |
+| inspected | 管理端提交质检报告 | check_items（质检报告内容） |
+| inspected | 管理端设置最终价 | final_price（>0） |
+| completed | 用户确认最终价 | final_price_confirmed=true |
+| 入库 | 从回收单生成库存 | status=completed 且 final_price_confirmed=true，sn |
+| 上架 | 从库存生成官方验商品 | 仅允许库存设备一键上架 |
+
+### 官方验商品上架约束
+- 不允许直接创建官方验商品，必须由库存设备生成。
+- 上架入口：管理端“库存设备一键上架”。
+- 上架强校验（status=active）：
+  - `storage` 必填且必须命中模板 `storages`
+  - `ram`/`version`/`color`：模板有配置选项则必填且必须命中；模板未配置则允许为空
+  - `price` 必须大于 0
+  - `cover_image` 不能为空
+  - `inspection_reports` 至少 1 份
+
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | status | string | 订单状态 |

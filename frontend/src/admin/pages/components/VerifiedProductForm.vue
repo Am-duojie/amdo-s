@@ -5,8 +5,8 @@
       <el-card shadow="never" class="card-block">
         <template #header>基础信息</template>
       
-      <!-- 模板选择 -->
-      <el-form-item label="从模板选择">
+      <!-- 模板选择（仅用于未关联库存的旧数据；正常流程以库存为准） -->
+      <el-form-item v-if="!isLinkedToDevice" label="从模板选择">
         <el-select
           v-model="selectedTemplate"
           placeholder="选择机型模板（可选）"
@@ -26,17 +26,30 @@
           选择模板后将自动填充品牌、型号、规格等信息
         </div>
       </el-form-item>
+
+      <el-alert
+        v-else
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 12px"
+        :title="`该商品已关联库存设备（SN：${linkedDevice?.sn || '-'}）。规格/图片/质检/描述等展示字段以库存为准，请到【官方验库存】编辑。`"
+      >
+        <template #default>
+          <el-button size="small" type="primary" plain @click="goToLinkedDevice">去库存编辑</el-button>
+        </template>
+      </el-alert>
       
-      <el-form-item label="商品标题" prop="title">
+      <el-form-item v-if="!isLinkedToDevice" label="商品标题" prop="title">
         <el-input v-model="form.title" placeholder="请输入商品标题" />
       </el-form-item>
-      <el-form-item label="品牌" prop="brand">
+      <el-form-item v-if="!isLinkedToDevice" label="品牌" prop="brand">
         <el-input v-model="form.brand" placeholder="如：苹果、华为" />
       </el-form-item>
-      <el-form-item label="型号" prop="model">
+      <el-form-item v-if="!isLinkedToDevice" label="型号" prop="model">
         <el-input v-model="form.model" placeholder="如：iPhone 13" />
       </el-form-item>
-        <el-form-item label="分类" prop="category">
+        <el-form-item v-if="!isLinkedToDevice" label="分类" prop="category">
           <el-select v-model="form.category" placeholder="请选择分类">
             <el-option label="手机数码" value="phone" />
             <el-option label="平板/笔记本" value="tablet" />
@@ -45,19 +58,19 @@
             <el-option label="耳机音响" value="audio" />
           </el-select>
         </el-form-item>
-      <el-form-item label="存储容量">
+      <el-form-item v-if="!isLinkedToDevice" label="存储容量">
         <el-input v-model="form.storage" placeholder="如：128GB" />
       </el-form-item>
-      <el-form-item label="运行内存">
+      <el-form-item v-if="!isLinkedToDevice" label="运行内存">
         <el-input v-model="form.ram" placeholder="如：6GB、8GB" />
       </el-form-item>
-      <el-form-item label="版本">
+      <el-form-item v-if="!isLinkedToDevice" label="版本">
         <el-input v-model="form.version" placeholder="如：国行、港版" />
       </el-form-item>
-      <el-form-item label="拆修和功能">
+      <el-form-item v-if="!isLinkedToDevice" label="拆修和功能">
         <el-input v-model="form.repair_status" placeholder="如：未拆未修、功能正常" />
       </el-form-item>
-      <el-form-item label="成色" prop="condition">
+      <el-form-item v-if="!isLinkedToDevice" label="成色" prop="condition">
         <el-select v-model="form.condition" style="width: 100%">
           <el-option label="全新" value="new" />
           <el-option label="99成新" value="like_new" />
@@ -75,10 +88,10 @@
         <el-form-item label="库存" prop="stock">
           <el-input-number v-model="form.stock" :min="1" :max="9999" />
         </el-form-item>
-        <el-form-item label="所在地" prop="location">
+        <el-form-item v-if="!isLinkedToDevice" label="所在地" prop="location">
           <el-input v-model="form.location" placeholder="如：广东 深圳" />
         </el-form-item>
-      <el-form-item label="商品描述" prop="description">
+      <el-form-item v-if="!isLinkedToDevice" label="商品描述" prop="description">
         <el-input v-model="form.description" type="textarea" :rows="4" placeholder="请输入商品描述" />
       </el-form-item>
         <el-form-item label="标签">
@@ -90,8 +103,8 @@
         </el-form-item>
       </el-card>
 
-      <!-- 媒体上传 -->
-      <el-card shadow="never" class="card-block">
+      <!-- 媒体上传（展示字段以库存为准） -->
+      <el-card v-if="!isLinkedToDevice" shadow="never" class="card-block">
         <template #header>媒体上传</template>
         <el-form-item label="封面图" prop="cover_image">
           <el-upload
@@ -125,8 +138,8 @@
         </el-form-item>
       </el-card>
 
-      <!-- 详细质检报告 -->
-      <el-card shadow="never" class="card-block full-width">
+      <!-- 详细质检报告（展示字段以库存为准） -->
+      <el-card v-if="!isLinkedToDevice" shadow="never" class="card-block full-width">
         <template #header>
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <span>详细质检报告（66项检测）</span>
@@ -372,8 +385,8 @@
 
     <div class="actions">
       <el-button @click="$emit('cancel')">取消</el-button>
-      <el-button :loading="saving" @click="submit(false)">{{ isEdit ? '保存' : '创建' }}</el-button>
-      <el-button type="primary" :loading="saving" @click="submit(true)">保存并上架</el-button>
+      <el-button v-if="isEdit" :loading="saving" @click="submit(false)">保存</el-button>
+      <el-button v-if="isEdit" type="primary" :loading="saving" @click="submit(true)">保存并上架</el-button>
       <el-button v-if="isEdit && form.status === 'active'" type="warning" plain :loading="saving" @click="unpublish">
         下架
       </el-button>
@@ -404,6 +417,7 @@
 
 <script setup>
 import { reactive, ref, computed, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import adminApi from '@/utils/adminApi'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -417,6 +431,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['created', 'cancel', 'updated'])
+const router = useRouter()
 
 const formRef = ref()
 const saving = ref(false)
@@ -429,6 +444,15 @@ const inspectionPreviewRef = ref(null)
 const inspectionPreviewSrcList = ref([])
 
 const isEdit = computed(() => !!props.product?.id)
+const linkedDevice = computed(() => {
+  return props.product?.linked_device || (props.product?.linked_device_id ? { id: props.product.linked_device_id, sn: props.product.linked_device_sn } : null)
+})
+const isLinkedToDevice = computed(() => !!linkedDevice.value?.id)
+
+const goToLinkedDevice = () => {
+  const sn = linkedDevice.value?.sn
+  router.push({ name: 'AdminVerifiedDeviceInventory', query: { search: sn || '' } })
+}
 
 // 模板相关
 const templates = ref([])
@@ -496,8 +520,13 @@ const handleTemplateChange = async (templateId) => {
   }
 }
 
-// 在组件挂载时加载模板
-loadTemplates()
+watch(
+  () => isLinkedToDevice.value,
+  (linked) => {
+    if (!linked && !templates.value.length) loadTemplates()
+  },
+  { immediate: true }
+)
 
 const form = reactive({
   title: '',
@@ -994,6 +1023,10 @@ watch(
 )
 
 const submit = async (publishNow = false) => {
+  if (!isEdit.value) {
+    ElMessage.warning('官方验商品仅允许由库存设备上架生成')
+    return
+  }
   try {
     await formRef.value.validate()
     saving.value = true
@@ -1004,29 +1037,38 @@ const submit = async (publishNow = false) => {
       detail_images,
       ...rest
     } = form
-    const payload = {
-      ...rest,
-      price: Number(rest.price || 0),
-      original_price: Number(rest.original_price || 0),
-      stock: Number(rest.stock || 1),
-      detail_images: Array.isArray(detail_images) ? [...detail_images] : [],
-      inspection_reports: convertInspectionDataToAPI() // 存储详细质检数据
-    }
+    const payload = isLinkedToDevice.value
+      ? {
+          // 关联库存设备时：仅保留商品侧字段（避免与库存重复/不一致）
+          price: Number(rest.price || 0),
+          original_price: Number(rest.original_price || 0),
+          stock: Number(rest.stock || 1),
+          status: rest.status,
+          tags: Array.isArray(tags) ? [...tags] : []
+        }
+      : {
+          ...rest,
+          price: Number(rest.price || 0),
+          original_price: Number(rest.original_price || 0),
+          stock: Number(rest.stock || 1),
+          detail_images: Array.isArray(detail_images) ? [...detail_images] : [],
+          inspection_reports: convertInspectionDataToAPI() // 存储详细质检数据
+        }
     // 日期格式化
-    if (rest.inspection_date) {
+    if (!isLinkedToDevice.value && rest.inspection_date) {
       const d = rest.inspection_date
       const dateStr = d instanceof Date
         ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
         : rest.inspection_date
       payload.inspection_date = dateStr
     }
-    if (Array.isArray(tags)) {
+    if (!isLinkedToDevice.value && Array.isArray(tags)) {
       payload.tags = [...tags]
     }
     // 处理分类：优先 category_id，没有则尝试 category（若是数字字符串）
-    if (form.category_id) {
+    if (!isLinkedToDevice.value && form.category_id) {
       payload.category_id = form.category_id
-    } else if (form.category && !isNaN(Number(form.category))) {
+    } else if (!isLinkedToDevice.value && form.category && !isNaN(Number(form.category))) {
       payload.category_id = Number(form.category)
     }
     let id = props.product?.id
@@ -1158,11 +1200,4 @@ const unpublish = async () => {
   cursor: pointer;
 }
 </style>
-
-
-
-
-
-
-
 

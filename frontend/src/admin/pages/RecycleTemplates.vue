@@ -312,70 +312,6 @@
           </el-select>
           <div class="form-hint">如不需要颜色区分，可留空；配置后会参与库存设备上架校验</div>
         </el-form-item>
-        <el-form-item label="默认封面图">
-          <div style="width: 100%">
-            <el-input
-              v-model="form.default_cover_image"
-              placeholder="可直接粘贴图片URL，或使用右侧上传"
-              clearable
-              @change="syncTemplateImageLists"
-              @clear="syncTemplateImageLists"
-            >
-              <template #append>
-                <el-upload
-                  :show-file-list="false"
-                  :http-request="(opt) => handleTemplateUpload(opt, 'cover')"
-                  accept="image/*"
-                >
-                  <el-button type="primary">上传</el-button>
-                </el-upload>
-              </template>
-            </el-input>
-            <div v-if="form.default_cover_image" style="margin-top: 8px">
-              <el-image
-                :src="normalizeToUrl(form.default_cover_image)"
-                style="width: 120px; height: 120px; border-radius: 8px"
-                fit="cover"
-                :preview-src-list="[normalizeToUrl(form.default_cover_image)]"
-                preview-teleported
-              />
-            </div>
-            <div class="form-hint">用于生成官方验商品的封面图（库存设备未填写封面时会用这里）</div>
-          </div>
-        </el-form-item>
-        <el-form-item label="默认详情图">
-          <div style="width: 100%">
-            <el-upload
-              list-type="picture-card"
-              :file-list="detailFileList"
-              :http-request="(opt) => handleTemplateUpload(opt, 'detail')"
-              :on-remove="handleTemplateDetailRemove"
-              accept="image/*"
-            >
-              <el-icon><Plus /></el-icon>
-            </el-upload>
-            <el-select
-              v-model="form.default_detail_images"
-              multiple
-              filterable
-              allow-create
-              default-first-option
-              placeholder="也可粘贴图片URL后回车添加"
-              style="width: 100%; margin-top: 8px"
-              @change="syncTemplateImageLists"
-            />
-            <div class="form-hint">用于生成官方验商品的详情图（库存设备未填写详情图时会用这里）</div>
-          </div>
-        </el-form-item>
-        <el-form-item label="商品描述模板">
-          <el-input
-            v-model="form.description_template"
-            type="textarea"
-            :rows="4"
-            placeholder="可选：支持变量 {brand} {model} {storage} {condition} {ram} {version}"
-          />
-          <div class="form-hint">库存设备一键上架时，会用该模板生成官方验商品描述</div>
-        </el-form-item>
         <el-form-item label="基础价格">
           <div class="base-prices-editor">
             <div v-if="form.storages && form.storages.length > 0" class="prices-list">
@@ -628,7 +564,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Plus, Search, Upload, Download } from '@element-plus/icons-vue'
 import adminApi from '@/utils/adminApi'
 import { useAdminAuthStore } from '@/stores/adminAuth'
-import { getImageUrl } from '@/utils/image'
 
 const admin = useAdminAuthStore()
 const hasPerm = (p) => admin.hasPerm(p)
@@ -646,8 +581,6 @@ const uploadFileRef = ref(null)
 const deviceTypeOptions = ref([])
 const brandOptions = ref([])
 const categories = ref([])
-const coverFileList = ref([])
-const detailFileList = ref([])
 
 // 分页
 const pagination = reactive({
@@ -679,9 +612,6 @@ const form = reactive({
   ram_options: [],
   version_options: [],
   color_options: [],
-  default_cover_image: '',
-  default_detail_images: [],
-  description_template: '',
   category: null,
   base_prices: {},  // 基础价格表：{ "128GB": 4500, "256GB": 5200, ... }
   is_active: true,
@@ -692,49 +622,6 @@ const formRules = {
   brand: [{ required: true, message: '请输入品牌', trigger: 'blur' }],
   model: [{ required: true, message: '请输入型号', trigger: 'blur' }],
   ram_options: [{ type: 'array', required: true, min: 1, message: '请至少配置一个运行内存选项', trigger: 'change' }],
-}
-
-const uploadEndpoint = import.meta.env.VITE_ADMIN_UPLOAD_URL || '/uploads/images/'
-const normalizeToUrl = (url) => (url ? (getImageUrl(url) || url) : '')
-
-const syncTemplateImageLists = () => {
-  coverFileList.value = form.default_cover_image
-    ? [{ name: 'cover', url: normalizeToUrl(form.default_cover_image) }]
-    : []
-  detailFileList.value = (form.default_detail_images || [])
-    .filter(Boolean)
-    .map((u, idx) => ({ name: `detail-${idx + 1}`, url: normalizeToUrl(u) }))
-}
-
-const handleTemplateUpload = async (options, type) => {
-  const { file, onError, onSuccess } = options
-  const formData = new FormData()
-  formData.append('file', file)
-  try {
-    const res = await adminApi.post(uploadEndpoint, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    const url = res.data?.url || res.data?.image || res.data?.path
-    if (!url) throw new Error('上传返回空URL')
-    if (type === 'cover') {
-      form.default_cover_image = url
-    } else {
-      if (!Array.isArray(form.default_detail_images)) form.default_detail_images = []
-      form.default_detail_images.push(url)
-    }
-    syncTemplateImageLists()
-    onSuccess?.(res.data)
-  } catch (err) {
-    ElMessage.error('上传失败')
-    onError?.(err)
-  }
-}
-
-const handleTemplateDetailRemove = (file) => {
-  const target = file?.url
-  if (!target) return
-  form.default_detail_images = (form.default_detail_images || []).filter((u) => normalizeToUrl(u) !== target && u !== target)
-  syncTemplateImageLists()
 }
 
 // 问卷管理
@@ -1055,14 +942,10 @@ const handleCreate = () => {
     ram_options: [],
     version_options: [],
     color_options: [],
-    default_cover_image: '',
-    default_detail_images: [],
-    description_template: '',
     category: null,
     base_prices: {},
     is_active: true,
   })
-  syncTemplateImageLists()
   dialogVisible.value = true
 }
 
@@ -1088,9 +971,6 @@ const handleEdit = async (row) => {
       ram_options: fullData.ram_options || [],
       version_options: fullData.version_options || [],
       color_options: fullData.color_options || [],
-      default_cover_image: fullData.default_cover_image || '',
-      default_detail_images: fullData.default_detail_images || [],
-      description_template: fullData.description_template || '',
       category: fullData.category || null,
       base_prices: fullData.base_prices || {},
       is_active: fullData.is_active,
@@ -1106,15 +986,11 @@ const handleEdit = async (row) => {
       ram_options: row.ram_options || [],
       version_options: row.version_options || [],
       color_options: row.color_options || [],
-      default_cover_image: row.default_cover_image || '',
-      default_detail_images: row.default_detail_images || [],
-      description_template: row.description_template || '',
       category: row.category || null,
       base_prices: row.base_prices || {},
       is_active: row.is_active,
     })
   }
-  syncTemplateImageLists()
   dialogVisible.value = true
 }
 
@@ -1161,8 +1037,6 @@ const handleDelete = async (row) => {
 // 对话框关闭
 const handleDialogClose = () => {
   formRef.value?.resetFields()
-  coverFileList.value = []
-  detailFileList.value = []
 }
 
 // 管理问卷

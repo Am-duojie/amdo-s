@@ -21,9 +21,31 @@ class RecycleOrderListSerializer(serializers.ModelSerializer):
         return f"{obj.brand} {obj.model}"
 
 class VerifiedProductListSerializer(serializers.ModelSerializer):
+    linked_device_id = serializers.SerializerMethodField()
+    linked_device_sn = serializers.SerializerMethodField()
     class Meta:
         model = VerifiedProduct
-        fields = ['id','title','condition','price','status','cover_image','sales_count','created_at']
+        fields = [
+            'id', 'title', 'condition', 'price', 'original_price', 'status', 'stock',
+            'cover_image', 'sales_count', 'created_at', 'tags',
+            'linked_device_id', 'linked_device_sn'
+        ]
+
+    def get_linked_device_id(self, obj):
+        try:
+            dev = getattr(obj, 'devices', None)
+            dev = dev.first() if dev is not None else None
+            return getattr(dev, 'id', None)
+        except Exception:
+            return None
+
+    def get_linked_device_sn(self, obj):
+        try:
+            dev = getattr(obj, 'devices', None)
+            dev = dev.first() if dev is not None else None
+            return getattr(dev, 'sn', None)
+        except Exception:
+            return None
 
 
 class VerifiedDeviceListSerializer(serializers.ModelSerializer):
@@ -34,8 +56,9 @@ class VerifiedDeviceListSerializer(serializers.ModelSerializer):
         model = VerifiedDevice
         fields = [
             'id', 'sn', 'imei', 'brand', 'model', 'storage', 'ram', 'version', 'color',
-            'condition', 'status', 'cover_image', 'location', 'suggested_price',
-            'inspection_note', 'template_id', 'created_at', 'linked_product_id'
+            'condition', 'status', 'cover_image', 'detail_images', 'listing_description',
+            'location', 'suggested_price',
+            'inspection_reports', 'inspection_note', 'template_id', 'created_at', 'linked_product_id'
         ]
 
 

@@ -1,3 +1,14 @@
+## 2025-12-21
+
+- **Documentation: rewrite project summary based on actual code**
+  - Completely rewrote project summary document: `docs/00-overview/project-summary.md`
+    - Based on actual code (SSOT principle), not outdated documentation
+    - Includes comprehensive analysis of 24 core data models, 19 user-side ViewSets/Views, 30+ admin endpoints
+    - Documents all actual features: user-side (24 pages), admin-side (30 pages), payment integration, WebSocket real-time communication
+    - Covers three business lines: secondhand trading, recycling, official verification
+  - Added presentation outline for graduation defense: `docs/00-overview/presentation-outline.md`
+    - 26-page PPT outline covering project overview, technical architecture, core features, key implementations, project results, testing, and future improvements
+  - Verification: open both documents and confirm they accurately reflect the actual codebase
 
 ## 2025-12-19
 

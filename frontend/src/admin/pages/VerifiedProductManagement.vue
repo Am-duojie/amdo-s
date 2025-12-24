@@ -21,15 +21,6 @@
         >
           一键上架（选设备）
         </el-button>
-        <el-button
-          v-if="hasPerm('verified:write')"
-          type="primary"
-          size="small"
-          :icon="Plus"
-          @click="openCreate"
-        >
-          新增商品
-        </el-button>
       </el-space>
     </div>
 
@@ -206,63 +197,16 @@
       />
     </el-dialog>
 
-    <!-- 新增设备（演示模式可自动生成SN） -->
-    <el-dialog
-      v-model="createDeviceDialogVisible"
-      title="新增官方验库存设备"
-      width="520px"
-      destroy-on-close
-    >
-      <el-form :model="deviceForm" label-width="100px" :inline="false">
-        <el-form-item label="演示模式">
-          <el-switch v-model="autoGenerateSn" active-text="自动生成SN/IMEI" inactive-text="手动填写" />
-        </el-form-item>
-        <el-form-item label="SN/序列号">
-          <el-input v-model="deviceForm.sn" placeholder="留空则自动生成" :disabled="autoGenerateSn" />
-        </el-form-item>
-        <el-form-item label="IMEI/MEID">
-          <el-input v-model="deviceForm.imei" placeholder="可选" />
-        </el-form-item>
-        <el-form-item label="品牌/型号">
-          <el-input v-model="deviceForm.brand" placeholder="品牌" style="width: 45%; margin-right: 10px;" />
-          <el-input v-model="deviceForm.model" placeholder="型号" style="width: 45%;" />
-        </el-form-item>
-        <el-form-item label="容量/成色">
-          <el-input v-model="deviceForm.storage" placeholder="如 128GB" style="width: 45%; margin-right: 10px;" />
-          <el-select v-model="deviceForm.condition" style="width: 45%;">
-            <el-option label="99成新" value="like_new" />
-            <el-option label="95成新" value="good" />
-            <el-option label="9成新" value="fair" />
-            <el-option label="8成新" value="poor" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="仓位">
-          <el-input v-model="deviceForm.location" placeholder="仓库/货架位" />
-        </el-form-item>
-        <el-form-item label="建议售价">
-          <el-input-number v-model="deviceForm.suggested_price" :min="0" :precision="2" style="width: 100%;" />
-        </el-form-item>
-        <el-form-item label="备注/质检">
-          <el-input v-model="deviceForm.inspection_note" type="textarea" :rows="3" placeholder="可填质检要点/备注" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="createDeviceDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="createDeviceLoading" @click="submitCreateDevice">保存</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 创建商品对话框 -->
+    <!-- 编辑商品对话框 -->
     <el-dialog
       v-model="showCreateDialog"
-      :title="editingProduct ? '编辑官方验商品' : '新增官方验商品'"
+      title="编辑官方验商品"
       width="800px"
       @close="resetCreateForm"
       destroy-on-close
     >
       <VerifiedProductForm
         :product="editingProduct"
-        @created="handleProductCreated"
         @updated="handleProductUpdated"
         @cancel="showCreateDialog = false"
       />
@@ -327,7 +271,7 @@ import { useAdminAuthStore } from '@/stores/adminAuth'
 import VerifiedProductDetail from './components/VerifiedProductDetail.vue'
 import VerifiedProductForm from './components/VerifiedProductForm.vue'
 import BatchActions from './components/BatchActions.vue'
-import { Search, Refresh, Plus } from '@element-plus/icons-vue'
+import { Search, Refresh } from '@element-plus/icons-vue'
 
 const admin = useAdminAuthStore()
 const hasPerm = (p) => admin.hasPerm(p)
@@ -349,20 +293,6 @@ const selectedDeviceIds = ref([])
 const quickPrice = ref(null)
 const quickOriginalPrice = ref(null)
 const quickLoading = ref(false)
-const createDeviceDialogVisible = ref(false)
-const createDeviceLoading = ref(false)
-const autoGenerateSn = ref(true)
-const deviceForm = reactive({
-  sn: '',
-  imei: '',
-  brand: '',
-  model: '',
-  storage: '',
-  condition: 'good',
-  location: '',
-  suggested_price: null,
-  inspection_note: ''
-})
 
 const statusMap = {
   pending: { text: '待审核', type: 'warning' },
@@ -381,13 +311,13 @@ const getStatusText = (status) => statusMap[status]?.text || status
 const getStatusType = (status) => statusMap[status]?.type || 'info'
 const getConditionText = (condition) => conditionMap[condition] || condition
 
-const openCreate = () => {
-  editingProduct.value = null
-  showCreateDialog.value = true
-}
-
-const openEdit = (row) => {
-  editingProduct.value = { ...row }
+const openEdit = async (row) => {
+  try {
+    const res = await adminApi.get(`/verified-listings/${row.id}/`)
+    editingProduct.value = res.data || { ...row }
+  } catch {
+    editingProduct.value = { ...row }
+  }
   showCreateDialog.value = true
 }
 
@@ -446,11 +376,6 @@ const handleProductUpdated = () => {
   loadProducts()
 }
 
-const handleProductCreated = () => {
-  showCreateDialog.value = false
-  editingProduct.value = null
-  loadProducts()
-}
 
 const resetCreateForm = () => {
   editingProduct.value = null
@@ -516,43 +441,6 @@ const listSelectedDevice = async () => {
     ElMessage.error(e?.response?.data?.detail || '上架失败')
   } finally {
     quickLoading.value = false
-  }
-}
-
-const openCreateDevice = () => {
-  createDeviceDialogVisible.value = true
-  Object.assign(deviceForm, {
-    sn: '',
-    imei: '',
-    brand: '',
-    model: '',
-    storage: '',
-    condition: 'good',
-    location: '',
-    suggested_price: null,
-    inspection_note: ''
-  })
-  autoGenerateSn.value = true
-}
-
-const submitCreateDevice = async () => {
-  createDeviceLoading.value = true
-  try {
-    const payload = { ...deviceForm }
-    if (autoGenerateSn.value || !payload.sn) {
-      delete payload.sn
-    }
-    await adminApi.post('/verified-devices/', payload)
-    ElMessage.success('新增设备成功')
-    createDeviceDialogVisible.value = false
-    // 创建后刷新设备列表（若有）
-    if (quickListDialogVisible.value) {
-      searchDevices()
-    }
-  } catch (e) {
-    ElMessage.error(e?.response?.data?.detail || '新增设备失败')
-  } finally {
-    createDeviceLoading.value = false
   }
 }
 

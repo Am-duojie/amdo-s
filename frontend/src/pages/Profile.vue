@@ -155,7 +155,46 @@
         <div class="content-section" v-if="activeMenu === 'home' || activeMenu === 'published'">
           <div class="section-header">
             <h2 class="section-title">我发布的宝贝</h2>
-            <span class="section-count">共 {{ products.length }} 件</span>
+            <span class="section-count">共 {{ productsTotal }} 件</span>
+          </div>
+          <div class="seller-toolbar">
+            <div class="seller-tabs">
+              <button
+                class="tab-btn"
+                :class="{ active: productsStatusFilter === 'all' }"
+                @click="setProductsStatus('all')"
+              >
+                全部
+              </button>
+              <button
+                class="tab-btn"
+                :class="{ active: productsStatusFilter === 'active' }"
+                @click="setProductsStatus('active')"
+              >
+                在售
+              </button>
+              <button
+                class="tab-btn"
+                :class="{ active: productsStatusFilter === 'pending' }"
+                @click="setProductsStatus('pending')"
+              >
+                审核中
+              </button>
+              <button
+                class="tab-btn"
+                :class="{ active: productsStatusFilter === 'sold' }"
+                @click="setProductsStatus('sold')"
+              >
+                已售
+              </button>
+              <button
+                class="tab-btn"
+                :class="{ active: productsStatusFilter === 'removed' }"
+                @click="setProductsStatus('removed')"
+              >
+                已下架
+              </button>
+            </div>
           </div>
           <div v-if="loading" class="loading-wrapper">
             <el-skeleton :rows="3" animated />
@@ -170,13 +209,44 @@
               <div class="product-image">
                 <img v-if="product.images?.length" :src="getImageUrl(product.images[0].image)" :alt="product.title" />
                 <el-icon v-else class="no-image"><PictureFilled /></el-icon>
-                <div v-if="product.status === 'sold'" class="sold-badge"><span>卖掉了</span></div>
+                <div
+                  v-if="product.status === 'sold' || product.status === 'removed' || product.status === 'pending'"
+                  class="status-overlay"
+                >
+                  <span>
+                    {{
+                      product.status === 'sold'
+                        ? '卖掉了'
+                        : product.status === 'removed'
+                          ? '已下架'
+                          : '正在审核'
+                    }}
+                  </span>
+                </div>
               </div>
               <div class="product-info">
                 <div class="product-title">{{ product.title }}</div>
                 <div class="product-price">¥{{ product.price }}</div>
+                <div class="product-footer">
+                  <span v-if="product.status === 'sold'" class="status-pill sold">已售</span>
+                  <span v-else-if="product.status === 'pending'" class="status-pill pending">审核中</span>
+                  <span v-else-if="product.status === 'removed'" class="status-pill removed">已下架</span>
+                </div>
+                <div v-if="product.status === 'removed' && product.removed_reason" class="removed-reason">
+                  下架原因：{{ product.removed_reason }}
+                </div>
               </div>
             </div>
+          </div>
+          <div v-if="productsTotal > productsPagination.pageSize" class="pagination-wrapper">
+            <el-pagination
+              v-model:current-page="productsPagination.current"
+              :total="productsTotal"
+              :page-size="productsPagination.pageSize"
+              layout="prev, pager, next"
+              background
+              @current-change="handleProductsPageChange"
+            />
           </div>
         </div>
 
@@ -320,8 +390,8 @@
                 <el-button type="primary" @click="openVerifiedProducts">去逛逛官方验</el-button>
               </el-empty>
             </div>
-            <div v-else class="orders-list">
-              <div v-for="order in filteredVerifiedOrders" :key="order.id" class="order-card-large">
+          <div v-else class="orders-list">
+            <div v-for="order in filteredVerifiedOrders" :key="order.id" class="order-card-large">
                 <div class="order-card-header">
                   <div class="seller-info">
                     <el-avatar :size="24" :src="order.product?.seller?.avatar">
@@ -858,10 +928,13 @@ import { User, ShoppingBag, Star, Setting, ArrowDown, Location, PictureFilled, W
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
 import { getRecycleStatusTag } from '@/utils/recycleFlow'
+import { getResults, getCount } from '@/utils/responseGuard'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+
+let suppressRouteSync = false
 
 const isVerifiedZone = computed(() => route.query?.zone === 'verified' || String(route.query?.tab || '').startsWith('verified-'))
 const defaultImage = 'https://via.placeholder.com/200x200?text=No+Image'
@@ -1005,6 +1078,17 @@ const filteredVerifiedRecycleOrders = computed(() => {
 // 数据
 const loading = ref(false)
 const products = ref([])
+const productsTotal = ref(0)
+const productsStatusFilter = ref('all')
+const productsStatusQuery = computed(() => {
+  if (productsStatusFilter.value === 'all') return 'active,pending,sold,removed'
+  return productsStatusFilter.value
+})
+const productsPagination = ref({
+  current: 1,
+  pageSize: 20,
+  total: 0,
+})
 const allOrders = ref([])
 const favorites = ref([])
 const addresses = ref([])
@@ -1332,6 +1416,28 @@ const switchMenu = (menu) => {
   } else {
     currentOrderStatus.value = 'all'
   }
+  if (menu === 'home' || menu === 'published') {
+    productsPagination.value.current = 1
+  }
+
+  // 同步 URL，避免从详情页返回时被旧的 query.tab 覆盖到“我买到的”
+  const query = { ...route.query }
+  if (menu.startsWith('verified-')) {
+    query.zone = 'verified'
+    query.tab = menu
+  } else {
+    delete query.zone
+    if (menu === 'home') {
+      delete query.tab
+    } else {
+      query.tab = menu
+    }
+  }
+  suppressRouteSync = true
+  router.replace({ path: '/profile', query }).finally(() => {
+    suppressRouteSync = false
+  })
+
   loadContent(menu)
 }
 
@@ -1390,11 +1496,51 @@ const loadContent = async (menu) => {
 
 const loadProducts = async () => {
   try {
-    const res = await api.get('/products/my_products/')
-    products.value = res.data || []
-    stats.products = products.value.length
+    const res = await api.get('/products/', {
+      params: {
+        seller: authStore.user?.id,
+        status: productsStatusQuery.value,
+        page: productsPagination.value.current,
+        page_size: productsPagination.value.pageSize,
+        ordering: '-created_at',
+      },
+    })
+    products.value = getResults(res.data)
+    productsTotal.value = getCount(res.data)
+    productsPagination.value.total = productsTotal.value
   } catch (error) {
     console.error('加载商品失败:', error)
+    ElMessage.error(error?.response?.data?.detail || '加载商品失败')
+    products.value = []
+    productsTotal.value = 0
+  } finally {
+    stats.products = productsTotal.value
+  }
+}
+
+const setProductsStatus = (status) => {
+  if (productsStatusFilter.value === status) return
+  productsStatusFilter.value = status
+  productsPagination.value.current = 1
+  if (activeMenu.value === 'home' || activeMenu.value === 'published') {
+    loading.value = true
+    loadProducts().finally(() => {
+      loading.value = false
+    })
+  }
+}
+
+const handleProductsPageChange = (page) => {
+  productsPagination.value.current = page
+  if (activeMenu.value === 'home' || activeMenu.value === 'published') {
+    loading.value = true
+    loadProducts()
+      .finally(() => {
+        loading.value = false
+      })
+      .then(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      })
   }
 }
 
@@ -1937,6 +2083,9 @@ const syncMenuFromRoute = async () => {
   } else if (tab === 'bought') {
     activeMenu.value = 'bought'
     expandedMenus.trade = true
+  } else if (tab === 'published') {
+    activeMenu.value = 'published'
+    expandedMenus.trade = true
   } else if (tab === 'wallet-transactions') {
     activeMenu.value = 'wallet-transactions'
     expandedMenus.wallet = true
@@ -1977,6 +2126,7 @@ onMounted(async () => {
 watch(
   () => [route.query.zone, route.query.tab],
   async () => {
+    if (suppressRouteSync) return
     await syncMenuFromRoute()
   }
 )
@@ -2131,6 +2281,23 @@ watch(
 /* 商品网格 */
 .products-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 
+/* 我发布的：状态筛选 + 分页（样式对齐 SellerHome） */
+.seller-toolbar { display: flex; align-items: center; justify-content: flex-start; margin-bottom: 16px; }
+.seller-tabs { display: inline-flex; gap: 6px; padding: 4px; border-radius: 999px; background: #f6f7f9; }
+.tab-btn {
+  border: 0;
+  background: transparent;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tab-btn:hover { color: var(--text-primary); }
+.tab-btn.active { background: #fff; color: var(--text-primary); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.pagination-wrapper { display: flex; justify-content: center; margin-top: 18px; }
+
 .product-card { cursor: pointer; transition: all 0.2s; border-radius: 8px; overflow: hidden; background: #fafafa; }
 .product-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
 
@@ -2138,28 +2305,39 @@ watch(
 .product-image img { width: 100%; height: 100%; object-fit: cover; }
 .product-image .no-image { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 48px; color: #ddd; }
 
-.sold-badge {
+.status-overlay {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.5);
+  background: rgba(0, 0, 0, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.sold-badge span {
-  background: #ff6a00;
+.status-overlay span {
   color: #fff;
-  padding: 8px 20px;
-  border-radius: 4px;
-  font-size: 16px;
-  font-weight: 600;
-  transform: rotate(-15deg);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.35);
 }
 
 .product-info { padding: 12px; }
 .product-title { font-size: 14px; color: var(--text-primary); line-height: 1.4; height: 40px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin-bottom: 8px; }
 .product-price { font-size: 18px; font-weight: 600; color: var(--price-color); }
+.product-footer { margin-top: 8px; display: flex; align-items: center; justify-content: space-between; }
+.status-pill { display: inline-flex; align-items: center; height: 22px; padding: 0 10px; border-radius: 999px; font-size: 12px; }
+.status-pill.sold { background: #ffe9ea; color: #ff4d4f; }
+.status-pill.pending { background: #fff7e6; color: #d46b08; }
+.status-pill.removed { background: #eef2f6; color: #64748b; }
+.removed-reason {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* 订单状态标签 */
 .order-status-tabs {

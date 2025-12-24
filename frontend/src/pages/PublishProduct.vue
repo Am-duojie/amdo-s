@@ -495,10 +495,10 @@ const handleSubmit = async () => {
         })
       }
       
-      ElMessage.success('商品发布成功')
+      ElMessage.success('已提交审核，审核通过后将展示在市场')
     }
-    
-    router.push('/my-products')
+     
+    router.push('/profile?tab=published')
   } catch (error) {
     if (error.response?.data) {
       const errors = Object.values(error.response.data).flat()

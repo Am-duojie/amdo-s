@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
@@ -62,7 +64,10 @@ class Product(models.Model):
         ('fair', '一般'),
         ('poor', '较差')
     ], default='good', verbose_name='成色')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active', verbose_name='状态')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name='状态')
+    removed_reason = models.CharField(max_length=200, blank=True, verbose_name='下架原因')
+    removed_at = models.DateTimeField(null=True, blank=True, verbose_name='下架时间')
+    removed_by = models.CharField(max_length=64, blank=True, verbose_name='下架操作人')
     location = models.CharField(max_length=100, verbose_name='所在地')
     view_count = models.IntegerField(default=0, verbose_name='浏览次数')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='发布时间')
@@ -379,6 +384,7 @@ class VerifiedDevice(models.Model):
     # 媒体与质检
     cover_image = models.CharField(max_length=500, blank=True, verbose_name='封面图')
     detail_images = models.JSONField(default=list, verbose_name='详情图列表')
+    listing_description = models.TextField(blank=True, default='', verbose_name='上架商品描述')
     inspection_reports = models.JSONField(default=list, verbose_name='质检报告列表')
     inspection_result = models.CharField(max_length=10, choices=[('pass', '合格'), ('warn', '警告'), ('fail', '不合格')], default='pass', verbose_name='质检结果')
     inspection_date = models.DateField(null=True, blank=True, verbose_name='质检日期')
@@ -548,26 +554,250 @@ def __str__(self):
         return f"{self.user.username} 收藏了 {self.product.title}"
 
 
-def create_verified_product_from_device(device, status='active'):
+def create_verified_product_from_device(device, status='active', price_override=None, original_price_override=None, enforce_publish_requirements=True):
     """
     根据库存设备生成官方验商品草稿，用于库存 -> 上架打通。
     """
     if not device:
         return None
 
-    # 已关联商品时，允许根据传入 status 强制更新状态/发布时间，避免卡在 draft
+    def _as_decimal(v):
+        try:
+            if v is None or v == '':
+                return None
+            return Decimal(str(v))
+        except Exception:
+            return None
+
+    def _assert_publish_requirements(effective_price, effective_cover_image, effective_inspection_reports):
+        # 仅“上架/active”做强校验；草稿等状态允许不完整
+        if not enforce_publish_requirements or status != 'active':
+            return
+        if effective_price is None or effective_price <= 0:
+            raise ValueError('售价必须大于 0')
+        if not str(effective_cover_image or '').strip():
+            raise ValueError('封面图不能为空')
+        if not effective_inspection_reports:
+            raise ValueError('质检报告不能为空')
+
+    # 已关联商品时：仍允许上架/下架，但上架前必须满足必填要求
     if getattr(device, 'linked_product', None):
         product = device.linked_product
+        # 上架时仍需做模板选项强校验（避免“草稿->上架”绕过校验）
+        if status == 'active' and enforce_publish_requirements:
+            template_for_check = getattr(device, 'template', None)
+            if not template_for_check or (hasattr(template_for_check, 'is_active') and not template_for_check.is_active):
+                raise ValueError('未关联有效的机型模板，无法上架')
+
+            def _norm_token_publish(s):
+                return ''.join(ch for ch in str(s or '').strip().lower() if ch.isalnum())
+
+            def _ensure_option_publish(value, options, field_name, allow_blank=False, aliases=None):
+                normalized = str(value or '').strip()
+                if not normalized:
+                    if allow_blank:
+                        return value
+                    raise ValueError(f'{field_name} 不能为空')
+                if not options:
+                    return value
+                option_index = {_norm_token_publish(opt): str(opt).strip() for opt in (options or []) if str(opt).strip()}
+                hit = option_index.get(_norm_token_publish(normalized))
+                if hit:
+                    return hit
+                for a in (aliases or []):
+                    if not a:
+                        continue
+                    hit = option_index.get(_norm_token_publish(a))
+                    if hit:
+                        return hit
+                preview = ' / '.join(list(option_index.values())[:8])
+                suffix = f'（允许：{preview}）' if preview else ''
+                raise ValueError(f'{field_name} 不在模板允许的选项中{suffix}')
+
+            def _clean_options_publish(raw_options):
+                cleaned = []
+                seen = set()
+                for x in list(raw_options or []):
+                    s = str(x or "").strip()
+                    if not s:
+                        continue
+                    key = s.lower()
+                    if key in seen:
+                        continue
+                    cleaned.append(s)
+                    seen.add(key)
+                return cleaned
+
+            storage = _ensure_option_publish(device.storage, getattr(template_for_check, 'storages', []), '存储容量', allow_blank=False)
+            ram_options = _clean_options_publish(getattr(template_for_check, 'ram_options', []) or [])
+            version_options = _clean_options_publish(getattr(template_for_check, 'version_options', []) or [])
+            color_options = _clean_options_publish(getattr(template_for_check, 'color_options', []) or [])
+
+            color_aliases = {
+                'black': ['黑色', '黑'],
+                'white': ['白色', '白'],
+                'silver': ['银色', '银'],
+                'gold': ['金色', '金'],
+                'blue': ['蓝色', '蓝'],
+                'green': ['绿色', '绿'],
+                'purple': ['紫色', '紫'],
+                'red': ['红色', '红'],
+                'pink': ['粉色', '粉'],
+                'gray': ['灰色', '灰', '深空灰', '深灰'],
+                'grey': ['灰色', '灰', '深空灰', '深灰'],
+                'spacegray': ['深空灰', '深空灰色', '深灰'],
+            }
+            version_aliases = {
+                'cn': ['国行'],
+                'china': ['国行'],
+                'guohang': ['国行'],
+                'hk': ['港版'],
+                'hongkong': ['港版'],
+                'us': ['美版'],
+                'usa': ['美版'],
+                'jp': ['日版'],
+                'japan': ['日版'],
+            }
+
+            ram = _ensure_option_publish(device.ram, ram_options, '运行内存', allow_blank=(len(ram_options) == 0))
+            version = _ensure_option_publish(
+                device.version,
+                version_options,
+                '版本',
+                allow_blank=(len(version_options) == 0),
+                aliases=version_aliases.get(_norm_token_publish(device.version), [])
+            )
+            color = _ensure_option_publish(
+                device.color,
+                color_options,
+                '颜色',
+                allow_blank=(len(color_options) == 0),
+                aliases=color_aliases.get(_norm_token_publish(device.color), [])
+            )
+
+            updated_fields = []
+            if storage is not None and (device.storage or '') != (storage or ''):
+                device.storage = storage or ''
+                updated_fields.append('storage')
+            if ram is not None and (device.ram or '') != (ram or ''):
+                device.ram = ram or ''
+                updated_fields.append('ram')
+            if version is not None and (device.version or '') != (version or ''):
+                device.version = version or ''
+                updated_fields.append('version')
+            if color is not None and (device.color or '') != (color or ''):
+                device.color = color or ''
+                updated_fields.append('color')
+            if updated_fields:
+                updated_fields.append('updated_at')
+                device.save(update_fields=updated_fields)
+        template = getattr(device, 'template', None)
+        cover_image = (product.cover_image or '') or (device.cover_image or '') or (getattr(template, 'default_cover_image', '') if template else '')
+        inspection_reports = product.inspection_reports or device.inspection_reports or []
+        effective_price = _as_decimal(price_override) if price_override not in [None, ''] else _as_decimal(product.price)
+        _assert_publish_requirements(effective_price, cover_image, inspection_reports)
+        updates = []
+        device_status_changed = False
+
+        # 同步商品核心展示/属性字段（以库存设备为准）
+        # 之前仅同步 title/description/图片/质检，导致品牌/型号/成色/电池等字段与库存不一致
+        desired_title = f"{device.brand} {device.model}".strip()
+        if device.storage:
+            desired_title = f"{desired_title} {device.storage}"
+        desired_description = (getattr(device, 'listing_description', '') or '').strip()
+        if not desired_description:
+            if template and getattr(template, 'description_template', ''):
+                try:
+                    desired_description = template.description_template.format(
+                        brand=device.brand or '',
+                        model=device.model or '',
+                        storage=device.storage or '',
+                        condition=device.get_condition_display() if hasattr(device, 'get_condition_display') else device.condition,
+                        ram=device.ram or '',
+                        version=device.version or ''
+                    )
+                except Exception:
+                    desired_description = f"{device.brand} {device.model} {device.storage}".strip()
+            else:
+                desired_description = f"{device.brand} {device.model} {device.storage}".strip()
+
+        desired_cover_image = (device.cover_image or '').strip() or (getattr(template, 'default_cover_image', '') if template else '') or (product.cover_image or '')
+        desired_detail_images = device.detail_images or (getattr(template, 'default_detail_images', []) if template else []) or (product.detail_images or [])
+        desired_inspection_reports = device.inspection_reports or product.inspection_reports or []
+
+        # 模板/分类/规格/成色等属性同步
+        desired_template = getattr(device, 'template', None)
+        if desired_template and getattr(product, 'template_id', None) != getattr(desired_template, 'id', None):
+            product.template = desired_template
+            updates.append('template')
+        desired_category = getattr(device, 'category', None)
+        if desired_category and getattr(product, 'category_id', None) != getattr(desired_category, 'id', None):
+            product.category = desired_category
+            updates.append('category')
+        if desired_template and (product.device_type or '') != (getattr(desired_template, 'device_type', '') or ''):
+            product.device_type = getattr(desired_template, 'device_type', '') or ''
+            updates.append('device_type')
+        if (product.brand or '') != (device.brand or ''):
+            product.brand = device.brand or ''
+            updates.append('brand')
+        if (product.model or '') != (device.model or ''):
+            product.model = device.model or ''
+            updates.append('model')
+        if (product.storage or '') != (device.storage or ''):
+            product.storage = device.storage or ''
+            updates.append('storage')
+        if (product.ram or '') != (device.ram or ''):
+            product.ram = device.ram or ''
+            updates.append('ram')
+        if (product.version or '') != (device.version or ''):
+            product.version = device.version or ''
+            updates.append('version')
+        if (product.condition or '') != (device.condition or ''):
+            product.condition = device.condition or product.condition
+            updates.append('condition')
+        if (product.battery_health or '') != (getattr(device, 'battery_health', '') or ''):
+            product.battery_health = getattr(device, 'battery_health', '') or ''
+            updates.append('battery_health')
+
+        if (product.title or '') != (desired_title or ''):
+            product.title = desired_title
+            updates.append('title')
+        if (product.description or '') != (desired_description or ''):
+            product.description = desired_description
+            updates.append('description')
+        if (product.cover_image or '') != (desired_cover_image or ''):
+            product.cover_image = desired_cover_image or ''
+            updates.append('cover_image')
+        if (product.detail_images or []) != (desired_detail_images or []):
+            product.detail_images = desired_detail_images or []
+            updates.append('detail_images')
+        if (product.inspection_reports or []) != (desired_inspection_reports or []):
+            product.inspection_reports = desired_inspection_reports or []
+            updates.append('inspection_reports')
+
+        if price_override not in [None, ''] and product.price != price_override:
+            product.price = price_override
+            updates.append('price')
+        if original_price_override not in [None, ''] and product.original_price != original_price_override:
+            product.original_price = original_price_override
+            updates.append('original_price')
+
         if status and product.status != status:
             product.status = status
-            updates = ['status', 'updated_at']
+            updates.append('status')
             if status == 'active':
                 product.published_at = product.published_at or timezone.now()
                 updates.append('published_at')
                 device.status = 'listed'
+                device_status_changed = True
             elif status in ['draft', 'pending', 'ready']:
                 device.status = 'ready'
+                device_status_changed = True
+
+        if updates:
+            updates = list(dict.fromkeys(updates + ['updated_at']))
             product.save(update_fields=updates)
+        if device_status_changed:
             device.save(update_fields=['status', 'updated_at'])
         return product
 
@@ -693,26 +923,32 @@ def create_verified_product_from_device(device, status='active'):
     if device.storage:
         title = f"{title} {device.storage}"
 
-    description = ''
-    if template and getattr(template, 'description_template', ''):
-        try:
-            description = template.description_template.format(
-                brand=device.brand or '',
-                model=device.model or '',
-                storage=device.storage or '',
-                condition=device.get_condition_display() if hasattr(device, 'get_condition_display') else device.condition,
-                ram=device.ram or '',
-                version=device.version or ''
-            )
-        except Exception:
+    description = (getattr(device, 'listing_description', '') or '').strip()
+    if not description:
+        if template and getattr(template, 'description_template', ''):
+            try:
+                description = template.description_template.format(
+                    brand=device.brand or '',
+                    model=device.model or '',
+                    storage=device.storage or '',
+                    condition=device.get_condition_display() if hasattr(device, 'get_condition_display') else device.condition,
+                    ram=device.ram or '',
+                    version=device.version or ''
+                )
+            except Exception:
+                description = f"{device.brand} {device.model} {device.storage}".strip()
+        else:
             description = f"{device.brand} {device.model} {device.storage}".strip()
-    else:
-        description = f"{device.brand} {device.model} {device.storage}".strip()
 
     cover_image = device.cover_image or (template.default_cover_image if template else '')
     detail_images = device.detail_images or (template.default_detail_images if template else [])
 
-    price = device.suggested_price or device.cost_price or 0
+    if price_override not in [None, '']:
+        price = price_override
+    else:
+        price = device.suggested_price or device.cost_price or 0
+    effective_price = _as_decimal(price)
+    _assert_publish_requirements(effective_price, cover_image, device.inspection_reports or [])
 
     product = VerifiedProduct.objects.create(
         template=template,
@@ -721,7 +957,7 @@ def create_verified_product_from_device(device, status='active'):
         title=title,
         description=description,
         price=price or 0,
-        original_price=None,
+        original_price=original_price_override if original_price_override not in [None, ''] else None,
         condition=device.condition or 'good',
         device_type=getattr(template, 'device_type', '') if template else '',
         brand=device.brand,

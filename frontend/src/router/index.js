@@ -70,12 +70,6 @@ const routes = [
     meta: { requiresAuth: true, hideSearch: true, theme: 'yellow' }
   },
   {
-    path: '/my-products',
-    name: 'MyProducts',
-    component: () => import('@/pages/MyProducts.vue'),
-    meta: { requiresAuth: true }
-  },
-  {
     path: '/order/:id',
     name: 'OrderDetail',
     component: () => import('@/pages/OrderDetail.vue'),
@@ -173,7 +167,6 @@ const routes = [
       // 兼容旧路由
       { path: 'recycled-products', name: 'RecycledProductsAdmin', component: () => import('@/admin/pages/RecycledProducts.vue'), meta: { requiresAdminAuth: true, title: '回收商品旧', icon: 'Box', group: 'legacy', hidden: true } },
       { path: 'verified-listings', name: 'VerifiedListingsAdmin', component: () => import('@/admin/pages/VerifiedListings.vue'), meta: { requiresAdminAuth: true, title: '官方验商品旧', icon: 'Goods', group: 'legacy', hidden: true } },
-      { path: 'audit-queue', name: 'AuditQueueAdmin', component: () => import('@/admin/pages/AuditQueue.vue'), meta: { requiresAdminAuth: true, title: '内容审核', icon: 'DocumentChecked', group: 'content' } },
       { path: 'audit-logs', name: 'AuditLogsAdmin', component: () => import('@/admin/pages/AuditLogs.vue'), meta: { requiresAdminAuth: true, title: '审计日志', icon: 'Document', group: 'system' } },
       { path: 'users', name: 'AdminUsers', component: () => import('@/admin/pages/Users.vue'), meta: { requiresAdminAuth: true, title: '管理员', icon: 'User', group: 'system' } },
       { path: 'roles', name: 'AdminRoles', component: () => import('@/admin/pages/Roles.vue'), meta: { requiresAdminAuth: true, title: '角色权限', icon: 'UserFilled', group: 'system' } },

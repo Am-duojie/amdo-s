@@ -116,50 +116,69 @@
           </div>
 
           <!-- 操作按钮区 -->
-          <div class="action-area">
-            <el-button 
-              class="action-btn chat-btn"
-              size="large"
-              @click="handleMessage"
-              :disabled="authStore.user && authStore.user.id === product.seller?.id"
-            >
-              <el-icon><ChatDotRound /></el-icon>
-              聊一聊
-            </el-button>
+          <div class="action-area" :class="{ owner: isOwner }">
+            <template v-if="isOwner">
+              <el-button
+                class="action-btn unpublish-btn"
+                size="large"
+                :disabled="product.status === 'removed' || product.status === 'sold'"
+                :loading="unpublishing"
+                @click="handleUnpublish"
+              >
+                下架
+              </el-button>
+              <el-button
+                class="action-btn delete-btn"
+                size="large"
+                type="danger"
+                :loading="deleting"
+                @click="handleDelete"
+              >
+                删除
+              </el-button>
+              <el-button class="action-btn edit-btn" size="large" @click="handleEditProduct">
+                编辑
+              </el-button>
+              <div v-if="product.status === 'removed' && product.removed_reason" class="removed-hint">
+                下架原因：{{ product.removed_reason }}
+              </div>
+            </template>
 
-            <el-button
-              v-if="isOwner"
-              class="action-btn edit-btn"
-              size="large"
-              @click="handleEditProduct"
-            >
-              编辑商品
-            </el-button>
-            
-            <el-button
-              v-if="product.status === 'active'"
-              class="action-btn buy-btn"
-              size="large"
-              @click="handleBuy"
-              :disabled="authStore.user && authStore.user.id === product.seller?.id"
-            >
-              立即购买
-            </el-button>
-            <el-button v-else class="action-btn disabled-btn" size="large" disabled>
-              {{ product.status === 'sold' ? '已售出' : '已下架' }}
-            </el-button>
-            
-          <el-button 
-            class="action-btn favorite-btn"
-            size="large"
-            @click="handleFavorite"
-          >
-              <el-icon>
-                <StarFilled v-if="product.is_favorited" />
-                <Star v-else />
-              </el-icon>
-              {{ product.is_favorited ? '已收藏' : '收藏' }}
-            </el-button>
+            <template v-else>
+              <el-button
+                class="action-btn chat-btn"
+                size="large"
+                @click="handleMessage"
+                :disabled="authStore.user && authStore.user.id === product.seller?.id"
+              >
+                <el-icon><ChatDotRound /></el-icon>
+                聊一聊
+              </el-button>
+
+              <el-button
+                v-if="product.status === 'active'"
+                class="action-btn buy-btn"
+                size="large"
+                @click="handleBuy"
+                :disabled="authStore.user && authStore.user.id === product.seller?.id"
+              >
+                立即购买
+              </el-button>
+              <el-button v-else class="action-btn disabled-btn" size="large" disabled>
+                {{ product.status === 'sold' ? '已售出' : '已下架' }}
+              </el-button>
+              <div v-if="product.status === 'removed' && product.removed_reason" class="removed-hint">
+                下架原因：{{ product.removed_reason }}
+              </div>
+
+              <el-button class="action-btn favorite-btn" size="large" @click="handleFavorite">
+                <el-icon>
+                  <StarFilled v-if="product.is_favorited" />
+                  <Star v-else />
+                </el-icon>
+                {{ product.is_favorited ? '已收藏' : '收藏' }}
+              </el-button>
+            </template>
           </div>
 
           <!-- 底部链接 -->
@@ -296,37 +315,54 @@
 
     <!-- 移动端底部操作条 -->
     <div class="mobile-action-bar" v-if="product && !loading">
-      <div class="mobile-left">
-        <div class="mobile-btn" @click="handleMessage">
-          <el-icon><ChatDotRound /></el-icon>
-          <span>聊一聊</span>
+      <template v-if="isOwner">
+        <div class="mobile-owner-actions">
+          <el-button
+            class="mobile-owner-btn unpublish"
+            :disabled="product.status === 'removed' || product.status === 'sold'"
+            :loading="unpublishing"
+            @click="handleUnpublish"
+          >
+            下架
+          </el-button>
+          <el-button
+            class="mobile-owner-btn delete"
+            type="danger"
+            :disabled="product.status === 'sold'"
+            :loading="deleting"
+            @click="handleDelete"
+          >
+            删除
+          </el-button>
+          <el-button class="mobile-owner-btn edit" @click="handleEditProduct">编辑</el-button>
         </div>
-        <div class="mobile-btn" @click="handleFavorite">
-          <el-icon>
-            <StarFilled v-if="product.is_favorited" />
-            <Star v-else />
-          </el-icon>
-          <span>{{ product.is_favorited ? '已收藏' : '收藏' }}</span>
+      </template>
+      <template v-else>
+        <div class="mobile-left">
+          <div class="mobile-btn" @click="handleMessage">
+            <el-icon><ChatDotRound /></el-icon>
+            <span>聊一聊</span>
+          </div>
+          <div class="mobile-btn" @click="handleFavorite">
+            <el-icon>
+              <StarFilled v-if="product.is_favorited" />
+              <Star v-else />
+            </el-icon>
+            <span>{{ product.is_favorited ? '已收藏' : '收藏' }}</span>
+          </div>
         </div>
-      </div>
-      <el-button
-        v-if="isOwner"
-        class="mobile-buy-btn"
-        @click="handleEditProduct"
-      >
-        编辑商品
-      </el-button>
-      <el-button 
-        v-else-if="product.status === 'active'"
-        class="mobile-buy-btn"
-        @click="handleBuy"
-        :disabled="authStore.user && authStore.user.id === product.seller?.id"
-      >
-        ¥{{ product.price }} 立即购买
-      </el-button>
-      <el-button v-else class="mobile-buy-btn disabled" disabled>
-        {{ product.status === 'sold' ? '已售出' : '已下架' }}
-      </el-button>
+        <el-button
+          v-if="product.status === 'active'"
+          class="mobile-buy-btn"
+          @click="handleBuy"
+          :disabled="authStore.user && authStore.user.id === product.seller?.id"
+        >
+          ¥{{ product.price }} 立即购买
+        </el-button>
+        <el-button v-else class="mobile-buy-btn disabled" disabled>
+          {{ product.status === 'sold' ? '已售出' : '已下架' }}
+        </el-button>
+      </template>
     </div>
   </div>
 </template>
@@ -350,11 +386,13 @@ const userInitial = computed(() => authStore.user?.username?.charAt(0)?.toUpperC
 
 const product = ref(null)
 const isOwner = computed(() => authStore.user?.id && authStore.user?.id === product.value?.seller?.id)
-const relatedProducts = ref([])
-const loading = ref(true)
-const showOrderDialog = ref(false)
-const orderLoading = ref(false)
-const currentImage = ref(0)
+  const relatedProducts = ref([])
+  const loading = ref(true)
+  const unpublishing = ref(false)
+  const deleting = ref(false)
+  const showOrderDialog = ref(false)
+  const orderLoading = ref(false)
+  const currentImage = ref(0)
 const orderForm = ref({
   shipping_name: '',
   shipping_phone: '',
@@ -551,6 +589,92 @@ const handleViewSeller = () => {
 const handleEditProduct = () => {
   if (!product.value?.id) return
   router.push(`/edit/${product.value.id}`)
+}
+
+const handleUnpublish = async () => {
+  if (!product.value?.id) return
+  if (!authStore.user) {
+    ElMessage.warning('请先登录')
+    router.push('/login')
+    return
+  }
+  if (!isOwner.value) {
+    ElMessage.error('无权限操作')
+    return
+  }
+  if (product.value.status === 'removed') {
+    ElMessage.info('商品已下架')
+    return
+  }
+  if (product.value.status === 'sold') {
+    ElMessage.warning('已售商品不能下架')
+    return
+  }
+
+  try {
+    const { value } = await ElMessageBox.prompt('下架原因（可选）', '下架商品', {
+      confirmButtonText: '下架',
+      cancelButtonText: '取消',
+      inputType: 'textarea',
+      inputPlaceholder: '例如：暂不出售 / 信息有误等',
+      inputValue: '',
+      inputValidator: (val) => {
+        if ((val || '').length > 200) return '最多200字'
+        return true
+      },
+    })
+
+    unpublishing.value = true
+    await api.patch(`/products/${product.value.id}/`, {
+      status: 'removed',
+      removed_reason: (value || '').trim(),
+    })
+    ElMessage.success('已下架')
+    await loadProduct()
+  } catch (error) {
+    if (error !== 'cancel') {
+      const msg = error?.response?.data?.detail || '下架失败'
+      ElMessage.error(msg)
+    }
+  } finally {
+    unpublishing.value = false
+  }
+}
+
+const handleDelete = async () => {
+  if (!product.value?.id) return
+  if (!authStore.user) {
+    ElMessage.warning('请先登录')
+    router.push('/login')
+    return
+  }
+  if (!isOwner.value) {
+    ElMessage.error('无权限操作')
+    return
+  }
+  if (product.value.status === 'sold') {
+    ElMessage.warning('已售商品不能删除')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm('确定要删除该商品吗？删除后不可恢复。', '删除商品', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    deleting.value = true
+    await api.delete(`/products/${product.value.id}/`)
+    ElMessage.success('已删除')
+    router.push('/profile?tab=published')
+  } catch (error) {
+    if (error !== 'cancel') {
+      const msg = error?.response?.data?.detail || '删除失败'
+      ElMessage.error(msg)
+    }
+  } finally {
+    deleting.value = false
+  }
 }
 
 const handleOrderSubmit = async () => {
@@ -1351,7 +1475,17 @@ const handleShare = () => {
 .action-area {
   display: flex;
   gap: 12px;
+  flex-wrap: wrap;
   margin-bottom: 20px;
+}
+
+.action-area.owner {
+  flex-wrap: nowrap;
+}
+
+.action-area.owner .action-btn {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .action-btn {
@@ -1359,6 +1493,21 @@ const handleShare = () => {
   border-radius: 24px;
   font-size: 16px;
   font-weight: 500;
+}
+
+.unpublish-btn {
+  background: #fff;
+  border: 1px solid #ddd;
+  color: var(--text-primary);
+}
+
+.unpublish-btn:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #ccc;
+}
+
+.delete-btn {
+  border-color: #ff4d4f;
 }
 
 .chat-btn {
@@ -1402,6 +1551,17 @@ const handleShare = () => {
   background: #e0e0e0;
   border-color: #e0e0e0;
   color: #999;
+}
+
+.removed-hint {
+  flex: 1 1 100%;
+  margin-top: -6px;
+  font-size: 12px;
+  color: #a3a3a3;
+  padding-left: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .favorite-btn {
@@ -1668,6 +1828,32 @@ const handleShare = () => {
   gap: 16px;
 }
 
+.mobile-owner-actions {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+}
+
+.mobile-owner-btn {
+  flex: 1;
+  height: 44px;
+  border-radius: 22px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.mobile-owner-btn.unpublish {
+  background: #fff;
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.mobile-owner-btn.edit {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #333;
+}
+
 .mobile-btn {
   display: flex;
   flex-direction: column;
@@ -1737,6 +1923,10 @@ const handleShare = () => {
   }
   
   .action-area {
+    flex-wrap: wrap;
+  }
+
+  .action-area.owner {
     flex-wrap: wrap;
   }
   

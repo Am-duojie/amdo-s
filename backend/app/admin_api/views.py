@@ -1346,6 +1346,12 @@ class InspectionOrderDetailView(APIView):
             o = RecycleOrder.objects.get(id=order_id)
         except RecycleOrder.DoesNotExist:
             return Response({'success': False})
+        if o.status in ['cancelled']:
+            return Response({'success': False, 'detail': '订单已取消，无法提交质检报告'}, status=400)
+        if isinstance(items, dict) and not items:
+            return Response({'success': False, 'detail': '质检报告不能为空'}, status=400)
+        if isinstance(items, list) and len(items) == 0:
+            return Response({'success': False, 'detail': '质检报告不能为空'}, status=400)
         AdminInspectionReport.objects.create(
             order=o,
             check_items=items,
@@ -1409,6 +1415,8 @@ class InspectionOrderLogisticsView(APIView):
             o = RecycleOrder.objects.get(id=order_id)
             if action == 'ship':
                 # 用户寄出
+                if o.status not in ['pending', 'shipped']:
+                    return Response({'success': False, 'detail': '当前状态不允许填写物流信息'}, status=400)
                 if not carrier or not tracking_number:
                     return Response({'success': False, 'detail': '物流公司和运单号不能为空'}, status=400)
                 o.shipping_carrier = carrier
@@ -1484,6 +1492,8 @@ class InspectionOrderPriceView(APIView):
                         status=400
                     )
                 final_price = float(final_price)
+                if final_price <= 0:
+                    return Response({'success': False, 'detail': 'Price must be greater than 0'}, status=400)
                 bonus = float(bonus) if bonus else 0
                 o.final_price = final_price
                 o.bonus = bonus
@@ -1660,7 +1670,7 @@ class AdminVerifiedProductListView(APIView):
         page_size = int(request.query_params.get('page_size', 20))
         status_q = request.query_params.get('status')
         search = request.query_params.get('search')
-        qs = VerifiedProduct.objects.all().order_by('-created_at')
+        qs = VerifiedProduct.objects.all().prefetch_related('devices').order_by('-created_at')
         if status_q:
             qs = qs.filter(status=status_q)
         if search:
@@ -1671,12 +1681,7 @@ class AdminVerifiedProductListView(APIView):
 
     @admin_required(['verified:write'])
     def post(self, request):
-        admin = request.admin
-        serializer = VerifiedProductSerializer(data=request.data, context={'request': request})
-        if serializer.is_valid():
-            obj = serializer.save()
-            return Response(VerifiedProductSerializer(obj, context={'request': request}).data)
-        return Response(serializer.errors, status=400)
+        return Response({'detail': '官方验商品仅允许由库存设备上架生成'}, status=403)
 
 @method_decorator(csrf_exempt, name='dispatch')
 class AdminVerifiedProductDetailView(APIView):
@@ -1690,7 +1695,19 @@ class AdminVerifiedProductDetailView(APIView):
         admin = request.admin
         try:
             obj = self.get_object(pk)
-            return Response(VerifiedProductSerializer(obj, context={'request': request}).data)
+            data = VerifiedProductSerializer(obj, context={'request': request}).data
+            device = VerifiedDevice.objects.filter(linked_product=obj).first()
+            data['linked_device'] = None
+            if device:
+                data['linked_device'] = {
+                    'id': device.id,
+                    'sn': device.sn,
+                    'brand': device.brand,
+                    'model': device.model,
+                    'storage': device.storage,
+                    'status': device.status,
+                }
+            return Response(data)
         except VerifiedProduct.DoesNotExist:
             return Response({'detail': 'Not found'}, status=404)
 
@@ -1701,6 +1718,61 @@ class AdminVerifiedProductDetailView(APIView):
             obj = self.get_object(pk)
         except VerifiedProduct.DoesNotExist:
             return Response({'detail': 'Not found'}, status=404)
+
+        # 官方验商品的“展示字段”以库存设备为准：此处若关联了库存设备，则把编辑内容回写到库存，再由库存同步回商品。
+        device = VerifiedDevice.objects.filter(linked_product=obj).first()
+        if device:
+            data = request.data or {}
+            device_patch = {}
+            # 规格/展示字段
+            for k in [
+                'brand', 'model', 'storage', 'ram', 'version', 'color', 'condition',
+                'cover_image', 'detail_images', 'inspection_reports',
+                'inspection_result', 'inspection_date', 'inspection_staff', 'inspection_note',
+                'battery_health', 'screen_condition', 'repair_history',
+                'location', 'category_id', 'template_id'
+            ]:
+                if k in data:
+                    device_patch[k] = data.get(k)
+            # 商品描述 -> 库存上架描述
+            if 'description' in data:
+                device_patch['listing_description'] = data.get('description') or ''
+
+            if device_patch:
+                dev_ser = VerifiedDeviceSerializer(device, data=device_patch, partial=True, context={'request': request})
+                if not dev_ser.is_valid():
+                    return Response(dev_ser.errors, status=400)
+                device = dev_ser.save()
+
+            desired_status = data.get('status', getattr(obj, 'status', 'draft'))
+            price_override = data.get('price', getattr(obj, 'price', None))
+            original_price_override = data.get('original_price', getattr(obj, 'original_price', None))
+
+            try:
+                product = create_verified_product_from_device(
+                    device,
+                    status=desired_status,
+                    price_override=price_override,
+                    original_price_override=original_price_override,
+                    enforce_publish_requirements=False,
+                )
+            except ValueError as e:
+                return Response({'detail': str(e)}, status=400)
+
+            # 仅保留“非库存来源”的字段由本接口直接更新
+            meta_patch = {}
+            for k in ['stock', 'tags', 'removed_reason']:
+                if k in data:
+                    meta_patch[k] = data.get(k)
+            if meta_patch:
+                meta_ser = VerifiedProductSerializer(product, data=meta_patch, partial=True, context={'request': request})
+                if meta_ser.is_valid():
+                    product = meta_ser.save()
+                else:
+                    return Response(meta_ser.errors, status=400)
+
+            return Response(VerifiedProductSerializer(product, context={'request': request}).data)
+
         serializer = VerifiedProductSerializer(obj, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             obj = serializer.save()
@@ -1720,10 +1792,19 @@ class AdminVerifiedProductPublishView(APIView):
             return Response({'detail': 'Not found'}, status=404)
         if obj.stock <= 0:
             return Response({'detail': '库存为0，无法上架'}, status=400)
-        obj.status = 'active'
-        obj.published_at = timezone.now()
-        obj.save()
-        return Response(VerifiedProductSerializer(obj, context={'request': request}).data)
+        device = VerifiedDevice.objects.filter(linked_product=obj).first()
+        if not device:
+            return Response({'detail': '官方验商品仅允许由库存设备上架生成'}, status=400)
+        try:
+            product = create_verified_product_from_device(
+                device,
+                status='active',
+                price_override=obj.price,
+                original_price_override=obj.original_price,
+            )
+            return Response(VerifiedProductSerializer(product, context={'request': request}).data)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=400)
 
 @method_decorator(csrf_exempt, name='dispatch')
 class AdminVerifiedProductUnpublishView(APIView):
@@ -1755,9 +1836,9 @@ class AdminVerifiedDeviceView(APIView):
         status_filter = request.GET.get('status')
         if search:
             qs = qs.filter(
-                models.Q(sn__icontains=search) |
-                models.Q(brand__icontains=search) |
-                models.Q(model__icontains=search)
+                Q(sn__icontains=search) |
+                Q(brand__icontains=search) |
+                Q(model__icontains=search)
             )
         if status_filter:
             qs = qs.filter(status=status_filter)
@@ -1771,12 +1852,7 @@ class AdminVerifiedDeviceView(APIView):
 
     @admin_required(['verified:write'])
     def post(self, request):
-        admin = request.admin
-        serializer = VerifiedDeviceSerializer(data=request.data, context={'request': request})
-        if serializer.is_valid():
-            obj = serializer.save(seller=_get_official_verified_seller())
-            return Response(VerifiedDeviceSerializer(obj).data, status=201)
-        return Response(serializer.errors, status=400)
+        return Response({'detail': '官方验库存设备已禁止手动新增，请从回收订单入库。'}, status=403)
 
 @method_decorator(csrf_exempt, name='dispatch')
 class AdminVerifiedDeviceAvailableRecycleOrdersView(APIView):
@@ -1797,6 +1873,7 @@ class AdminVerifiedDeviceAvailableRecycleOrdersView(APIView):
             RecycleOrder.objects
             .select_related('user')
             .filter(status='completed')
+            .filter(final_price_confirmed=True)
             .filter(verified_devices__isnull=True)
             .order_by('-created_at')
         )
@@ -1860,6 +1937,8 @@ class AdminVerifiedDeviceCreateFromRecycleOrderView(APIView):
 
         if o.status != 'completed':
             return Response({'detail': '仅支持从“已完成”的回收订单入库'}, status=400)
+        if not getattr(o, 'final_price_confirmed', False):
+            return Response({'detail': '订单未确认最终价格，无法入库'}, status=400)
         if VerifiedDevice.objects.filter(recycle_order=o).exists():
             return Response({'detail': '该订单已入库，不能重复导入'}, status=400)
         if not getattr(o, 'template', None):
@@ -1883,52 +1962,6 @@ class AdminVerifiedDeviceCreateFromRecycleOrderView(APIView):
                 seen.add(key)
             return cleaned
 
-        def _ensure_option(value, options, field_name, allow_blank=False, aliases=None):
-            normalized = str(value or '').strip()
-            if not normalized:
-                if allow_blank:
-                    return ''
-                raise ValueError(f'{field_name} 不能为空')
-            if not options:
-                return normalized
-            option_index = {_norm_token(opt): str(opt).strip() for opt in (options or []) if str(opt).strip()}
-            hit = option_index.get(_norm_token(normalized))
-            if hit:
-                return hit
-            for a in (aliases or []):
-                hit = option_index.get(_norm_token(a))
-                if hit:
-                    return hit
-            preview = ' / '.join(list(option_index.values())[:8])
-            suffix = f'（允许：{preview}）' if preview else ''
-            raise ValueError(f'{field_name} 不在模板允许的选项中{suffix}')
-
-        color_aliases = {
-            'black': ['黑色', '黑'],
-            'white': ['白色', '白'],
-            'silver': ['银色', '银'],
-            'gold': ['金色', '金'],
-            'blue': ['蓝色', '蓝'],
-            'green': ['绿色', '绿'],
-            'purple': ['紫色', '紫'],
-            'red': ['红色', '红'],
-            'pink': ['粉色', '粉'],
-            'gray': ['灰色', '灰', '深空灰', '深灰'],
-            'grey': ['灰色', '灰', '深空灰', '深灰'],
-            'spacegray': ['深空灰', '深空灰色', '深灰'],
-        }
-        version_aliases = {
-            'cn': ['国行'],
-            'china': ['国行'],
-            'guohang': ['国行'],
-            'hk': ['港版'],
-            'hongkong': ['港版'],
-            'us': ['美版'],
-            'usa': ['美版'],
-            'jp': ['日版'],
-            'japan': ['日版'],
-        }
-
         storages = _clean_options(getattr(template, 'storages', []) or [])
         ram_options = _clean_options(getattr(template, 'ram_options', []) or [])
         version_options = _clean_options(getattr(template, 'version_options', []) or [])
@@ -1939,25 +1972,71 @@ class AdminVerifiedDeviceCreateFromRecycleOrderView(APIView):
         raw_version = (getattr(o, 'selected_version', '') or '')
         raw_color = (getattr(o, 'selected_color', '') or '')
 
+        # 兼容历史/简化回收流程：若回收订单未填写 RAM/版本/颜色，但模板要求这些选项，则使用模板的第一个选项兜底。
+        # 入库后仍可在库存编辑页手动修正。
+        if not str(raw_ram or '').strip() and len(ram_options) > 0:
+            raw_ram = ram_options[0]
+        if not str(raw_version or '').strip() and len(version_options) > 0:
+            raw_version = version_options[0]
+        if not str(raw_color or '').strip() and len(color_options) > 0:
+            raw_color = color_options[0]
+
+        # 入库阶段不强制做模板选项校验：允许先入库，再在库存编辑/上架前补齐并纠正选项
+        normalized_storage = str(raw_storage or '').strip()
+        normalized_ram = str(raw_ram or '').strip()
+        normalized_version = str(raw_version or '').strip()
+        normalized_color = str(raw_color or '').strip()
+
+        def normalize_check_items_to_categories(check_items):
+            if not check_items:
+                return []
+            if isinstance(check_items, list):
+                if len(check_items) and isinstance(check_items[0], dict) and ('title' in check_items[0] or 'groups' in check_items[0]):
+                    return check_items
+                items = []
+                for item in check_items:
+                    if not isinstance(item, dict):
+                        continue
+                    value = item.get('value', '')
+                    pass_value = item.get('pass')
+                    items.append({
+                        'label': item.get('label') or item.get('key') or '',
+                        'value': value,
+                        'pass': pass_value if isinstance(pass_value, bool) else (value in ['pass', True]),
+                        **({'image': item.get('image')} if item.get('image') else {})
+                    })
+                return [{
+                    'title': '检测结果',
+                    'groups': [{'name': '', 'items': items}]
+                }] if items else []
+            if isinstance(check_items, dict):
+                items = [{
+                    'label': str(k),
+                    'value': v,
+                    'pass': (v == 'pass' or v is True)
+                } for k, v in check_items.items()]
+                return [{
+                    'title': '检测结果',
+                    'groups': [{'name': '', 'items': items}]
+                }] if items else []
+            return []
+
+        # 质检报告：沿用回收单完成后的质检结果（AdminInspectionReport）
+        inspection_reports = []
         try:
-            normalized_storage = _ensure_option(raw_storage, storages, '存储容量', allow_blank=False)
-            normalized_ram = _ensure_option(raw_ram, ram_options, '运行内存', allow_blank=(len(ram_options) == 0))
-            normalized_version = _ensure_option(
-                raw_version,
-                version_options,
-                '版本',
-                allow_blank=(len(version_options) == 0),
-                aliases=version_aliases.get(_norm_token(raw_version), [])
-            )
-            normalized_color = _ensure_option(
-                raw_color,
-                color_options,
-                '颜色',
-                allow_blank=(len(color_options) == 0),
-                aliases=color_aliases.get(_norm_token(raw_color), [])
-            )
-        except ValueError as e:
-            return Response({'detail': str(e)}, status=400)
+            from app.admin_api.models import AdminInspectionReport
+            rep = AdminInspectionReport.objects.filter(order=o).order_by('-created_at').first()
+            inspection_reports = normalize_check_items_to_categories(getattr(rep, 'check_items', None))
+            evidence = getattr(rep, 'evidence', None) or []
+            if evidence:
+                photo_items = [{'label': f'照片{i + 1}', 'value': '', 'pass': True, 'image': url} for i, url in enumerate(evidence) if url]
+                if photo_items:
+                    inspection_reports = list(inspection_reports or [])
+                    inspection_reports.append({'title': '质检照片', 'groups': [{'name': '', 'items': photo_items}]})
+            if not inspection_note:
+                inspection_note = (getattr(rep, 'remarks', '') or '').strip()
+        except Exception:
+            inspection_reports = []
 
         try:
             suggested_price_val = float(suggested_price) if suggested_price not in [None, ''] else None
@@ -1993,6 +2072,7 @@ class AdminVerifiedDeviceCreateFromRecycleOrderView(APIView):
                 suggested_price=suggested_price_val,
                 cover_image=getattr(template, 'default_cover_image', '') or '',
                 detail_images=getattr(template, 'default_detail_images', []) or [],
+                inspection_reports=inspection_reports or [],
                 inspection_note=inspection_note or '',
             )
         except IntegrityError:
@@ -2031,9 +2111,99 @@ class AdminVerifiedDeviceDetailView(APIView):
             return Response({'detail': 'Not found'}, status=404)
         serializer = VerifiedDeviceSerializer(obj, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
+            device = serializer.save()
+            # 若已关联官方验商品：库存修改后自动同步到商品（以库存为准）
+            if getattr(device, 'linked_product', None):
+                try:
+                    create_verified_product_from_device(
+                        device,
+                        status=getattr(device.linked_product, 'status', 'draft'),
+                        price_override=getattr(device.linked_product, 'price', None),
+                        original_price_override=getattr(device.linked_product, 'original_price', None),
+                        enforce_publish_requirements=False,
+                    )
+                except ValueError as e:
+                    return Response({'detail': str(e)}, status=400)
+            return Response(VerifiedDeviceSerializer(device).data)
         return Response(serializer.errors, status=400)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminVerifiedDeviceSyncInspectionReportView(APIView):
+    """
+    从回收订单同步最新质检报告到库存设备（沿用回收质检数据，不在库存阶段重复录入）。
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    @admin_required(['verified:write', 'inspection:view'])
+    def post(self, request, pk):
+        try:
+            device = VerifiedDevice.objects.select_related('recycle_order').get(pk=pk)
+        except VerifiedDevice.DoesNotExist:
+            return Response({'detail': '设备不存在'}, status=404)
+
+        order = getattr(device, 'recycle_order', None)
+        if not order:
+            return Response({'detail': '该库存设备没有关联回收订单，无法同步质检报告'}, status=400)
+
+        def normalize_check_items_to_categories(check_items):
+            if not check_items:
+                return []
+            if isinstance(check_items, list):
+                if len(check_items) and isinstance(check_items[0], dict) and ('title' in check_items[0] or 'groups' in check_items[0]):
+                    return check_items
+                items = []
+                for item in check_items:
+                    if not isinstance(item, dict):
+                        continue
+                    value = item.get('value', '')
+                    pass_value = item.get('pass')
+                    items.append({
+                        'label': item.get('label') or item.get('key') or '',
+                        'value': value,
+                        'pass': pass_value if isinstance(pass_value, bool) else (value in ['pass', True]),
+                        **({'image': item.get('image')} if item.get('image') else {})
+                    })
+                return [{
+                    'title': '检测结果',
+                    'groups': [{'name': '', 'items': items}]
+                }] if items else []
+            if isinstance(check_items, dict):
+                items = [{
+                    'label': str(k),
+                    'value': v,
+                    'pass': (v == 'pass' or v is True)
+                } for k, v in check_items.items()]
+                return [{
+                    'title': '检测结果',
+                    'groups': [{'name': '', 'items': items}]
+                }] if items else []
+            return []
+
+        inspection_reports = []
+        remarks = ''
+        try:
+            from app.admin_api.models import AdminInspectionReport
+            rep = AdminInspectionReport.objects.filter(order=order).order_by('-created_at').first()
+            if rep:
+                inspection_reports = normalize_check_items_to_categories(getattr(rep, 'check_items', None))
+                evidence = getattr(rep, 'evidence', None) or []
+                if evidence:
+                    photo_items = [{'label': f'照片{i + 1}', 'value': '', 'pass': True, 'image': url} for i, url in enumerate(evidence) if url]
+                    if photo_items:
+                        inspection_reports = list(inspection_reports or [])
+                        inspection_reports.append({'title': '质检照片', 'groups': [{'name': '', 'items': photo_items}]})
+                remarks = (getattr(rep, 'remarks', '') or '').strip()
+        except Exception:
+            inspection_reports = []
+            remarks = ''
+
+        device.inspection_reports = inspection_reports or []
+        if remarks and not (device.inspection_note or '').strip():
+            device.inspection_note = remarks
+        device.save(update_fields=['inspection_reports', 'inspection_note', 'updated_at'])
+        return Response(VerifiedDeviceSerializer(device).data)
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -2052,15 +2222,18 @@ class AdminVerifiedDeviceListProductView(APIView):
         except VerifiedDevice.DoesNotExist:
             return Response({'detail': '设备不存在'}, status=404)
 
-        # 允许前端覆盖售价/状态，否则用设备建议价，默认上架
+        # 允许前端覆盖售价/原价/状态，否则用设备建议价，默认上架
         price_override = request.data.get('price')
+        original_price_override = request.data.get('original_price')
         status_override = request.data.get('status', 'active')
 
         try:
-            product = create_verified_product_from_device(device, status=status_override)
-            if price_override:
-                product.price = price_override
-                product.save(update_fields=['price', 'updated_at'])
+            product = create_verified_product_from_device(
+                device,
+                status=status_override,
+                price_override=price_override,
+                original_price_override=original_price_override,
+            )
             device.refresh_from_db()
             return Response({
                 'detail': '生成官方验商品成功',
@@ -2140,6 +2313,9 @@ class RecycleDeviceTemplateResolveView(APIView):
             'ram_options': tpl.ram_options or [],
             'version_options': tpl.version_options or [],
             'color_options': tpl.color_options or [],
+            'default_cover_image': tpl.default_cover_image or '',
+            'default_detail_images': tpl.default_detail_images or [],
+            'description_template': tpl.description_template or '',
             'category_id': getattr(tpl, 'category_id', None),
         })
 
@@ -2313,12 +2489,35 @@ class VerifiedListingsView(APIView):
             if action == 'publish':
                 if v.stock <= 0:
                     return Response({'success': False, 'detail': '库存为0，无法上架'}, status=400)
-                v.status = 'active'
-                v.published_at = timezone.now()
+                device = VerifiedDevice.objects.filter(linked_product=v).first()
+                if not device:
+                    return Response({'success': False, 'detail': '官方验商品仅允许由库存设备上架生成'}, status=400)
+                try:
+                    create_verified_product_from_device(
+                        device,
+                        status='active',
+                        price_override=v.price,
+                        original_price_override=v.original_price,
+                    )
+                    v.refresh_from_db()
+                except ValueError as e:
+                    return Response({'success': False, 'detail': str(e)}, status=400)
             elif action == 'unpublish':
                 v.status = 'removed'
             elif action == 'audit-approve':
-                v.status = 'active'
+                device = VerifiedDevice.objects.filter(linked_product=v).first()
+                if not device:
+                    return Response({'success': False, 'detail': '官方验商品仅允许由库存设备上架生成'}, status=400)
+                try:
+                    create_verified_product_from_device(
+                        device,
+                        status='active',
+                        price_override=v.price,
+                        original_price_override=v.original_price,
+                    )
+                    v.refresh_from_db()
+                except ValueError as e:
+                    return Response({'success': False, 'detail': str(e)}, status=400)
                 AdminAuditLog.objects.create(actor=admin, target_type='VerifiedProduct', target_id=v.id, action='approve', snapshot_json={'title': v.title})
             elif action == 'audit-reject':
                 v.status = 'removed'
@@ -2354,7 +2553,21 @@ class AuditQueueView(APIView):
             item.assigned_auditor = admin
             item.save()
             if decision == 'approve':
-                item.product.status = 'active'
+                if item.product.stock <= 0:
+                    return Response({'success': False, 'detail': '库存为0，无法上架'}, status=400)
+                device = VerifiedDevice.objects.filter(linked_product=item.product).first()
+                if not device:
+                    return Response({'success': False, 'detail': '官方验商品仅允许由库存设备上架生成'}, status=400)
+                try:
+                    create_verified_product_from_device(
+                        device,
+                        status='active',
+                        price_override=item.product.price,
+                        original_price_override=item.product.original_price,
+                    )
+                    item.product.refresh_from_db()
+                except ValueError as e:
+                    return Response({'success': False, 'detail': str(e)}, status=400)
             else:
                 item.product.status = 'removed'
             item.product.save()
@@ -2979,30 +3192,136 @@ class ProductsAdminView(APIView):
     @admin_required(['product:view'])
     def get(self, request, pid=None):
         admin = request.admin
+
+        def serialize_product(p: Product):
+            images = []
+            try:
+                for img in p.images.all().order_by('-is_primary', 'id'):
+                    url = img.image.url if getattr(img, 'image', None) else ''
+                    if url:
+                        url = request.build_absolute_uri(url)
+                    images.append({'id': img.id, 'image': url, 'is_primary': bool(getattr(img, 'is_primary', False))})
+            except Exception:
+                pass
+            return {
+                'id': p.id,
+                'title': p.title,
+                'description': p.description,
+                'price': float(p.price) if p.price is not None else 0,
+                'original_price': float(p.original_price) if p.original_price else None,
+                'condition': p.condition,
+                'status': p.status,
+                'removed_reason': getattr(p, 'removed_reason', '') or '',
+                'removed_at': p.removed_at.isoformat() if getattr(p, 'removed_at', None) else None,
+                'removed_by': getattr(p, 'removed_by', '') or '',
+                'location': p.location,
+                'seller': getattr(p.seller, 'username', '') if getattr(p, 'seller', None) else '',
+                'category': getattr(p.category, 'name', '') if getattr(p, 'category', None) else '',
+                'images': images,
+                'created_at': p.created_at.isoformat() if getattr(p, 'created_at', None) else None,
+                'updated_at': p.updated_at.isoformat() if getattr(p, 'updated_at', None) else None,
+            }
+
         if pid:
             try:
-                p = Product.objects.get(id=pid)
-                return Response({'id': p.id, 'title': p.title, 'status': p.status})
+                p = Product.objects.select_related('seller', 'category').prefetch_related('images').get(id=pid)
+                return Response(serialize_product(p))
             except Product.DoesNotExist:
                 return Response({'detail': '商品不存在'}, status=404)
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
-        qs = Product.objects.all().order_by('-created_at')
+        search = (request.query_params.get('search') or '').strip()
+        status_filter = (request.query_params.get('status') or '').strip()
+
+        qs = Product.objects.select_related('seller', 'category').prefetch_related('images').all().order_by('-created_at')
+        if search:
+            qs = qs.filter(Q(title__icontains=search) | Q(description__icontains=search) | Q(seller__username__icontains=search))
+        if status_filter:
+            qs = qs.filter(status=status_filter)
         total = qs.count()
         items = qs[(page-1)*page_size: page*page_size]
-        data = [{'id': p.id, 'title': p.title, 'status': p.status} for p in items]
+        data = [serialize_product(p) for p in items]
         return Response({'results': data, 'count': total})
+
+    @admin_required(['product:write'])
+    def put(self, request, pid):
+        admin = request.admin
+        try:
+            p = Product.objects.select_related('seller', 'category').get(id=pid)
+        except Product.DoesNotExist:
+            return Response({'detail': '商品不存在'}, status=404)
+
+        old_status = p.status
+        if old_status == 'sold':
+            return Response({'detail': '已售商品不允许修改'}, status=400)
+
+        new_status = request.data.get('status', old_status)
+        # 状态流转限制：不允许从 sold 回流；不允许 removed/pending 直接标记 sold；不允许 active->pending
+        if old_status in ['pending', 'removed'] and new_status == 'sold':
+            return Response({'detail': '非在售商品不能标记已售'}, status=400)
+        if old_status == 'active' and new_status == 'pending':
+            return Response({'detail': '在售商品不能改回待审核'}, status=400)
+
+        allowed_fields = ['title', 'description', 'price', 'original_price', 'condition', 'location', 'status']
+        for field in allowed_fields:
+            if field not in request.data:
+                continue
+            value = request.data.get(field)
+            if field == 'original_price' and value in ['', None]:
+                value = None
+            setattr(p, field, value)
+
+        # 下架原因/时间：当状态变为 removed 时写入；改回 active/pending 时清空
+        try:
+            from django.utils import timezone
+            if p.status == 'removed' and old_status != 'removed':
+                reason = (request.data.get('reason') or request.data.get('removed_reason') or '').strip()
+                p.removed_reason = reason
+                p.removed_at = timezone.now()
+                p.removed_by = getattr(admin, 'username', '') or getattr(admin, 'name', '') or 'admin'
+            elif old_status == 'removed' and p.status in ('active', 'pending'):
+                p.removed_reason = ''
+                p.removed_at = None
+                p.removed_by = ''
+        except Exception:
+            pass
+
+        p.save()
+        return Response({'success': True})
+
     @admin_required(['product:write'])
     def post(self, request, pid, action):
         admin = request.admin
         try:
             p = Product.objects.get(id=pid)
             if action == 'publish':
+                if p.status == 'sold':
+                    return Response({'success': False, 'detail': '已售商品不能重新发布'}, status=400)
                 p.status = 'active'
+                if getattr(p, 'removed_reason', ''):
+                    p.removed_reason = ''
+                if getattr(p, 'removed_at', None):
+                    p.removed_at = None
+                if getattr(p, 'removed_by', ''):
+                    p.removed_by = ''
             elif action == 'unpublish':
+                if p.status == 'sold':
+                    return Response({'success': False, 'detail': '已售商品不能下架/更改状态'}, status=400)
                 p.status = 'removed'
+                try:
+                    from django.utils import timezone
+                    reason = (request.data.get('reason') or '').strip()
+                    p.removed_reason = reason
+                    p.removed_at = timezone.now()
+                    p.removed_by = getattr(admin, 'username', '') or getattr(admin, 'name', '') or 'admin'
+                except Exception:
+                    pass
             elif action == 'mark-sold':
+                if p.status != 'active':
+                    return Response({'success': False, 'detail': '只有在售商品才能标记已售'}, status=400)
                 p.status = 'sold'
+            else:
+                return Response({'success': False, 'detail': '未知操作'}, status=400)
             p.save()
             return Response({'success': True})
         except Product.DoesNotExist:

@@ -22,15 +22,6 @@
           >
             从回收订单入库
           </el-button>
-          <el-button
-            v-if="hasPerm('verified:write')"
-            type="primary"
-            size="small"
-            :icon="Plus"
-            @click="openCreate"
-          >
-            手动新增库存设备
-          </el-button>
         </el-space>
       </div>
 
@@ -261,7 +252,7 @@
 
     <el-dialog
       v-model="showFormDialog"
-      :title="editingDevice ? '编辑库存设备' : '新增库存设备'"
+      title="编辑库存设备"
       width="620px"
       @close="resetForm"
       destroy-on-close
@@ -348,6 +339,24 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="templateResolved" label="模板快捷">
+          <el-space wrap>
+            <el-button
+              size="small"
+              :disabled="!(templateInfo?.default_cover_image || (templateInfo?.default_detail_images || []).length)"
+              @click="applyTemplateImages"
+            >
+              套用模板默认图
+            </el-button>
+            <el-button
+              size="small"
+              :disabled="!templateInfo?.description_template"
+              @click="applyTemplateDescription"
+            >
+              按模板生成描述
+            </el-button>
+          </el-space>
+        </el-form-item>
         <el-form-item v-if="templateResolveError">
           <el-alert
             :title="templateResolveError"
@@ -376,6 +385,90 @@
             style="width: 100%;"
           />
         </el-form-item>
+        <el-form-item label="封面图">
+          <div style="width: 100%">
+            <el-input
+              v-model="deviceForm.cover_image"
+              placeholder="可直接粘贴图片URL，或使用右侧上传"
+              clearable
+              @change="syncDeviceImageLists"
+              @clear="syncDeviceImageLists"
+            >
+              <template #append>
+                <el-upload
+                  :show-file-list="false"
+                  :http-request="(opt) => handleDeviceUpload(opt, 'cover')"
+                  accept="image/*"
+                >
+                  <el-button type="primary">上传</el-button>
+                </el-upload>
+              </template>
+            </el-input>
+            <div v-if="deviceForm.cover_image" style="margin-top: 8px">
+              <el-image
+                :src="normalizeToUrl(deviceForm.cover_image)"
+                style="width: 120px; height: 120px; border-radius: 8px"
+                fit="cover"
+                :preview-src-list="[normalizeToUrl(deviceForm.cover_image)]"
+                preview-teleported
+              />
+            </div>
+          </div>
+        </el-form-item>
+        <el-form-item label="详情图">
+          <div style="width: 100%">
+            <el-upload
+              list-type="picture-card"
+              :file-list="deviceDetailFileList"
+              :http-request="(opt) => handleDeviceUpload(opt, 'detail')"
+              :on-remove="handleDeviceDetailRemove"
+              accept="image/*"
+            >
+              <el-icon><Plus /></el-icon>
+            </el-upload>
+            <el-select
+              v-model="deviceForm.detail_images"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              placeholder="也可粘贴图片URL后回车添加"
+              style="width: 100%; margin-top: 8px"
+              @change="syncDeviceImageLists"
+            />
+          </div>
+        </el-form-item>
+        <el-form-item label="质检报告">
+          <div style="width: 100%">
+            <el-space wrap>
+              <el-button
+                v-if="editingDevice && deviceForm.recycle_order"
+                size="small"
+                @click="syncInspectionFromRecycle"
+              >
+                从回收单同步质检报告
+              </el-button>
+              <el-tag size="small" type="info">{{ (deviceForm.inspection_reports || []).length }} 组</el-tag>
+            </el-space>
+            <div style="margin-top: 8px">
+              <InspectionReportEditor
+                v-if="(deviceForm.inspection_reports || []).length"
+                ref="inspectionEditorInlineRef"
+                :categories="deviceForm.inspection_reports || []"
+              />
+              <el-empty v-else description="暂无质检报告（请从回收单同步）" />
+            </div>
+            <div class="form-hint">默认来自回收订单质检；可在库存阶段按实际情况直接修改。上架（active）要求质检报告不为空</div>
+          </div>
+        </el-form-item>
+        <el-form-item label="商品描述">
+          <el-input
+            v-model="deviceForm.listing_description"
+            type="textarea"
+            :rows="4"
+            placeholder="用于上架生成官方验商品描述；留空则可按模板生成"
+          />
+        </el-form-item>
         <el-form-item label="备注/质检">
           <el-input
             v-model="deviceForm.inspection_note"
@@ -387,9 +480,7 @@
       </el-form>
       <template #footer>
         <el-button @click="showFormDialog = false">取消</el-button>
-        <el-button type="primary" :loading="formLoading" :disabled="!templateResolved" @click="submitForm">
-          {{ editingDevice ? '保存' : '创建' }}
-        </el-button>
+        <el-button type="primary" :loading="formLoading" :disabled="!templateResolved" @click="submitForm">保存</el-button>
       </template>
     </el-dialog>
 
@@ -409,7 +500,7 @@
           @clear="loadImportOrders"
         />
         <el-button type="primary" :loading="importLoading" @click="loadImportOrders">查询订单</el-button>
-        <span class="import-hint">默认仅显示“已完成且未入库”的回收订单，可多选批量入库</span>
+        <span class="import-hint">默认仅显示“已完成（且用户已确认最终价）且未入库”的回收订单，可多选批量入库</span>
       </div>
 
       <el-table
@@ -472,7 +563,7 @@
 
       <template #footer>
         <el-button @click="importDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="importSubmitting" @click="submitImport">
+        <el-button type="primary" :loading="importSubmitting" :disabled="importSubmitting || (!importSelected.length && !hasSnFilledRows)" @click="submitImport">
           一键入库（选订单）
         </el-button>
       </template>
@@ -481,15 +572,19 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import adminApi from '@/utils/adminApi'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import BatchActions from './components/BatchActions.vue'
 import { Search, Refresh, Plus, Box, Upload } from '@element-plus/icons-vue'
+import { getImageUrl } from '@/utils/image'
+import InspectionReportEditor from './components/InspectionReportEditor.vue'
 
 const admin = useAdminAuthStore()
 const hasPerm = (p) => admin.hasPerm(p)
+const route = useRoute()
 
 const devices = ref([])
 const selectedDevices = ref([])
@@ -508,6 +603,12 @@ const importSubmitting = ref(false)
 const importSearch = ref('')
 const importOrders = ref([])
 const importSelected = ref([])
+const hasSnFilledRows = computed(() => {
+  return (importOrders.value || []).some((row) => {
+    const draft = importDrafts[row.id]
+    return draft && String(draft.sn || '').trim()
+  })
+})
 const importDrafts = reactive({})
 const importDefaults = reactive({
   location: '',
@@ -531,8 +632,98 @@ const deviceForm = reactive({
   condition: 'good',
   location: '',
   suggested_price: null,
-  inspection_note: ''
+  cover_image: '',
+  detail_images: [],
+  inspection_reports: [],
+  listing_description: '',
+  inspection_note: '',
+  recycle_order: null,
 })
+
+const uploadEndpoint = import.meta.env.VITE_ADMIN_UPLOAD_URL || '/uploads/images/'
+const normalizeToUrl = (url) => (url ? (getImageUrl(url) || url) : '')
+const deviceDetailFileList = ref([])
+const inspectionEditorInlineRef = ref(null)
+const syncInspectionEditorInline = () => {
+  nextTick(() => {
+    inspectionEditorInlineRef.value?.setCategories?.(deviceForm.inspection_reports || [])
+  })
+}
+
+const syncDeviceImageLists = () => {
+  deviceDetailFileList.value = (deviceForm.detail_images || [])
+    .filter(Boolean)
+    .map((u, idx) => ({ name: `detail-${idx + 1}`, url: normalizeToUrl(u) }))
+}
+
+const handleDeviceUpload = async (options, type) => {
+  const { file, onError, onSuccess } = options
+  const formData = new FormData()
+  formData.append('file', file)
+  try {
+    const res = await adminApi.post(uploadEndpoint, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    const url = res.data?.url || res.data?.image || res.data?.path
+    if (!url) throw new Error('上传返回空URL')
+    if (type === 'cover') {
+      deviceForm.cover_image = url
+    } else if (type === 'detail') {
+      if (!Array.isArray(deviceForm.detail_images)) deviceForm.detail_images = []
+      deviceForm.detail_images.push(url)
+  }
+  syncDeviceImageLists()
+  onSuccess?.(res.data)
+  } catch (err) {
+    ElMessage.error('上传失败')
+    onError?.(err)
+  }
+}
+
+const handleDeviceDetailRemove = (file) => {
+  const target = file?.url
+  if (!target) return
+  deviceForm.detail_images = (deviceForm.detail_images || []).filter((u) => normalizeToUrl(u) !== target && u !== target)
+  syncDeviceImageLists()
+}
+
+const applyTemplateImages = async () => {
+  const t = templateInfo.value || {}
+  const nextCover = t.default_cover_image || ''
+  const nextDetails = t.default_detail_images || []
+  if (!nextCover && !(nextDetails || []).length) return
+
+  const willOverwrite =
+    (deviceForm.cover_image && deviceForm.cover_image !== nextCover) ||
+    ((deviceForm.detail_images || []).length && JSON.stringify(deviceForm.detail_images || []) !== JSON.stringify(nextDetails || []))
+
+  if (willOverwrite) {
+    try {
+      await ElMessageBox.confirm('当前已填写图片，确认要用模板默认图覆盖吗？', '确认覆盖', { type: 'warning' })
+    } catch {
+      return
+    }
+  }
+
+  deviceForm.cover_image = nextCover || deviceForm.cover_image || ''
+  deviceForm.detail_images = Array.isArray(nextDetails) ? [...nextDetails] : (deviceForm.detail_images || [])
+  syncDeviceImageLists()
+}
+
+const applyTemplateDescription = () => {
+  const t = templateInfo.value || {}
+  const tpl = (t.description_template || '').trim()
+  if (!tpl) return
+  const conditionText = getConditionText(deviceForm.condition)
+  deviceForm.listing_description = tpl
+    .replaceAll('{brand}', deviceForm.brand || '')
+    .replaceAll('{model}', deviceForm.model || '')
+    .replaceAll('{storage}', deviceForm.storage || '')
+    .replaceAll('{condition}', conditionText || deviceForm.condition || '')
+    .replaceAll('{ram}', deviceForm.ram || '')
+    .replaceAll('{version}', deviceForm.version || '')
+    .trim()
+}
 
 const resolveTemplateForForm = async () => {
   templateResolveError.value = ''
@@ -667,29 +858,7 @@ const viewDetail = (row) => {
   detailDialogVisible.value = true
 }
 
-const openCreate = () => {
-  editingDevice.value = null
-  templateInfo.value = null
-  templateResolveError.value = ''
-  Object.assign(deviceForm, {
-    template_id: null,
-    sn: '',
-    imei: '',
-    brand: '',
-    model: '',
-    storage: '',
-    ram: '',
-    version: '',
-    color: '',
-    condition: 'good',
-    location: '',
-    suggested_price: null,
-    inspection_note: ''
-  })
-  showFormDialog.value = true
-}
-
-const openEdit = (row) => {
+const openEdit = async (row) => {
   editingDevice.value = row
   templateInfo.value = null
   templateResolveError.value = ''
@@ -706,13 +875,40 @@ const openEdit = (row) => {
     condition: row.condition,
     location: row.location || '',
     suggested_price: row.suggested_price,
-    inspection_note: row.inspection_note || ''
+    cover_image: row.cover_image || '',
+    detail_images: row.detail_images || [],
+    inspection_reports: row.inspection_reports || [],
+    listing_description: row.listing_description || '',
+    inspection_note: row.inspection_note || '',
+    recycle_order: null,
   })
-  resolveTemplateForForm()
+  syncDeviceImageLists()
   showFormDialog.value = true
+  await resolveTemplateForForm()
+  try {
+    const res = await adminApi.get(`/verified-devices/${row.id}/`)
+    const d = res.data || {}
+    Object.assign(deviceForm, {
+      template_id: d.template?.id || d.template_id || deviceForm.template_id,
+      recycle_order: d.recycle_order || null,
+      cover_image: d.cover_image || deviceForm.cover_image || '',
+      detail_images: d.detail_images || deviceForm.detail_images || [],
+      inspection_reports: d.inspection_reports || deviceForm.inspection_reports || [],
+      listing_description: d.listing_description || deviceForm.listing_description || '',
+      inspection_note: d.inspection_note || deviceForm.inspection_note || ''
+    })
+    syncDeviceImageLists()
+    syncInspectionEditorInline()
+  } catch (e) {
+    // ignore
+  }
 }
 
 const submitForm = async () => {
+  if (!editingDevice.value?.id) {
+    ElMessage.warning('库存设备已禁止手动新增，请从回收订单入库后再编辑')
+    return
+  }
   if (!deviceForm.sn) {
     ElMessage.warning('请填写 SN/序列号')
     return
@@ -722,17 +918,15 @@ const submitForm = async () => {
     return
   }
 
+  const next = inspectionEditorInlineRef.value?.getCategories?.()
+  if (Array.isArray(next)) deviceForm.inspection_reports = next
+
   formLoading.value = true
   try {
-    if (editingDevice.value) {
-      const payload = { ...deviceForm }
-      await adminApi.patch(`/verified-devices/${editingDevice.value.id}/`, payload)
-      ElMessage.success('更新成功')
-    } else {
-      const payload = { ...deviceForm }
-      await adminApi.post('/verified-devices/', payload)
-      ElMessage.success('创建成功')
-    }
+    const payload = { ...deviceForm }
+    delete payload.recycle_order
+    await adminApi.patch(`/verified-devices/${editingDevice.value.id}/`, payload)
+    ElMessage.success('更新成功')
     showFormDialog.value = false
     await loadDevices()
   } catch (error) {
@@ -747,6 +941,23 @@ const submitForm = async () => {
       (data && typeof data === 'object' ? Object.values(data).flat()?.[0] : null) ||
       '操作失败'
     ElMessage.error(msg)
+  } finally {
+    formLoading.value = false
+  }
+}
+
+const syncInspectionFromRecycle = async () => {
+  if (!editingDevice.value?.id) return
+  formLoading.value = true
+  try {
+    const res = await adminApi.post(`/verified-devices/${editingDevice.value.id}/sync-inspection-report/`)
+    const d = res.data || {}
+    deviceForm.inspection_reports = d.inspection_reports || []
+    if (!deviceForm.inspection_note) deviceForm.inspection_note = d.inspection_note || ''
+    syncInspectionEditorInline()
+    ElMessage.success('已同步质检报告')
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '同步失败')
   } finally {
     formLoading.value = false
   }
@@ -793,8 +1004,13 @@ const importDraft = (orderId) => {
 
 const submitImport = async () => {
   if (!importSelected.value.length) {
-    ElMessage.warning('请先选择要入库的回收订单')
-    return
+    // 允许“填了 SN 就算选中”，减少遗漏勾选导致的操作失败
+    const bySn = (importOrders.value || []).filter((row) => String(importDraft(row.id).sn || '').trim())
+    if (!bySn.length) {
+      ElMessage.warning('请先选择要入库的回收订单')
+      return
+    }
+    importSelected.value = bySn
   }
   for (const row of importSelected.value) {
     const d = importDraft(row.id)
@@ -902,6 +1118,10 @@ const goProducts = () => {
 }
 
 onMounted(() => {
+  const q = route.query?.search || route.query?.sn
+  if (q && !search.value) {
+    search.value = String(q)
+  }
   loadDevices()
 })
 </script>

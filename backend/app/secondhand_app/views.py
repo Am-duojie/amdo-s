@@ -4,10 +4,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, AllowAny
 from rest_framework.views import APIView
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from django.contrib.auth.models import User
 from django.db.models import Q, Count, F
 from django.core.cache import cache
 from django.conf import settings
+from django.utils import timezone
 import re
 import logging
 import requests
@@ -348,18 +350,41 @@ class ProductViewSet(viewsets.ModelViewSet):
             favorite_count=Count('favorites', distinct=True)
         )
 
-        status_param = self.request.query_params.get('status', None)
+        # 详情/管理动作允许访问任意状态（由权限与业务规则控制）
+        if getattr(self, 'action', None) in {
+            'retrieve',
+            'update',
+            'partial_update',
+            'destroy',
+            'upload_images',
+            'delete_image',
+        }:
+            return queryset
+
+        status_param = (self.request.query_params.get('status') or '').strip()
         if status_param:
             if status_param == 'all':
-                queryset = queryset.filter(status__in=['active', 'sold'])
-            elif ',' in status_param:
-                status_values = [s.strip() for s in status_param.split(',') if s.strip()]
-                if status_values:
-                    queryset = queryset.filter(status__in=status_values)
+                status_values = ['active', 'sold']
             else:
-                queryset = queryset.filter(status=status_param)
+                status_values = [s.strip() for s in status_param.split(',') if s.strip()]
         else:
-            queryset = queryset.filter(status='active')
+            status_values = ['active']
+
+        # 待审核商品只允许卖家本人或管理员可见
+        if 'pending' in status_values and not self.request.user.is_staff:
+            seller_param = self.request.query_params.get('seller')
+            try:
+                seller_id = int(seller_param) if seller_param is not None else None
+            except (ValueError, TypeError):
+                seller_id = None
+
+            if (not self.request.user.is_authenticated) or (seller_id != self.request.user.id):
+                status_values = [s for s in status_values if s != 'pending']
+
+        if not status_values:
+            return queryset.none()
+
+        queryset = queryset.filter(status__in=status_values)
         
         # 分类筛选（优先处理，确保分类筛选生效）
         category = self.request.query_params.get('category', None)
@@ -416,11 +441,109 @@ class ProductViewSet(viewsets.ModelViewSet):
         """创建商品时设置卖家为当前用户"""
         serializer.save(seller=self.request.user)
 
+    def _assert_owner_or_staff(self, request, product):
+        if not request.user or not request.user.is_authenticated:
+            raise PermissionDenied('请先登录')
+        if request.user.is_staff:
+            return
+        if product.seller_id != request.user.id:
+            raise PermissionDenied('无权限操作')
+
+    def perform_update(self, serializer):
+        product = serializer.instance
+        self._assert_owner_or_staff(self.request, product)
+
+        new_status = serializer.validated_data.get('status', product.status)
+
+        if not self.request.user.is_staff and product.status == 'sold':
+            raise ValidationError({'detail': '已售商品不允许修改'})
+
+        if not self.request.user.is_staff and 'status' in serializer.validated_data:
+            if new_status != 'removed':
+                raise ValidationError({'detail': '待审核/在售商品状态只能由管理员审核后变更'})
+
+        if 'status' in serializer.validated_data:
+            if new_status == 'removed':
+                serializer.validated_data['removed_at'] = timezone.now()
+                serializer.validated_data['removed_by'] = self.request.user.username or str(self.request.user.id)
+                serializer.validated_data['removed_reason'] = (serializer.validated_data.get('removed_reason') or '').strip()
+            else:
+                serializer.validated_data['removed_reason'] = ''
+                serializer.validated_data['removed_at'] = None
+                serializer.validated_data['removed_by'] = ''
+
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._assert_owner_or_staff(self.request, instance)
+
+        if not self.request.user.is_staff:
+            if instance.status == 'sold':
+                raise ValidationError({'detail': '已售商品不能删除'})
+            if Order.objects.filter(product=instance).exists():
+                raise ValidationError({'detail': '已有订单的商品不能删除'})
+
+        return super().perform_destroy(instance)
+
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
+        if instance.status == 'pending':
+            is_owner = request.user.is_authenticated and instance.seller_id == request.user.id
+            if not (request.user.is_staff or is_owner):
+                return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
         Product.objects.filter(pk=instance.pk).update(view_count=F('view_count') + 1)
         instance.refresh_from_db(fields=['view_count'])
         serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def upload_images(self, request, pk=None):
+        """上传商品图片"""
+        product = self.get_object()
+        self._assert_owner_or_staff(request, product)
+
+        images = request.FILES.getlist('images')
+        if not images:
+            return Response({'detail': '未提供图片文件'}, status=status.HTTP_400_BAD_REQUEST)
+
+        has_primary = ProductImage.objects.filter(product=product, is_primary=True).exists()
+        for i, image in enumerate(images):
+            is_primary = not has_primary and i == 0
+            ProductImage.objects.create(product=product, image=image, is_primary=is_primary)
+            if is_primary:
+                has_primary = True
+
+        serializer = ProductSerializer(product, context={'request': request})
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['delete'], url_path='images/(?P<image_id>[^/.]+)', permission_classes=[IsAuthenticated])
+    def delete_image(self, request, pk=None, image_id=None):
+        """删除商品图片"""
+        product = self.get_object()
+        self._assert_owner_or_staff(request, product)
+
+        try:
+            image = ProductImage.objects.get(id=image_id, product=product)
+        except ProductImage.DoesNotExist:
+            return Response({'detail': '图片不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        was_primary = image.is_primary
+        image.delete()
+
+        if was_primary:
+            next_image = ProductImage.objects.filter(product=product).order_by('id').first()
+            if next_image:
+                next_image.is_primary = True
+                next_image.save(update_fields=['is_primary'])
+
+        serializer = ProductSerializer(product, context={'request': request})
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def my_products(self, request):
+        """获取当前用户发布的商品（包含所有状态）"""
+        products = Product.objects.filter(seller=request.user).order_by('-created_at')
+        serializer = ProductSerializer(products, many=True, context={'request': request})
         return Response(serializer.data)
 
 
@@ -501,112 +624,6 @@ class LowPriceProductsView(APIView):
         page = paginator.paginate_queryset(queryset, request)
         serializer = ProductSerializer(page, many=True, context={'request': request})
         return paginator.get_paginated_response(serializer.data)
-
-    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated])
-    def update_status(self, request, pk=None):
-        """更新商品状态"""
-        product = self.get_object()
-        if product.seller != request.user:
-            return Response({'detail': '无权限操作'}, status=status.HTTP_403_FORBIDDEN)
-        
-        status_value = request.data.get('status')
-        if status_value not in dict(Product.STATUS_CHOICES).keys():
-            return Response({'detail': '无效的状态值'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        product.status = status_value
-        product.save()
-        serializer = ProductSerializer(product, context={'request': request})
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
-    def upload_images(self, request, pk=None):
-        """上传商品图片"""
-        product = self.get_object()
-        if product.seller != request.user:
-            return Response({'detail': '无权限操作'}, status=status.HTTP_403_FORBIDDEN)
-        
-        images = request.FILES.getlist('images')
-        if not images:
-            return Response({'detail': '未提供图片文件'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # 如果没有主图，则设置第一张图片为主图
-        has_primary = ProductImage.objects.filter(product=product, is_primary=True).exists()
-        
-        for i, image in enumerate(images):
-            is_primary = not has_primary and i == 0
-            ProductImage.objects.create(
-                product=product,
-                image=image,
-                is_primary=is_primary
-            )
-            
-            if is_primary:
-                has_primary = True
-                
-        serializer = ProductSerializer(product, context={'request': request})
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['delete'], url_path='images/(?P<image_id>[^/.]+)', permission_classes=[IsAuthenticated])
-    def delete_image(self, request, pk=None, image_id=None):
-        """删除商品图片"""
-        product = self.get_object()
-        if product.seller != request.user:
-            return Response({'detail': '无权限操作'}, status=status.HTTP_403_FORBIDDEN)
-
-        try:
-            image = ProductImage.objects.get(id=image_id, product=product)
-        except ProductImage.DoesNotExist:
-            return Response({'detail': '图片不存在'}, status=status.HTTP_404_NOT_FOUND)
-
-        was_primary = image.is_primary
-        image.delete()
-
-        if was_primary:
-            next_image = ProductImage.objects.filter(product=product).order_by('id').first()
-            if next_image:
-                next_image.is_primary = True
-                next_image.save(update_fields=['is_primary'])
-
-        serializer = ProductSerializer(product, context={'request': request})
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
-    def favorite(self, request, pk=None):
-        """收藏商品"""
-        product = self.get_object()
-        favorite, created = Favorite.objects.get_or_create(
-            user=request.user,
-            product=product
-        )
-        if created:
-            return Response({'detail': '收藏成功'})
-        else:
-            return Response({'detail': '已收藏'})
-
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
-    def unfavorite(self, request, pk=None):
-        """取消收藏商品"""
-        product = self.get_object()
-        try:
-            favorite = Favorite.objects.get(user=request.user, product=product)
-            favorite.delete()
-            return Response({'detail': '已取消收藏'})
-        except Favorite.DoesNotExist:
-            return Response({'detail': '未收藏该商品'})
-
-    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
-    def my_products(self, request):
-        """获取当前用户发布的商品（包括所有状态）"""
-        products = Product.objects.filter(seller=request.user).order_by('-created_at')
-        serializer = ProductSerializer(products, many=True, context={'request': request})
-        return Response(serializer.data)
-
-    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
-    def my_sales(self, request):
-        """获取当前用户作为卖家的订单（含结算状态与账户）"""
-        orders = Order.objects.filter(product__seller=request.user).order_by('-created_at')
-        serializer = OrderSerializer(orders, many=True, context={'request': request})
-        return Response(serializer.data)
 
 
 class OrderViewSet(viewsets.ModelViewSet):
@@ -1524,7 +1541,9 @@ class VerifiedProductViewSet(viewsets.ModelViewSet):
         """获取商品列表，支持筛选"""
         queryset = VerifiedProduct.objects.filter(status='active').select_related(
             'seller', 'category'
-        ).prefetch_related('images').order_by('-created_at')
+        ).prefetch_related('images').annotate(
+            favorite_count=Count('favorites', distinct=True)
+        ).order_by('-created_at')
         
         # 分类筛选
         category_id = self.request.query_params.get('category')
@@ -1562,6 +1581,13 @@ class VerifiedProductViewSet(viewsets.ModelViewSet):
             queryset = queryset.order_by(ordering)
         
         return queryset
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        VerifiedProduct.objects.filter(pk=instance.pk).update(view_count=F('view_count') + 1)
+        instance.refresh_from_db(fields=['view_count'])
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
 
     def perform_create(self, serializer):
         """创建商品"""
