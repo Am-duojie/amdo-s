@@ -12,8 +12,6 @@ PERMISSIONS = [
     'verified:view',
     'verified:write',
     'verified:read',
-    'audit:view',
-    'audit:write',
     'audit_log:view',
     'payment:view',
     'payment:write',

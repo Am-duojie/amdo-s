@@ -53,7 +53,6 @@ const targetTypeLabels = {
   Order: '订单',
   AdminUser: '管理员',
   AdminRole: '角色',
-  AdminAuditQueueItem: '审核队列'
 }
 
 const actionLabels = {

@@ -9,7 +9,6 @@ from django.db import transaction
 
 from app.admin_api.models import (
     AdminAuditLog,
-    AdminAuditQueueItem,
     AdminInspectionReport,
     RecycleDeviceTemplate,
     RecycleQuestionOption,
@@ -60,7 +59,6 @@ class Command(BaseCommand):
             "VerifiedProductImage": VerifiedProductImage.objects.count(),
             "VerifiedFavorite": VerifiedFavorite.objects.count(),
             "VerifiedOrder": VerifiedOrder.objects.count(),
-            "AdminAuditQueueItem": AdminAuditQueueItem.objects.count(),
             "AdminAuditLog(recycle/verified)": AdminAuditLog.objects.filter(
                 target_type__in=["RecycleOrder", "VerifiedOrder", "VerifiedProduct", "VerifiedDevice", "Payment", "Settlement"]
             ).count(),
@@ -97,7 +95,6 @@ class Command(BaseCommand):
             return
 
         # Delete official-verified data first (dependents -> owners)
-        AdminAuditQueueItem.objects.all().delete()
         VerifiedFavorite.objects.all().delete()
         VerifiedProductImage.objects.all().delete()
         VerifiedOrder.objects.all().delete()

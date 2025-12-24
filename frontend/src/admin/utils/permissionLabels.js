@@ -13,8 +13,6 @@ export const permissionLabels = {
   'verified:view': '验机商品查看',
   'verified:read': '验机商品查看',
   'verified:write': '验机商品编辑',
-  'audit:view': '内容审核查看',
-  'audit:write': '内容审核处理',
   'audit_log:view': '审计日志查看',
   'payment:view': '支付查看',
   'payment:write': '支付处理',

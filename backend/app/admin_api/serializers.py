@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import (
-    AdminUser, AdminRole, AdminInspectionReport, AdminAuditQueueItem,
+    AdminUser, AdminRole, AdminInspectionReport,
     RecycleDeviceTemplate, RecycleQuestionTemplate, RecycleQuestionOption
 )
 from app.secondhand_app.models import RecycleOrder, VerifiedProduct, VerifiedDevice
@@ -77,11 +77,6 @@ class OfficialInventorySerializer(serializers.ModelSerializer):
             'template_id', 'template_name', 'category_name', 'linked_product_id',
             'created_at', 'updated_at'
         ]
-
-class AdminAuditQueueItemSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = AdminAuditQueueItem
-        fields = ['id','type','rules_hit','status','decision']
 
 # ==================== 回收机型模板序列化器 ====================
 

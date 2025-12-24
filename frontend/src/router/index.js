@@ -180,7 +180,7 @@ const routes = [
       { path: 'frontend-users', name: 'AdminFrontendUsers', component: () => import('@/admin/pages/FrontendUsers.vue'), meta: { requiresAdminAuth: true, title: '前端用户', icon: 'Avatar', group: 'system', perm: 'user:view' } },
       { path: 'messages', name: 'AdminMessages', component: () => import('@/admin/pages/Messages.vue'), meta: { requiresAdminAuth: true, title: '消息管理', icon: 'ChatDotSquare', group: 'system', perm: 'message:view' } },
       { path: 'addresses', name: 'AdminAddresses', component: () => import('@/admin/pages/Addresses.vue'), meta: { requiresAdminAuth: true, title: '地址管理', icon: 'Location', group: 'system', perm: 'address:view' } },
-      { path: ':pathMatch(.*)*', redirect: { name: 'AdminLogin' }, meta: { hideSearch: true, admin: true } },
+      { path: ':pathMatch(.*)*', redirect: { name: 'AdminLogin' }, meta: { hideSearch: true, admin: true, hidden: true } },
     ]
   },
   {

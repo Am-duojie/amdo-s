@@ -14,7 +14,7 @@ from rest_framework import status
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from .models import (
-    AdminUser, AdminRole, AdminInspectionReport, AdminAuditQueueItem, AdminAuditLog, AdminRefreshToken, AdminTokenBlacklist,
+    AdminUser, AdminRole, AdminInspectionReport, AdminAuditLog, AdminRefreshToken, AdminTokenBlacklist,
     RecycleDeviceTemplate, RecycleQuestionTemplate, RecycleQuestionOption
 )
 from .permissions import PERMISSIONS, validate_permissions
@@ -24,7 +24,7 @@ from app.secondhand_app.models import (
 )
 from app.secondhand_app.alipay_client import AlipayClient
 from .serializers import (
-    AdminUserSerializer, RecycleOrderListSerializer, VerifiedProductListSerializer, AdminAuditQueueItemSerializer,
+    AdminUserSerializer, RecycleOrderListSerializer, VerifiedProductListSerializer,
     VerifiedDeviceListSerializer, OfficialInventorySerializer,
     RecycleDeviceTemplateSerializer, RecycleDeviceTemplateListSerializer, RecycleQuestionTemplateSerializer, RecycleQuestionOptionSerializer
 )
@@ -366,7 +366,6 @@ class DashboardMetricsView(APIView):
         gmv_today = sum([float(x) for x in gmv_qs]) if gmv_qs else 0.0
         metrics = {
             'todayInspection': RecycleOrder.objects.filter(created_at__date=today).count(),
-            'pendingAudit': AdminAuditQueueItem.objects.filter(status='pending').count(),
             'verifiedPublished': VerifiedProduct.objects.filter(status='active').count(),
             'verifiedOrdersPaidToday': VerifiedOrder.objects.filter(created_at__date=today, status='paid').count(),
             'verifiedOrdersCompletedToday': VerifiedOrder.objects.filter(created_at__date=today, status='completed').count(),
@@ -2525,55 +2524,6 @@ class VerifiedListingsView(APIView):
             v.save()
             return Response({'success': True})
         except VerifiedProduct.DoesNotExist:
-            return Response({'success': False})
-
-# 审核队列相关视图
-@method_decorator(csrf_exempt, name='dispatch')
-class AuditQueueView(APIView):
-    # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
-    authentication_classes = []
-    permission_classes = []
-    
-    @admin_required(['audit:view'])
-    def get(self, request):
-        admin = request.admin
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 10))
-        qs = AdminAuditQueueItem.objects.all().order_by('-created_at')
-        total = qs.count()
-        items = qs[(page-1)*page_size: page*page_size]
-        return Response({'results': AdminAuditQueueItemSerializer(items, many=True).data, 'count': total})
-    @admin_required(['audit:write'])
-    def post(self, request, qid, decision):
-        admin = request.admin
-        try:
-            item = AdminAuditQueueItem.objects.get(id=qid)
-            item.decision = decision
-            item.status = 'completed'
-            item.assigned_auditor = admin
-            item.save()
-            if decision == 'approve':
-                if item.product.stock <= 0:
-                    return Response({'success': False, 'detail': '库存为0，无法上架'}, status=400)
-                device = VerifiedDevice.objects.filter(linked_product=item.product).first()
-                if not device:
-                    return Response({'success': False, 'detail': '官方验商品仅允许由库存设备上架生成'}, status=400)
-                try:
-                    create_verified_product_from_device(
-                        device,
-                        status='active',
-                        price_override=item.product.price,
-                        original_price_override=item.product.original_price,
-                    )
-                    item.product.refresh_from_db()
-                except ValueError as e:
-                    return Response({'success': False, 'detail': str(e)}, status=400)
-            else:
-                item.product.status = 'removed'
-            item.product.save()
-            AdminAuditLog.objects.create(actor=admin, target_type='AdminAuditQueueItem', target_id=item.id, action=decision, snapshot_json={'product_id': item.product.id})
-            return Response({'success': True})
-        except AdminAuditQueueItem.DoesNotExist:
             return Response({'success': False})
 
 # 审核日志相关视图

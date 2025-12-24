@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth.models import User
-from app.secondhand_app.models import RecycleOrder, VerifiedProduct
+from app.secondhand_app.models import RecycleOrder
 
 class AdminRole(models.Model):
     name = models.CharField(max_length=32, unique=True)
@@ -31,15 +31,6 @@ class AdminInspectionReport(models.Model):
     score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     template_name = models.CharField(max_length=64, default='default')
     template_version = models.CharField(max_length=32, default='v1')
-    created_at = models.DateTimeField(auto_now_add=True)
-
-class AdminAuditQueueItem(models.Model):
-    product = models.ForeignKey(VerifiedProduct, on_delete=models.CASCADE)
-    type = models.CharField(max_length=32, default='new')
-    rules_hit = models.JSONField(default=list)
-    status = models.CharField(max_length=32, default='pending')
-    decision = models.CharField(max_length=32, blank=True)
-    assigned_auditor = models.ForeignKey(AdminUser, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
 class AdminAuditLog(models.Model):
