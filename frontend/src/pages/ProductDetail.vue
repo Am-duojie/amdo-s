@@ -1,6 +1,7 @@
 <template>
   <div class="product-detail-page xianyu-style">
-    
+    <AppPageHeader title="商品详情" :subtitle="product?.title || ''" />
+
 
     <!-- 加载中 -->
     <div v-if="loading" class="loading-container">
@@ -369,6 +370,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Star, StarFilled, ChatDotRound, PictureFilled, Share, CircleCheck, Location, Shop } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'

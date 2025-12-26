@@ -200,7 +200,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import adminApi from '@/utils/adminApi'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAdminAuthStore } from '@/stores/adminAuth'
@@ -210,6 +211,7 @@ import { LOGISTICS_COMPANIES } from '@/constants/logistics'
 
 const admin = useAdminAuthStore()
 const hasPerm = (p) => admin.hasPerm(p)
+const route = useRoute()
 
 const orders = ref([])
 const loading = ref(false)
@@ -274,6 +276,12 @@ const handleSizeChange = () => {
 
 const viewDetail = (row) => {
   currentOrder.value = row
+  detailDialogVisible.value = true
+}
+
+const openDetailById = (orderId) => {
+  if (!orderId) return
+  currentOrder.value = { id: orderId }
   detailDialogVisible.value = true
 }
 
@@ -385,9 +393,23 @@ const resetFilters = () => {
   handleSearch()
 }
 
-onMounted(() => {
-  loadOrders()
+onMounted(async () => {
+  await loadOrders()
+  const orderId = parseInt(route.query.order_id, 10)
+  if (orderId) {
+    openDetailById(orderId)
+  }
 })
+
+watch(
+  () => route.query.order_id,
+  (value) => {
+    const orderId = parseInt(value, 10)
+    if (orderId) {
+      openDetailById(orderId)
+    }
+  }
+)
 </script>
 
 <style scoped>
@@ -472,7 +494,6 @@ onMounted(() => {
   color: #909399;
 }
 </style>
-
 
 
 

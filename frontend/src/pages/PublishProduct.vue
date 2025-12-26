@@ -1,5 +1,6 @@
 <template>
   <div class="edit-product-page">
+    <AppPageHeader :title="pageTitle" />
     <div class="recycle-entry-banner" @click="$router.push('/recycle')">
       <div class="banner-left">
         <span class="recycle-icon">♻️</span>
@@ -166,11 +167,14 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import { Plus } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 
 const route = useRoute()
 const router = useRouter()
+
+const pageTitle = computed(() => (route.params.id ? '编辑商品' : '发布商品'))
 
 const formRef = ref()
 const uploadRef = ref()

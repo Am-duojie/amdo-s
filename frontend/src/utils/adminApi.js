@@ -1,7 +1,16 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
-const DEFAULT_ADMIN_API_BASE = 'http://127.0.0.1:8000/admin-api'
+const getDefaultAdminApiBase = () => {
+  if (typeof window === 'undefined') {
+    return 'http://127.0.0.1:8000/admin-api'
+  }
+  return window.location.hostname === 'localhost'
+    ? 'http://localhost:8000/admin-api'
+    : 'http://127.0.0.1:8000/admin-api'
+}
+
+const DEFAULT_ADMIN_API_BASE = getDefaultAdminApiBase()
 const ADMIN_API_BASE_URL = (localStorage.getItem('ADMIN_API_BASE') || import.meta.env.VITE_ADMIN_API_URL || DEFAULT_ADMIN_API_BASE)
 
 const adminApi = axios.create({

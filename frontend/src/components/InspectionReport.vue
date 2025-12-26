@@ -394,8 +394,8 @@ onMounted(async () => {
 .group-container { margin-bottom: 12px; }
 .group-title { font-weight: 600; margin-bottom: 6px; color: var(--text-normal); }
 
-.items-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 16px; }
-.inspection-report.compact .items-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.items-grid { display: grid; grid-template-columns: repeat(2, minmax(240px, 1fr)); gap: 8px 16px; }
+.inspection-report.compact .items-grid { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
 
 .item-row { display: flex; align-items: center; gap: 6px; color: var(--text-normal); font-size: 13px; }
 .label { flex: 0 0 auto; }

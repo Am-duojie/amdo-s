@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnl
 from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.db.models import Q, Count, F
 from django.core.cache import cache
 from django.conf import settings
@@ -57,6 +58,30 @@ def _extract_location_keys(text):
         keys.append(value)
 
     return keys
+
+def _get_support_service_user():
+    username = getattr(settings, 'SUPPORT_SERVICE_USERNAME', 'support_service')
+    email = getattr(settings, 'SUPPORT_SERVICE_EMAIL', 'support@example.com')
+    UserModel = get_user_model()
+    user, created = UserModel.objects.get_or_create(
+        username=username,
+        defaults={'email': email, 'is_active': True}
+    )
+    if created:
+        try:
+            user.set_unusable_password()
+        except Exception:
+            pass
+        user.save()
+    return user
+
+
+class SupportServiceUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = _get_support_service_user()
+        return Response({'id': user.id, 'username': user.username})
 
 
 class GeoIpView(APIView):

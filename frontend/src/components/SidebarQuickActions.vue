@@ -30,17 +30,51 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import api from '@/utils/api'
+import { useAuthStore } from '@/stores/auth'
 import websocket from '@/utils/websocket'
 
 const unreadCount = ref(0)
 const isCollapsed = ref(false)
+const router = useRouter()
+const authStore = useAuthStore()
 
 const toggleCollapse = () => {
   isCollapsed.value = !isCollapsed.value
 }
 
-const openService = () => {}
+const getSupportUserId = async () => {
+  const raw = localStorage.getItem('SUPPORT_USER_ID') || import.meta.env.VITE_SUPPORT_USER_ID
+  const parsed = raw ? parseInt(raw, 10) : null
+  if (Number.isFinite(parsed)) return parsed
+  try {
+    const res = await api.get('/support/service-user/')
+    const id = res.data?.id
+    if (id) {
+      localStorage.setItem('SUPPORT_USER_ID', String(id))
+      return id
+    }
+  } catch {
+    // ignore
+  }
+  return null
+}
+
+const openService = async () => {
+  if (!authStore.user) {
+    ElMessage.warning('请先登录')
+    router.push('/login')
+    return
+  }
+  const supportUserId = await getSupportUserId()
+  if (!supportUserId) {
+    ElMessage.warning('平台客服未配置')
+    return
+  }
+  router.push(`/messages?user_id=${supportUserId}`)
+}
 const backToTop = () => {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }

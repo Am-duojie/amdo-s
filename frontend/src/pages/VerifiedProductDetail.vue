@@ -1,5 +1,6 @@
 <template>
   <div class="verified-detail-page xianyu-style">
+    <AppPageHeader title="官方验商品详情" :subtitle="product?.title || ''" />
     <div v-if="loading" class="loading">
       <el-skeleton :rows="8" animated />
     </div>
@@ -92,6 +93,15 @@
 
           <div class="action-area">
             <el-button
+              class="action-btn chat-btn"
+              size="large"
+              plain
+              @click="handleServiceChat"
+            >
+              <el-icon><ChatDotRound /></el-icon>
+              聊一聊
+            </el-button>
+            <el-button
               class="action-btn buy-btn"
               size="large"
               type="warning"
@@ -136,9 +146,10 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
- import { PictureFilled, Star, StarFilled, ArrowDown } from '@element-plus/icons-vue'
+import { PictureFilled, Star, StarFilled, ArrowDown, ChatDotRound } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import { getImageUrl } from '@/utils/image'
 import InspectionReport from '@/components/InspectionReport.vue'
@@ -206,6 +217,38 @@ const getConditionClass = (condition) => {
     poor: 'cond-poor'
   }
   return map[condition] || 'cond-good'
+}
+
+const getSupportUserId = async () => {
+  const raw = localStorage.getItem('SUPPORT_USER_ID') || import.meta.env.VITE_SUPPORT_USER_ID
+  const parsed = raw ? parseInt(raw, 10) : null
+  if (Number.isFinite(parsed)) return parsed
+  try {
+    const res = await api.get('/support/service-user/')
+    const id = res.data?.id
+    if (id) {
+      localStorage.setItem('SUPPORT_USER_ID', String(id))
+      return id
+    }
+  } catch {
+    // ignore
+  }
+  if (product.value?.seller?.id) return product.value.seller.id
+  return null
+}
+
+const handleServiceChat = async () => {
+  if (!authStore.user) {
+    ElMessage.warning('请先登录')
+    router.push('/login')
+    return
+  }
+  const supportUserId = await getSupportUserId()
+  if (!supportUserId) {
+    ElMessage.warning('平台客服未配置')
+    return
+  }
+  router.push(`/messages?user_id=${supportUserId}&product_id=${route.params.id}`)
 }
 
 function resolveImageField(img) {

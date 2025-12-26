@@ -12,6 +12,10 @@
       </div>
       <div class="spacer"></div>
       <div class="user" v-if="admin.isAuthed">
+        <el-button class="chat-entry" size="small" plain @click="openChatEntry">
+          <el-icon><ChatDotRound /></el-icon>
+          聊天入口
+        </el-button>
         <div class="user-chip">
           <el-avatar size="small">{{ (admin.user?.username || 'U')[0].toUpperCase() }}</el-avatar>
           <span class="user-name">{{ admin.user?.username }}</span>
@@ -41,7 +45,7 @@ import Sidebar from './components/Sidebar.vue'
 import Breadcrumb from './components/Breadcrumb.vue'
 import TagsView from './components/TagsView.vue'
 import AppMain from './components/AppMain.vue'
-import { Fold, Expand } from '@element-plus/icons-vue'
+import { Fold, Expand, ChatDotRound } from '@element-plus/icons-vue'
 
 const admin = useAdminAuthStore()
 const isCollapse = ref(false)
@@ -49,6 +53,10 @@ const isCollapse = ref(false)
 const logout = async () => {
   await admin.logout()
   location.href = '/admin/login'
+}
+
+const openChatEntry = () => {
+  window.open('/admin/messages', '_blank', 'noopener,noreferrer')
 }
 
 // 如果已登录但用户信息未加载，则加载用户信息
@@ -136,6 +144,21 @@ onMounted(() => {
 .fold-btn {
   color: #fff;
   margin-right: 10px;
+}
+
+.chat-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.chat-entry:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .admin-body {

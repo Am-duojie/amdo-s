@@ -24,6 +24,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-@#)0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0'
 
+# Customer service user used by admin chat
+SUPPORT_SERVICE_USERNAME = os.getenv('SUPPORT_SERVICE_USERNAME', 'support_service')
+SUPPORT_SERVICE_EMAIL = os.getenv('SUPPORT_SERVICE_EMAIL', 'support@example.com')
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
@@ -176,15 +180,15 @@ SIMPLE_JWT = {
 CORS_ALLOW_ALL_ORIGINS = True  # Allow all origins for development
 CORS_ALLOW_CREDENTIALS = True
 
-# Security headers / cookies (enabled automatically when DEBUG is false)
-SECURE_SSL_REDIRECT = not DEBUG
-SESSION_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_SECURE = not DEBUG
+# Security headers / cookies (disabled for local development)
+SECURE_SSL_REDIRECT = False
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = False
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SAMESITE = 'Lax'
-SECURE_HSTS_SECONDS = 31536000 if not DEBUG else 0
-SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
-SECURE_HSTS_PRELOAD = not DEBUG
+SECURE_HSTS_SECONDS = 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+SECURE_HSTS_PRELOAD = False
 SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'SAMEORIGIN'

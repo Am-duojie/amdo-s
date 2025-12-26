@@ -531,7 +531,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import adminApi from '@/utils/adminApi'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAdminAuthStore } from '@/stores/adminAuth'
@@ -552,6 +553,7 @@ import {
 
 const admin = useAdminAuthStore()
 const hasPerm = (p) => admin.hasPerm(p)
+const route = useRoute()
 
 const statusOptions = [
   { label: '全部', value: '' },
@@ -710,6 +712,11 @@ const openDetail = async (row) => {
   }
 }
 
+const openDetailById = (orderId) => {
+  if (!orderId) return
+  openDetail({ id: orderId })
+}
+
 const closeDetailDialog = () => {
   detailDialogVisible.value = false
   orderDetail.value = null
@@ -826,9 +833,23 @@ const handleRetrySettlement = () => {
   if (settlementDetail.value) retrySettlement(settlementDetail.value)
 }
 
-onMounted(() => {
-  loadOrders()
+onMounted(async () => {
+  await loadOrders()
+  const orderId = parseInt(route.query.order_id, 10)
+  if (orderId) {
+    openDetailById(orderId)
+  }
 })
+
+watch(
+  () => route.query.order_id,
+  (value) => {
+    const orderId = parseInt(value, 10)
+    if (orderId) {
+      openDetailById(orderId)
+    }
+  }
+)
 </script>
 
 <style scoped>

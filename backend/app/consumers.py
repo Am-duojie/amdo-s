@@ -2,7 +2,7 @@ import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import User
-from app.secondhand_app.models import Message, Product
+from app.secondhand_app.models import Message, Product, ProductImage
 from django.utils import timezone
 from datetime import timedelta
 import logging
@@ -12,6 +12,20 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 logger = logging.getLogger(__name__)
 
 class ChatConsumer(AsyncWebsocketConsumer):
+    def _get_product_cover(self, product_id):
+        if not product_id:
+            return ''
+        try:
+            primary = ProductImage.objects.filter(product_id=product_id, is_primary=True).first()
+            if primary and primary.image:
+                return primary.image.url
+            fallback = ProductImage.objects.filter(product_id=product_id).first()
+            if fallback and fallback.image:
+                return fallback.image.url
+        except Exception:
+            return ''
+        return ''
+
     async def connect(self):
         # 从查询参数中获取token
         query_string = self.scope['query_string'].decode()
@@ -130,11 +144,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
         message_type = data.get('message_type', 'text') or 'text'
         payload = data.get('payload') or {}
         if message_type == 'product' and product:
+            cover = await database_sync_to_async(self._get_product_cover)(product.id)
             payload.update({
                 'product_id': product.id,
                 'title': product.title,
                 'price': str(product.price),
-                'cover': product.images.filter(is_primary=True).first().image.url if hasattr(product, 'images') else '',
+                'cover': cover,
                 'status': product.status,
             })
 

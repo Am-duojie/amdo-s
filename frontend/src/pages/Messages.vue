@@ -91,7 +91,7 @@
                 >
                   <div v-if="msg.recalled" class="message-text recalled">消息已撤回</div>
                   <div v-else-if="msg.message_type === 'product'" class="message-product">
-                    <div class="product-card">
+                    <div class="product-card" @click="handleMessageProductClick(msg)">
                       <img
                         v-if="msg.payload?.cover"
                         :src="getImageUrl(msg.payload.cover)"
@@ -142,7 +142,7 @@
         </div>
         <el-empty v-else class="chat-empty" description="请选择一个对话" :image-size="120" />
 
-        <div v-if="selectedUser" class="chat-input">
+        <div v-if="selectedUser" v-show="!isPreviewing" class="chat-input">
           <div class="input-toolbar">
             <div class="toolbar-left">
               <el-upload
@@ -150,6 +150,7 @@
                 :auto-upload="false"
                 :on-change="handleImageChange"
                 :show-file-list="false"
+                multiple
                 accept="image/*"
                 class="upload-btn-wrapper"
               >
@@ -164,10 +165,31 @@
               >
                 发送商品
               </el-button>
+              <el-button
+                text
+                :icon="Tickets"
+                class="toolbar-btn"
+                @click="openOrderDialog"
+              >
+                订单商品
+              </el-button>
             </div>
             <div class="toolbar-right">
               <el-button type="primary" class="send-btn" @click="handleSendMessage" :loading="loading">
                 发送
+              </el-button>
+            </div>
+          </div>
+          <div v-if="pendingImageUrls.length" class="pending-image-list">
+            <div v-for="(url, index) in pendingImageUrls" :key="url" class="pending-image-item">
+              <img :src="url" alt="待发送图片" />
+              <el-button
+                link
+                type="danger"
+                size="small"
+                @click="removePendingImage(index)"
+              >
+                移除
               </el-button>
             </div>
           </div>
@@ -192,15 +214,19 @@
       :close-on-click-modal="true"
       class="product-drawer"
     >
-      <div v-loading="productsLoading" class="drawer-body">
-        <el-input
-          v-model="goodsKeyword"
-          :prefix-icon="Search"
-          placeholder="搜索我的在售宝贝"
-          size="small"
-          clearable
-          class="goods-search"
-        />
+        <div v-loading="productsLoading" class="drawer-body">
+          <el-tabs v-model="productSource" @tab-change="loadChatProducts">
+            <el-tab-pane label="我的商品" name="mine" />
+            <el-tab-pane label="对方在售" name="other" />
+          </el-tabs>
+          <el-input
+            v-model="goodsKeyword"
+            :prefix-icon="Search"
+            placeholder="搜索商品"
+            size="small"
+            clearable
+            class="goods-search"
+          />
         <div v-if="filteredGoods.length === 0 && !productsLoading" class="empty-products">
           <el-empty description="暂无在售商品" :image-size="100" />
         </div>
@@ -234,13 +260,62 @@
         <el-button @click="productDialogVisible = false">关闭</el-button>
       </template>
     </el-drawer>
+
+    <el-drawer
+      v-model="orderDialogVisible"
+      title="选择订单商品"
+      size="420px"
+      direction="rtl"
+      :close-on-click-modal="true"
+      class="order-drawer"
+    >
+      <div class="drawer-body">
+        <div class="order-search">
+          <el-input
+            v-model="orderKeyword"
+            placeholder="搜索订单/商品"
+            size="small"
+            clearable
+          />
+          <el-button size="small" @click="loadOrderItems">搜索</el-button>
+        </div>
+        <el-tabs v-model="orderType" @tab-change="loadOrderItems">
+          <el-tab-pane label="易淘订单" name="secondhand" />
+          <el-tab-pane label="官方验订单" name="verified" />
+          <el-tab-pane label="回收订单" name="recycle" />
+        </el-tabs>
+        <div v-loading="orderLoading" class="order-list">
+          <el-empty v-if="!orderLoading && orderItems.length === 0" description="暂无可选订单" />
+          <div v-else>
+            <div v-for="item in orderItems" :key="`${item.type}-${item.id}`" class="order-item">
+              <div class="order-item-image">
+                <img v-if="item.cover" :src="getImageUrl(item.cover)" alt="封面" />
+                <div v-else class="no-image">暂无图片</div>
+              </div>
+              <div class="order-item-info">
+                <div class="order-item-title">{{ item.title }}</div>
+                <div class="order-item-price">¥{{ item.price || '0.00' }}</div>
+              </div>
+              <div class="order-item-action">
+                <el-button type="primary" size="default" @click="handleSendOrderItem(item)">
+                  发送
+                </el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="orderDialogVisible = false">关闭</el-button>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
-import { useRoute } from 'vue-router'
-import { UserFilled, Position, Picture, Search } from '@element-plus/icons-vue'
+import { useRoute, useRouter } from 'vue-router'
+import { UserFilled, Position, Picture, Search, Tickets } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
 import { useAuthStore } from '@/stores/auth'
@@ -248,6 +323,7 @@ import websocket from '@/utils/websocket'
 import { getImageUrl } from '@/utils/image'
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 
 const conversations = ref([])
@@ -257,12 +333,22 @@ const messageContent = ref('')
 const loading = ref(false)
 const scrollbarRef = ref(null)
 const wsConnected = ref(websocket.isConnected)
+const pendingImageFiles = ref([])
+const pendingImageUrls = ref([])
+const isPreviewing = ref(false)
+let previewObserver = null
 
 const productDialogVisible = ref(false)
+const productSource = ref('mine')
 const sellingProducts = ref([])
 const productsLoading = ref(false)
 const conversationKeyword = ref('')
 const goodsKeyword = ref('')
+const orderDialogVisible = ref(false)
+const orderType = ref('secondhand')
+const orderKeyword = ref('')
+const orderItems = ref([])
+const orderLoading = ref(false)
 
 const filteredConversations = computed(() => {
   if (!conversationKeyword.value.trim()) return conversations.value
@@ -299,6 +385,32 @@ const normalizeMessage = (raw) => {
     payload: raw.payload || {},
     recalled: raw.recalled || false
   }
+}
+
+const normalizeImagePath = (value) => {
+  if (!value) return ''
+  return getImageUrl(value) || value
+}
+
+const isDuplicateMessage = (msg) => {
+  if (!msg) return true
+  const senderId = msg.sender?.id
+  const receiverId = msg.receiver?.id
+  const image = normalizeImagePath(msg.image)
+  return messages.value.some((item) => {
+    if (item.id && msg.id && item.id === msg.id) return true
+    if (item.sender?.id !== senderId || item.receiver?.id !== receiverId) return false
+    if (item.message_type !== msg.message_type) return false
+    if (msg.message_type === 'image' && item.image && image) {
+      return normalizeImagePath(item.image) === image
+    }
+    return false
+  })
+}
+
+const appendMessage = (msg) => {
+  if (!msg || isDuplicateMessage(msg)) return
+  messages.value.push(msg)
 }
 
 const loadConversations = async () => {
@@ -354,21 +466,72 @@ const handleSelectUser = async (userId) => {
   }
 }
 
+const clearPendingImages = () => {
+  pendingImageUrls.value.forEach((url) => {
+    URL.revokeObjectURL(url)
+  })
+  pendingImageUrls.value = []
+  pendingImageFiles.value = []
+}
+
+const addPendingImages = (files) => {
+  if (!files || files.length === 0) return
+  const nextFiles = [...pendingImageFiles.value]
+  const nextUrls = [...pendingImageUrls.value]
+  for (const file of files) {
+    if (!file || !file.type?.startsWith('image/')) {
+      ElMessage.error('请选择图片文件')
+      continue
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      ElMessage.error('图片大小不能超过5MB')
+      continue
+    }
+    if (nextFiles.length >= 5) {
+      ElMessage.warning('最多支持 5 张图片')
+      break
+    }
+    nextFiles.push(file)
+    nextUrls.push(URL.createObjectURL(file))
+  }
+  pendingImageFiles.value = nextFiles
+  pendingImageUrls.value = nextUrls
+}
+
+const removePendingImage = (index) => {
+  if (index < 0 || index >= pendingImageFiles.value.length) return
+  const url = pendingImageUrls.value[index]
+  if (url) URL.revokeObjectURL(url)
+  pendingImageFiles.value.splice(index, 1)
+  pendingImageUrls.value.splice(index, 1)
+}
+
 const handleSendMessage = async () => {
-  if (!messageContent.value.trim() || !selectedUser.value) return
+  if (!selectedUser.value) return
+  const hasText = !!messageContent.value.trim()
+  const hasImage = pendingImageFiles.value.length > 0
+  if (!hasText && !hasImage) return
   loading.value = true
   try {
-    const payload = {
-      receiver_id: selectedUser.value.id,
-      content: messageContent.value,
-      message_type: 'text'
+    if (hasText) {
+      const payload = {
+        receiver_id: selectedUser.value.id,
+        content: messageContent.value,
+        message_type: 'text'
+      }
+      if (!websocket.send({ ...payload, type: 'chat_message' })) {
+        await api.post('/messages/', payload)
+        await loadMessages(selectedUser.value.id)
+        await loadConversations()
+      }
+      messageContent.value = ''
     }
-    if (!websocket.send({ ...payload, type: 'chat_message' })) {
-      await api.post('/messages/', payload)
-      await loadMessages(selectedUser.value.id)
-      await loadConversations()
+    if (hasImage) {
+      for (const file of pendingImageFiles.value) {
+        await uploadImageFile(file)
+      }
+      clearPendingImages()
     }
-    messageContent.value = ''
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '发送消息失败')
   } finally {
@@ -393,6 +556,29 @@ const handleSendProduct = async (product) => {
     productDialogVisible.value = false
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '发送商品失败')
+  }
+}
+
+const handleMessageProductClick = (msg) => {
+  const payload = msg?.payload || {}
+  if (payload.type === 'secondhand' && payload.order_id) {
+    router.push(`/order/${payload.order_id}`)
+    return
+  }
+  if (payload.type === 'verified' && payload.order_id) {
+    router.push(`/verified-order/${payload.order_id}`)
+    return
+  }
+  if (payload.type === 'recycle' && (payload.recycle_order_id || payload.order_id)) {
+    router.push(`/recycle-order/${payload.recycle_order_id || payload.order_id}`)
+    return
+  }
+  if (payload.product_id) {
+    router.push(`/products/${payload.product_id}`)
+    return
+  }
+  if (payload.verified_product_id) {
+    router.push(`/verified-products/${payload.verified_product_id}`)
   }
 }
 
@@ -453,7 +639,7 @@ const handleWebSocketMessage = (raw) => {
       (data.sender?.id === peerId && data.receiver?.id === authStore.user.id) ||
       (data.sender?.id === authStore.user.id && data.receiver?.id === peerId)
     if (isCurrent) {
-      messages.value.push(data)
+      appendMessage(data)
       nextTick(scrollToBottom)
       if (data.sender?.id === peerId) {
         markRead(peerId)
@@ -468,14 +654,8 @@ const uploadImageFile = async (file) => {
     ElMessage.warning('请先选择对话')
     return
   }
-  if (!file || !file.type?.startsWith('image/')) {
-    ElMessage.error('请选择图片文件')
-    return
-  }
-  if (file.size > 5 * 1024 * 1024) {
-    ElMessage.error('图片大小不能超过5MB')
-    return
-  }
+  if (!file || !file.type?.startsWith('image/')) return
+  if (file.size > 5 * 1024 * 1024) return
   loading.value = true
   try {
     const formData = new FormData()
@@ -484,7 +664,7 @@ const uploadImageFile = async (file) => {
     const res = await api.post('/messages/upload_image/', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
-    messages.value.push(normalizeMessage(res.data))
+    appendMessage(normalizeMessage(res.data))
     nextTick(scrollToBottom)
     loadConversations()
   } catch (error) {
@@ -495,20 +675,26 @@ const uploadImageFile = async (file) => {
 }
 
 const handleImageChange = async (file) => {
-  await uploadImageFile(file?.raw)
+  if (!selectedUser.value) {
+    ElMessage.warning('请先选择对话')
+    return
+  }
+  addPendingImages([file?.raw].filter(Boolean))
 }
 
 const handlePasteImage = async (event) => {
+  if (!selectedUser.value) return
   const items = event.clipboardData?.items || []
-  let imageFile = null
+  const imageFiles = []
   for (const item of items) {
     if (item.kind === 'file' && item.type?.startsWith('image/')) {
-      imageFile = item.getAsFile()
-      break
+      const file = item.getAsFile()
+      if (file) imageFiles.push(file)
     }
   }
-  if (!imageFile) return
-  await uploadImageFile(imageFile)
+  if (imageFiles.length === 0) return
+  event.preventDefault()
+  addPendingImages(imageFiles)
 }
 
 const getConversationPreview = (item) => {
@@ -549,7 +735,7 @@ const loadSellingProducts = async () => {
   if (!authStore.user?.id) return
   productsLoading.value = true
   try {
-    const res = await api.get('/products/', { params: { seller: authStore.user.id } })
+    const res = await api.get('/products/', { params: { seller: authStore.user.id, status: 'active' } })
     sellingProducts.value = res.data?.results || res.data || []
   } catch (error) {
     console.error('加载商品失败:', error)
@@ -560,8 +746,146 @@ const loadSellingProducts = async () => {
 }
 
 const openProductDialog = async () => {
-  await loadSellingProducts()
+  productSource.value = 'mine'
+  await loadChatProducts()
   productDialogVisible.value = true
+}
+
+const loadChatProducts = async () => {
+  if (!authStore.user?.id) return
+  productsLoading.value = true
+  try {
+    const sellerId = productSource.value === 'mine'
+      ? authStore.user.id
+      : selectedUser.value?.id
+    if (!sellerId) {
+      sellingProducts.value = []
+      ElMessage.warning('请先选择对话对象')
+      return
+    }
+    const res = await api.get('/products/', { params: { seller: sellerId, status: 'active' } })
+    sellingProducts.value = res.data?.results || res.data || []
+  } catch (error) {
+    console.error('加载商品失败:', error)
+    sellingProducts.value = []
+  } finally {
+    productsLoading.value = false
+  }
+}
+
+const openOrderDialog = async () => {
+  orderDialogVisible.value = true
+  await loadOrderItems()
+}
+
+const buildOrderItem = (type, order) => {
+  if (type === 'secondhand') {
+    const product = order.product || {}
+    const images = product.images || []
+    const cover = images.find((img) => img.is_primary)?.image || images[0]?.image || ''
+    return {
+      id: order.id,
+      type,
+      title: product.title || `订单#${order.id}`,
+      price: product.price || order.total_price,
+      cover,
+      payload: {
+        type,
+        order_id: order.id,
+        product_id: product.id,
+        title: product.title || `订单#${order.id}`,
+        price: String(product.price || order.total_price || ''),
+        cover
+      }
+    }
+  }
+
+  if (type === 'verified') {
+    const product = order.product || {}
+    const detailImages = product.detail_images || []
+    const cover = product.cover_image || detailImages[0]?.image || detailImages[0] || product.images?.[0]?.image || ''
+    return {
+      id: order.id,
+      type,
+      title: product.title || `官方验订单#${order.id}`,
+      price: product.price || order.total_price,
+      cover,
+      payload: {
+        type,
+        order_id: order.id,
+        verified_product_id: product.id,
+        title: product.title || `官方验订单#${order.id}`,
+        price: String(product.price || order.total_price || ''),
+        cover
+      }
+    }
+  }
+
+  const title = `${order.brand || ''} ${order.model || ''}`.trim() || `回收订单#${order.id}`
+  const price = order.final_price || order.estimated_price || ''
+  return {
+    id: order.id,
+    type: 'recycle',
+    title,
+    price,
+    cover: '',
+    payload: {
+      type: 'recycle',
+      recycle_order_id: order.id,
+      title,
+      price: String(price || ''),
+      cover: ''
+    }
+  }
+}
+
+const loadOrderItems = async () => {
+  if (!authStore.user) return
+  orderLoading.value = true
+  try {
+    let res
+    if (orderType.value === 'verified') {
+      res = await api.get('/verified-orders/')
+    } else if (orderType.value === 'recycle') {
+      res = await api.get('/recycle-orders/')
+    } else {
+      res = await api.get('/orders/')
+    }
+    const raw = res.data?.results || res.data || []
+    const keyword = orderKeyword.value.trim().toLowerCase()
+    const items = raw.map((order) => buildOrderItem(orderType.value, order))
+    orderItems.value = keyword
+      ? items.filter((item) => item.title.toLowerCase().includes(keyword))
+      : items
+  } catch (error) {
+    orderItems.value = []
+    ElMessage.error('加载订单失败')
+  } finally {
+    orderLoading.value = false
+  }
+}
+
+const handleSendOrderItem = async (item) => {
+  if (!selectedUser.value) return
+  try {
+    const payload = {
+      receiver_id: selectedUser.value.id,
+      content: '',
+      message_type: 'product',
+      payload: item.payload
+    }
+    if (item.type === 'secondhand' && item.payload?.product_id) {
+      payload.product_id = item.payload.product_id
+    }
+    if (!websocket.send({ ...payload, type: 'chat_message' })) {
+      await api.post('/messages/', payload)
+      await loadMessages(selectedUser.value.id)
+      await loadConversations()
+    }
+    orderDialogVisible.value = false
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '发送订单商品失败')
+  }
 }
 
 const handleWsConnected = () => {
@@ -587,6 +911,13 @@ onMounted(() => {
     websocket.on('connected', handleWsConnected)
     websocket.on('disconnected', handleWsDisconnected)
   }
+
+  const updatePreviewState = () => {
+    isPreviewing.value = !!document.querySelector('.el-image-viewer__wrapper')
+  }
+  updatePreviewState()
+  previewObserver = new MutationObserver(updatePreviewState)
+  previewObserver.observe(document.body, { childList: true, subtree: true })
 })
 
 onUnmounted(() => {
@@ -594,6 +925,10 @@ onUnmounted(() => {
   websocket.off('connected', handleWsConnected)
   websocket.off('disconnected', handleWsDisconnected)
   websocket.disconnect()
+  if (previewObserver) {
+    previewObserver.disconnect()
+    previewObserver = null
+  }
 })
 
 watch(
@@ -601,6 +936,10 @@ watch(
   (userId) => {
     if (userId) {
       loadMessages(userId)
+      clearPendingImages()
+      if (productDialogVisible.value && productSource.value === 'other') {
+        loadChatProducts()
+      }
     }
   }
 )
@@ -862,6 +1201,19 @@ watch(
   color: #0f2a12;
 }
 
+.message-bubble.product,
+.message-bubble.image {
+  background: #fff;
+  color: #111827;
+  border: 1px solid #e5e7eb;
+}
+
+.message-line.outgoing .message-bubble.product,
+.message-line.outgoing .message-bubble.image {
+  background: #fff;
+  color: #111827;
+}
+
 .message-bubble.recalled {
   background: #f7f7f7;
   color: #9ca3af;
@@ -877,11 +1229,12 @@ watch(
   border-radius: 8px;
   padding: 10px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
 }
 
 .message-line.outgoing .product-card {
-  background: #e8f8e1;
-  border-color: #95ec69;
+  background: #fff;
+  border-color: #e5e7eb;
 }
 
 .product-image {
@@ -921,6 +1274,7 @@ watch(
   max-width: 320px;
   max-height: 320px;
   border-radius: 8px;
+  border: 1px solid #e5e7eb;
   cursor: pointer;
   display: block;
 }
@@ -961,7 +1315,36 @@ watch(
   border-bottom-left-radius: 10px;
   border-bottom-right-radius: 10px;
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
 }
+
+.pending-image-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+  gap: 10px;
+  padding: 10px;
+  border: 1px dashed #d1d5db;
+  border-radius: 10px;
+  background: #fff;
+  margin-bottom: 10px;
+}
+
+.pending-image-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.pending-image-item img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
 
 .input-toolbar {
   display: flex;
@@ -1101,6 +1484,86 @@ watch(
 }
 
 .product-item-action {
+  flex-shrink: 0;
+}
+
+.order-drawer :deep(.el-drawer__body) {
+  padding: 0;
+}
+
+.order-search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.order-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #e8e8e8;
+  border-radius: 10px;
+  background: #fff;
+  transition: all 0.3s;
+}
+
+.order-item:hover {
+  border-color: #ff6a00;
+  box-shadow: 0 2px 8px rgba(255, 106, 0, 0.1);
+}
+
+.order-item-image {
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.order-item-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.order-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.order-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.order-item-price {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ff6a00;
+}
+
+.order-item-action {
   flex-shrink: 0;
 }
 

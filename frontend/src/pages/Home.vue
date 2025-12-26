@@ -1,5 +1,6 @@
 <template>
   <div class="xy-home">
+    <AppPageHeader title="首页" />
 
     <!-- 1) 促销网格区域 -->
     <div class="promo-section">
@@ -103,10 +104,10 @@
           >
             <div class="goods-img-box">
               <img 
-                :src="product.images && product.images.length > 0 ? getImageUrl(product.images[0].image) : 'https://via.placeholder.com/400x220?text=No+Image'" 
+                :src="product.images && product.images.length > 0 ? getImageUrl(product.images[0].image) : NO_IMAGE_PLACEHOLDER" 
                 loading="lazy" 
                 :alt="product.title"
-                @error="(e) => (e.target.src = 'https://via.placeholder.com/400x220?text=No+Image')"
+                @error="(e) => (e.target.src = NO_IMAGE_PLACEHOLDER)"
               />
               <div class="goods-status" v-if="product.view_count > 300">热门</div>
             </div>
@@ -162,6 +163,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import { ArrowRight, Document, List, Star, ChatDotRound, User, SwitchButton, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
@@ -171,6 +173,7 @@ import { getResults } from '@/utils/responseGuard'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const NO_IMAGE_PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="220" viewBox="0 0 400 220"><rect width="400" height="220" fill="%23f3f4f6"/><rect x="140" y="70" width="120" height="80" rx="8" fill="%23e5e7eb"/><path d="M160 130l20-22 20 18 20-24 20 28H160z" fill="%23d1d5db"/><circle cx="180" cy="95" r="10" fill="%23d1d5db"/><text x="200" y="190" text-anchor="middle" font-size="14" fill="%2399a1ab" font-family="Arial">No Image</text></svg>'
 
 // 状态
 const activeCategory = ref(null)
@@ -284,7 +287,7 @@ const formatPriceDecimal = (price) => {
 
 const resolveVerifiedThumb = (p) => {
   // 优先 detail_images / images / cover_image / image_url
-  const fallback = 'https://via.placeholder.com/80'
+  const fallback = NO_IMAGE_PLACEHOLDER
   if (!p) return fallback
   const pick = (img) => {
     if (!img) return null

@@ -33,7 +33,10 @@ if (!API_BASE_URL) {
     }
   } else {
     // 本地访问，使用 localhost
-    API_BASE_URL = 'http://127.0.0.1:8000/api'
+    const localHostname = typeof window !== 'undefined' ? window.location.hostname : ''
+    API_BASE_URL = localHostname === 'localhost'
+      ? 'http://localhost:8000/api'
+      : 'http://127.0.0.1:8000/api'
   }
 }
 const API_DEBUG = (import.meta.env.VITE_API_DEBUG === 'true') || import.meta.env.DEV || (typeof localStorage !== 'undefined' && localStorage.getItem('DEBUG_API') === 'true')

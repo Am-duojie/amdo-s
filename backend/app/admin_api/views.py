@@ -13,6 +13,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework import status
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.tokens import AccessToken
 from .models import (
     AdminUser, AdminRole, AdminInspectionReport, AdminAuditLog, AdminRefreshToken, AdminTokenBlacklist,
     RecycleDeviceTemplate, RecycleQuestionTemplate, RecycleQuestionOption
@@ -28,7 +29,7 @@ from .serializers import (
     VerifiedDeviceListSerializer, OfficialInventorySerializer,
     RecycleDeviceTemplateSerializer, RecycleDeviceTemplateListSerializer, RecycleQuestionTemplateSerializer, RecycleQuestionOptionSerializer
 )
-from app.secondhand_app.serializers import OrderSerializer, VerifiedProductSerializer, VerifiedDeviceSerializer
+from app.secondhand_app.serializers import OrderSerializer, VerifiedProductSerializer, VerifiedDeviceSerializer, MessageSerializer, UserSerializer
 from .jwt import encode as jwt_encode, decode as jwt_decode
 from django.contrib.auth.hashers import check_password, make_password
 from django.views.decorators.csrf import csrf_exempt
@@ -57,6 +58,100 @@ def _get_official_verified_seller():
             pass
         seller.save()
     return seller
+
+def _get_service_user():
+    """
+    管理端客服对话使用的默认前台客服账号。
+    - 便于统一客服身份
+    - 支持通过 settings 覆盖账号
+    """
+    username = getattr(settings, 'SUPPORT_SERVICE_USERNAME', 'support_service')
+    email = getattr(settings, 'SUPPORT_SERVICE_EMAIL', 'support@example.com')
+    User = get_user_model()
+    user, created = User.objects.get_or_create(
+        username=username,
+        defaults={'email': email, 'is_active': True}
+    )
+    if created:
+        try:
+            user.set_unusable_password()
+        except Exception:
+            pass
+        user.save()
+    return user
+
+def _get_product_cover(product):
+    if not product:
+        return ''
+    try:
+        primary = product.images.filter(is_primary=True).first()
+        if primary and primary.image:
+            return primary.image.url
+    except Exception:
+        pass
+    try:
+        first_img = product.images.first()
+        if first_img and first_img.image:
+            return first_img.image.url
+    except Exception:
+        pass
+    return ''
+
+def _get_verified_product_cover(product):
+    if not product:
+        return ''
+    cover = getattr(product, 'cover_image', '') or ''
+    if cover:
+        return cover
+    try:
+        if product.detail_images:
+            first = product.detail_images[0]
+            if isinstance(first, dict):
+                return first.get('image') or first.get('url') or ''
+            if isinstance(first, str):
+                return first
+    except Exception:
+        pass
+    try:
+        img = product.images.first()
+        if img and img.image:
+            return img.image.url
+    except Exception:
+        pass
+    return ''
+
+def _build_order_item_payload(item_type, order_obj):
+    if item_type == 'secondhand':
+        product = getattr(order_obj, 'product', None)
+        return {
+            'type': 'secondhand',
+            'order_id': order_obj.id,
+            'product_id': product.id if product else None,
+            'title': product.title if product else f'订单#{order_obj.id}',
+            'price': str(product.price) if product else str(order_obj.total_price),
+            'cover': _get_product_cover(product)
+        }
+    if item_type == 'verified':
+        product = getattr(order_obj, 'product', None)
+        return {
+            'type': 'verified',
+            'order_id': order_obj.id,
+            'verified_product_id': product.id if product else None,
+            'title': product.title if product else f'官方验订单#{order_obj.id}',
+            'price': str(product.price) if product else str(order_obj.total_price),
+            'cover': _get_verified_product_cover(product)
+        }
+    if item_type == 'recycle':
+        title = f"回收订单#{order_obj.id} {order_obj.brand} {order_obj.model}"
+        price = order_obj.final_price or order_obj.estimated_price or ''
+        return {
+            'type': 'recycle',
+            'recycle_order_id': order_obj.id,
+            'title': title.strip(),
+            'price': str(price) if price else '',
+            'cover': ''
+        }
+    return {}
 
 def get_admin_from_request(request):
     import logging
@@ -3361,6 +3456,376 @@ class MessagesAdminView(APIView):
             return Response({'success': True})
         except Message.DoesNotExist:
             return Response({'detail': '消息不存在'}, status=404)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminServiceConversationsView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    @admin_required(['message:service'])
+    def get(self, request):
+        service_user = _get_service_user()
+        related_messages = Message.objects.filter(
+            Q(sender=service_user) | Q(receiver=service_user)
+        ).select_related('sender', 'receiver', 'product').order_by('-created_at')
+
+        conversations = {}
+        for msg in related_messages:
+            peer = msg.receiver if msg.sender == service_user else msg.sender
+            if not peer:
+                continue
+            peer_id = peer.id
+            if peer_id not in conversations:
+                if msg.recalled:
+                    display_content = '已撤回'
+                elif msg.message_type == 'product':
+                    display_content = f"[商品]{(msg.payload or {}).get('title','')}"
+                elif msg.message_type == 'image':
+                    display_content = '[图片]'
+                else:
+                    display_content = msg.content
+
+                conversations[peer_id] = {
+                    'user': UserSerializer(peer, context={'request': request}).data,
+                    'last_message': {
+                        'id': msg.id,
+                        'content': display_content,
+                        'message_type': msg.message_type,
+                        'payload': msg.payload,
+                        'recalled': msg.recalled,
+                        'created_at': msg.created_at.isoformat(),
+                    },
+                    'unread_count': 0
+                }
+
+        unread_qs = Message.objects.filter(
+            receiver=service_user, is_read=False
+        ).values('sender').annotate(total=Count('id'))
+        unread_map = {item['sender']: item['total'] for item in unread_qs}
+
+        for peer_id, count in unread_map.items():
+            if peer_id in conversations:
+                conversations[peer_id]['unread_count'] = count
+
+        result = sorted(
+            conversations.values(),
+            key=lambda x: x['last_message']['created_at'] if x['last_message'] else '',
+            reverse=True
+        )
+
+        return Response({'service_user_id': service_user.id, 'results': result})
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminServiceMessagesView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    @admin_required(['message:service'])
+    def get(self, request):
+        user_id = request.query_params.get('user_id')
+        if not user_id:
+            return Response({'detail': '缺少用户ID参数'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            User = get_user_model()
+            other_user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'detail': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        service_user = _get_service_user()
+        messages = Message.objects.filter(
+            (Q(sender=service_user) & Q(receiver=other_user)) |
+            (Q(sender=other_user) & Q(receiver=service_user))
+        ).order_by('created_at')
+
+        serializer = MessageSerializer(messages, many=True, context={'request': request})
+        return Response({'service_user_id': service_user.id, 'results': serializer.data})
+
+    @admin_required(['message:service'])
+    def post(self, request):
+        user_id = request.data.get('user_id')
+        content = (request.data.get('content') or '').strip()
+        if not user_id:
+            return Response({'detail': '缺少用户ID参数'}, status=status.HTTP_400_BAD_REQUEST)
+        if not content:
+            return Response({'detail': '消息内容不能为空'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            User = get_user_model()
+            other_user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'detail': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        service_user = _get_service_user()
+        message = Message.objects.create(
+            sender=service_user,
+            receiver=other_user,
+            content=content,
+            message_type='text',
+            recallable_until=timezone.now() + timedelta(minutes=2)
+        )
+
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            event_payload = {
+                'type': 'new_message',
+                'id': message.id,
+                'sender_id': message.sender_id,
+                'sender_username': message.sender.username,
+                'receiver_id': message.receiver_id,
+                'receiver_username': message.receiver.username,
+                'content': message.content,
+                'message_type': message.message_type,
+                'image': None,
+                'payload': message.payload,
+                'created_at': message.created_at.isoformat(),
+                'recalled': message.recalled
+            }
+            async_to_sync(channel_layer.group_send)(f'user_{other_user.id}', {'type': 'chat_message', 'message': event_payload})
+            async_to_sync(channel_layer.group_send)(f'user_{service_user.id}', {'type': 'chat_message', 'message': event_payload})
+        except Exception:
+            pass
+
+        serializer = MessageSerializer(message, context={'request': request})
+        return Response({'service_user_id': service_user.id, 'message': serializer.data}, status=status.HTTP_201_CREATED)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminServiceReadView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    @admin_required(['message:service'])
+    def post(self, request):
+        user_id = request.data.get('user_id')
+        if not user_id:
+            return Response({'detail': '缺少用户ID参数'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            User = get_user_model()
+            other_user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'detail': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        service_user = _get_service_user()
+        Message.objects.filter(
+            sender=other_user,
+            receiver=service_user,
+            is_read=False
+        ).update(is_read=True)
+
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                f'user_{other_user.id}',
+                {
+                    'type': 'chat_message',
+                    'message': {
+                        'type': 'read_ack',
+                        'peer_id': service_user.id
+                    }
+                }
+            )
+        except Exception:
+            pass
+
+        return Response({'detail': '已标记为已读'})
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminServiceTokenView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    @admin_required(['message:service'])
+    def get(self, request):
+        service_user = _get_service_user()
+        token = AccessToken.for_user(service_user)
+        token.set_exp(lifetime=timedelta(hours=2))
+        return Response({
+            'token': str(token),
+            'service_user_id': service_user.id,
+            'username': service_user.username,
+        })
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminServiceOrderItemsView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    @admin_required(['message:service'])
+    def get(self, request):
+        item_type = (request.query_params.get('type') or 'secondhand').strip()
+        keyword = (request.query_params.get('keyword') or '').strip()
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 20))
+
+        if item_type == 'verified':
+            qs = VerifiedOrder.objects.select_related('product', 'buyer').order_by('-created_at')
+            if keyword:
+                qs = qs.filter(
+                    Q(product__title__icontains=keyword) |
+                    Q(buyer__username__icontains=keyword)
+                )
+        elif item_type == 'recycle':
+            qs = RecycleOrder.objects.select_related('user').order_by('-created_at')
+            if keyword:
+                qs = qs.filter(
+                    Q(brand__icontains=keyword) |
+                    Q(model__icontains=keyword) |
+                    Q(user__username__icontains=keyword)
+                )
+        else:
+            item_type = 'secondhand'
+            qs = Order.objects.select_related('product', 'buyer').order_by('-created_at')
+            if keyword:
+                qs = qs.filter(
+                    Q(product__title__icontains=keyword) |
+                    Q(buyer__username__icontains=keyword)
+                )
+
+        total = qs.count()
+        items = qs[(page - 1) * page_size: page * page_size]
+
+        results = []
+        for order in items:
+            payload = _build_order_item_payload(item_type, order)
+            results.append({
+                'id': order.id,
+                'type': item_type,
+                'title': payload.get('title', ''),
+                'price': payload.get('price', ''),
+                'cover': payload.get('cover', ''),
+                'created_at': order.created_at.isoformat() if getattr(order, 'created_at', None) else None,
+                'payload': payload,
+            })
+
+        return Response({'results': results, 'count': total})
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminServiceProductMessageView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    @admin_required(['message:service'])
+    def post(self, request):
+        user_id = request.data.get('user_id')
+        item_type = (request.data.get('item_type') or '').strip()
+        item_id = request.data.get('item_id')
+        if not user_id or not item_type or not item_id:
+            return Response({'detail': '缺少必要参数'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            User = get_user_model()
+            other_user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'detail': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            if item_type == 'verified':
+                order_obj = VerifiedOrder.objects.select_related('product').get(id=item_id)
+            elif item_type == 'recycle':
+                order_obj = RecycleOrder.objects.get(id=item_id)
+            else:
+                item_type = 'secondhand'
+                order_obj = Order.objects.select_related('product').get(id=item_id)
+        except (VerifiedOrder.DoesNotExist, RecycleOrder.DoesNotExist, Order.DoesNotExist):
+            return Response({'detail': '订单不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        payload = _build_order_item_payload(item_type, order_obj)
+        service_user = _get_service_user()
+        product = order_obj.product if item_type == 'secondhand' else None
+        message = Message.objects.create(
+            sender=service_user,
+            receiver=other_user,
+            content='',
+            product=product,
+            message_type='product',
+            payload=payload,
+            recallable_until=timezone.now() + timedelta(minutes=2)
+        )
+
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            event_payload = {
+                'type': 'new_message',
+                'id': message.id,
+                'sender_id': message.sender_id,
+                'sender_username': message.sender.username,
+                'receiver_id': message.receiver_id,
+                'receiver_username': message.receiver.username,
+                'content': '',
+                'message_type': message.message_type,
+                'payload': message.payload,
+                'created_at': message.created_at.isoformat(),
+                'recalled': message.recalled
+            }
+            async_to_sync(channel_layer.group_send)(f'user_{other_user.id}', {'type': 'chat_message', 'message': event_payload})
+            async_to_sync(channel_layer.group_send)(f'user_{service_user.id}', {'type': 'chat_message', 'message': event_payload})
+        except Exception:
+            pass
+
+        serializer = MessageSerializer(message, context={'request': request})
+        return Response({'message': serializer.data}, status=status.HTTP_201_CREATED)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminServiceImageMessageView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    @admin_required(['message:service'])
+    def post(self, request):
+        user_id = request.data.get('user_id')
+        if not user_id:
+            return Response({'detail': '缺少用户ID参数'}, status=status.HTTP_400_BAD_REQUEST)
+        if 'image' not in request.FILES:
+            return Response({'detail': '未提供图片文件'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            User = get_user_model()
+            other_user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'detail': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        service_user = _get_service_user()
+        message = Message.objects.create(
+            sender=service_user,
+            receiver=other_user,
+            content='',
+            message_type='image',
+            image=request.FILES['image'],
+            recallable_until=timezone.now() + timedelta(minutes=2)
+        )
+
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            event_payload = {
+                'type': 'new_message',
+                'id': message.id,
+                'sender_id': message.sender_id,
+                'sender_username': message.sender.username,
+                'receiver_id': message.receiver_id,
+                'receiver_username': message.receiver.username,
+                'content': message.content,
+                'message_type': message.message_type,
+                'image': request.build_absolute_uri(message.image.url) if message.image else None,
+                'payload': message.payload,
+                'created_at': message.created_at.isoformat(),
+                'recalled': message.recalled
+            }
+            async_to_sync(channel_layer.group_send)(f'user_{other_user.id}', {'type': 'chat_message', 'message': event_payload})
+            async_to_sync(channel_layer.group_send)(f'user_{service_user.id}', {'type': 'chat_message', 'message': event_payload})
+        except Exception:
+            pass
+
+        serializer = MessageSerializer(message, context={'request': request})
+        return Response({'message': serializer.data}, status=status.HTTP_201_CREATED)
 
 @method_decorator(csrf_exempt, name='dispatch')
 class AddressesAdminView(APIView):

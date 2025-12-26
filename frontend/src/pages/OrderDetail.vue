@@ -1,6 +1,7 @@
 <template>
   <div class="order-detail-page">
-    
+    <AppPageHeader title="订单详情" :subtitle="order ? `订单#${order.id}` : ''" />
+
     <div class="container">
       <el-card class="order-card">
         <template #header>
@@ -274,6 +275,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'

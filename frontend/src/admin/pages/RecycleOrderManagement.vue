@@ -218,7 +218,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import adminApi from '@/utils/adminApi'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import RecycleOrderDetail from './components/RecycleOrderDetail.vue'
@@ -229,6 +230,7 @@ import { getRecycleProcessSteps, getRecycleStatusTag, getRecycleStage, isRecycle
 
 const admin = useAdminAuthStore()
 const hasPerm = (p) => admin.hasPerm(p)
+const route = useRoute()
 
 const orders = ref([])
 const selectedOrders = ref([])
@@ -399,6 +401,11 @@ const openDetail = (row, initialAction = '') => {
   detailDialogVisible.value = true
 }
 
+const openDetailById = (orderId) => {
+  if (!orderId) return
+  openDetail({ id: orderId })
+}
+
 const closeDetailDialog = () => {
   detailDialogVisible.value = false
   currentOrder.value = null
@@ -481,9 +488,23 @@ const formatTime = (time) => {
   return new Date(time).toLocaleString('zh-CN')
 }
 
-onMounted(() => {
-  loadOrders()
+onMounted(async () => {
+  await loadOrders()
+  const orderId = parseInt(route.query.order_id, 10)
+  if (orderId) {
+    openDetailById(orderId)
+  }
 })
+
+watch(
+  () => route.query.order_id,
+  (value) => {
+    const orderId = parseInt(value, 10)
+    if (orderId) {
+      openDetailById(orderId)
+    }
+  }
+)
 </script>
 
 <style scoped>

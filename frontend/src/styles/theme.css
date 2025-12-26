@@ -144,6 +144,10 @@
   z-index: 10000 !important;
 }
 
+.el-image-viewer__mask {
+  background: #000 !important;
+  opacity: 1 !important;
+}
 
 
 
