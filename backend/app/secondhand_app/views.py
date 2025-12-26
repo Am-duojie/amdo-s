@@ -1506,6 +1506,25 @@ class RecycleOrderViewSet(viewsets.ModelViewSet):
                 ]
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        impact_counts = request.data.get('impact_counts') or {}
+        try:
+            minor_count = int(impact_counts.get('minor', 0) or 0)
+            major_count = int(impact_counts.get('major', 0) or 0)
+            critical_count = int(impact_counts.get('critical', 0) or 0)
+        except (TypeError, ValueError):
+            minor_count = major_count = critical_count = 0
+
+        impact_penalty = 0.0
+        impact_multiplier = 1.0
+        if estimated_price and estimated_price > 0:
+            impact_penalty = (
+                0.02 * minor_count
+                + 0.05 * major_count
+                + 0.10 * critical_count
+            )
+            impact_multiplier = max(0.35, 1.0 - impact_penalty)
+            estimated_price = round(float(estimated_price) * impact_multiplier, 2)
+
         bonus = self._calculate_bonus()  # 计算加价
 
         return Response({
@@ -1515,6 +1534,13 @@ class RecycleOrderViewSet(viewsets.ModelViewSet):
             'total_price': float(estimated_price + bonus),  # 总价
             'price_source': price_source,  # ?????template/api/model
             'condition': condition,  # 成色
+            'impact_counts': {
+                'minor': minor_count,
+                'major': major_count,
+                'critical': critical_count,
+            },
+            'impact_penalty': float(impact_penalty),
+            'impact_multiplier': float(impact_multiplier),
             'currency': 'CNY',
             'unit': '元'
         })

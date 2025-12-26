@@ -33,6 +33,11 @@ export type EstimatePayload = {
   model: string
   storage?: string
   condition?: string
+  impact_counts?: {
+    minor?: number
+    major?: number
+    critical?: number
+  }
   release_year?: number | string
 }
 
@@ -43,6 +48,13 @@ export type EstimateResponse = {
   total_price: number          // 总价
   price_source?: string        // 价格来源：template/api/model/local_model
   condition?: string           // 成色
+  impact_counts?: {
+    minor?: number
+    major?: number
+    critical?: number
+  }
+  impact_penalty?: number
+  impact_multiplier?: number
   currency: string
   unit: string
 }
@@ -123,8 +135,6 @@ export type RecycleOrderResponse = {
 export const createRecycleOrder = (payload: CreateRecycleOrderPayload) => {
   return api.post<RecycleOrderResponse>('/recycle-orders/', payload)
 }
-
-
 
 
 

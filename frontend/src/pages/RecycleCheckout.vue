@@ -289,6 +289,7 @@ onMounted(async () => {
         model: draft.selection.model,
         storage: draft.storage || "",
         condition: draft.condition || "good",
+        impact_counts: draft.getImpactCounts(),
       });
       
       console.log("估价API返回数据:", data);

@@ -660,6 +660,7 @@ async function runEstimate() {
       model: model.value,
       storage: selectedStorage.value || "",
       condition: draft.condition || "good",
+      impact_counts: draft.getImpactCounts(),
     });
     
     console.log("估价API返回:", data);
@@ -734,6 +735,7 @@ async function goCheckout() {
         model: model.value,
         storage: selectedStorage.value || "",
         condition: draft.condition || "good",
+        impact_counts: draft.getImpactCounts(),
       });
       draft.setQuote(
         data?.estimated_price ?? null,

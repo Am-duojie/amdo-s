@@ -132,6 +132,25 @@ export const useRecycleDraftStore = defineStore("recycleDraft", {
       this.bonus = bonus ?? null;
       this.persist();
     },
+    getImpactCounts() {
+      const counts = { minor: 0, major: 0, critical: 0 };
+      const consume = (item: any) => {
+        if (!item || typeof item !== "object") return;
+        const impact = String(item.impact || "").trim();
+        if (impact in counts) {
+          counts[impact as "minor" | "major" | "critical"] += 1;
+        }
+      };
+      Object.values(this.answers || {}).forEach((v) => {
+        if (!v) return;
+        if (Array.isArray(v)) {
+          v.forEach(consume);
+        } else {
+          consume(v);
+        }
+      });
+      return counts;
+    },
     // 新增 actions：设置模板和用户选择的配置
     setTemplate(templateId: number | null) {
       this.template_id = templateId;

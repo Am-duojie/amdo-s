@@ -148,6 +148,7 @@ class RecycleDeviceTemplateListSerializer(serializers.ModelSerializer):
         model = RecycleDeviceTemplate
         fields = [
             'id', 'device_type', 'brand', 'model', 'base_prices', 'series',
+            'category_name',
             'is_active', 'created_by_username', 'question_count',
             'created_at', 'updated_at'
         ]
