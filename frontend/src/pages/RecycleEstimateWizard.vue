@@ -67,7 +67,7 @@
                     </div>
                   </div>
 
-                  <div v-if="step.key === 'storage' && !storageOptions.length && !loadingCatalog" class="empty-tip">
+                  <div v-if="step.key === 'storage' && !step.options.length && !loadingCatalog" class="empty-tip">
                     该机型暂未提供容量信息，请返回重新选择机型。
                   </div>
                   <div v-if="loadingCatalog && step.key === 'storage'" class="empty-tip">容量数据加载中...</div>
@@ -173,11 +173,6 @@ function convertTemplateToSteps(template: RecycleQuestionTemplateResponse | null
         impact: (opt.impact as Impact) || undefined,
       })),
     };
-
-    // 如果是存储容量问题，使用动态加载的storages
-    if (q.key === 'storage') {
-      step.options = storageOptions.value.length ? storageOptions.value : [];
-    }
 
     return step;
   });
@@ -627,11 +622,6 @@ async function loadQuestionTemplate() {
     if (data.template_id) {
       draft.setTemplate(data.template_id);
       console.log('[问卷加载] 保存模板ID:', data.template_id);
-    }
-    
-    // 如果后端模板有storages，更新storages
-    if (data.storages && data.storages.length > 0) {
-      storages.value = data.storages;
     }
     
     // 检查是否有问题数据

@@ -160,9 +160,7 @@ class Command(BaseCommand):
                         stats.storage_options_cleared += 1
 
                 if key == "ram":
-                    ram_options = list(getattr(t, "ram_options", None) or [])
-                    if not ram_options:
-                        ram_options = DEFAULT_RAM_OPTIONS
+                    ram_options = DEFAULT_RAM_OPTIONS
 
                     merged: List[str] = []
                     seen = set()

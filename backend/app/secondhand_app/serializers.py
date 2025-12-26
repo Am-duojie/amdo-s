@@ -940,9 +940,7 @@ class RecycleDeviceTemplateCatalogSerializer(serializers.Serializer):
     brand = serializers.CharField()
     model = serializers.CharField()
     series = serializers.CharField(allow_blank=True)
-    storages = serializers.ListField(child=serializers.CharField())
     base_prices = serializers.DictField()
-    default_cover_image = serializers.CharField(allow_blank=True)
 
 
 class RecycleDeviceTemplateDetailSerializer(serializers.Serializer):
@@ -952,11 +950,4 @@ class RecycleDeviceTemplateDetailSerializer(serializers.Serializer):
     brand = serializers.CharField()
     model = serializers.CharField()
     series = serializers.CharField(allow_blank=True)
-    storages = serializers.ListField(child=serializers.CharField())
     base_prices = serializers.DictField()
-    ram_options = serializers.ListField(child=serializers.CharField())
-    version_options = serializers.ListField(child=serializers.CharField())
-    color_options = serializers.ListField(child=serializers.CharField())
-    default_cover_image = serializers.CharField(allow_blank=True)
-    default_detail_images = serializers.ListField(child=serializers.CharField())
-    description_template = serializers.CharField(allow_blank=True)

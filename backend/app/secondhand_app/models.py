@@ -644,52 +644,12 @@ def create_verified_product_from_device(device, status='active', price_override=
                     seen.add(key)
                 return cleaned
 
-            storage = _ensure_option_publish(device.storage, getattr(template_for_check, 'storages', []), '存储容量', allow_blank=False)
-            ram_options = _clean_options_publish(getattr(template_for_check, 'ram_options', []) or [])
-            version_options = _clean_options_publish(getattr(template_for_check, 'version_options', []) or [])
-            color_options = _clean_options_publish(getattr(template_for_check, 'color_options', []) or [])
-
-            color_aliases = {
-                'black': ['黑色', '黑'],
-                'white': ['白色', '白'],
-                'silver': ['银色', '银'],
-                'gold': ['金色', '金'],
-                'blue': ['蓝色', '蓝'],
-                'green': ['绿色', '绿'],
-                'purple': ['紫色', '紫'],
-                'red': ['红色', '红'],
-                'pink': ['粉色', '粉'],
-                'gray': ['灰色', '灰', '深空灰', '深灰'],
-                'grey': ['灰色', '灰', '深空灰', '深灰'],
-                'spacegray': ['深空灰', '深空灰色', '深灰'],
-            }
-            version_aliases = {
-                'cn': ['国行'],
-                'china': ['国行'],
-                'guohang': ['国行'],
-                'hk': ['港版'],
-                'hongkong': ['港版'],
-                'us': ['美版'],
-                'usa': ['美版'],
-                'jp': ['日版'],
-                'japan': ['日版'],
-            }
-
-            ram = _ensure_option_publish(device.ram, ram_options, '运行内存', allow_blank=(len(ram_options) == 0))
-            version = _ensure_option_publish(
-                device.version,
-                version_options,
-                '版本',
-                allow_blank=(len(version_options) == 0),
-                aliases=version_aliases.get(_norm_token_publish(device.version), [])
-            )
-            color = _ensure_option_publish(
-                device.color,
-                color_options,
-                '颜色',
-                allow_blank=(len(color_options) == 0),
-                aliases=color_aliases.get(_norm_token_publish(device.color), [])
-            )
+            storage = str(device.storage or '').strip()
+            if not storage:
+                raise ValueError('存储容量不能为空')
+            ram = str(device.ram or '').strip()
+            version = str(device.version or '').strip()
+            color = str(device.color or '').strip()
 
             updated_fields = []
             if storage is not None and (device.storage or '') != (storage or ''):
@@ -708,7 +668,7 @@ def create_verified_product_from_device(device, status='active', price_override=
                 updated_fields.append('updated_at')
                 device.save(update_fields=updated_fields)
         template = getattr(device, 'template', None)
-        cover_image = (product.cover_image or '') or (device.cover_image or '') or (getattr(template, 'default_cover_image', '') if template else '')
+        cover_image = (device.cover_image or '').strip() or (product.cover_image or '').strip()
         inspection_reports = product.inspection_reports or device.inspection_reports or []
         effective_price = _as_decimal(price_override) if price_override not in [None, ''] else _as_decimal(product.price)
         _assert_publish_requirements(effective_price, cover_image, inspection_reports)
@@ -722,23 +682,10 @@ def create_verified_product_from_device(device, status='active', price_override=
             desired_title = f"{desired_title} {device.storage}"
         desired_description = (getattr(device, 'listing_description', '') or '').strip()
         if not desired_description:
-            if template and getattr(template, 'description_template', ''):
-                try:
-                    desired_description = template.description_template.format(
-                        brand=device.brand or '',
-                        model=device.model or '',
-                        storage=device.storage or '',
-                        condition=device.get_condition_display() if hasattr(device, 'get_condition_display') else device.condition,
-                        ram=device.ram or '',
-                        version=device.version or ''
-                    )
-                except Exception:
-                    desired_description = f"{device.brand} {device.model} {device.storage}".strip()
-            else:
-                desired_description = f"{device.brand} {device.model} {device.storage}".strip()
+            desired_description = f"{device.brand} {device.model} {device.storage}".strip()
 
-        desired_cover_image = (device.cover_image or '').strip() or (getattr(template, 'default_cover_image', '') if template else '') or (product.cover_image or '')
-        desired_detail_images = device.detail_images or (getattr(template, 'default_detail_images', []) if template else []) or (product.detail_images or [])
+        desired_cover_image = (device.cover_image or '').strip() or (product.cover_image or '').strip()
+        desired_detail_images = device.detail_images or (product.detail_images or [])
         desired_inspection_reports = device.inspection_reports or product.inspection_reports or []
 
         # 模板/分类/规格/成色等属性同步
@@ -853,70 +800,12 @@ def create_verified_product_from_device(device, status='active', price_override=
         suffix = f'（允许：{preview}）' if preview else ''
         raise ValueError(f'{field_name} 不在模板允许的选项中{suffix}')
 
-    storage = _ensure_option(device.storage, getattr(template, 'storages', []), '存储容量', allow_blank=False)
-
-    # RAM / 版本 / 颜色：当模板配置了可选项时，要求必须填写且需命中选项；
-    # 若模板未配置选项（或仅有空字符串等无效项），则允许留空。
-    def _clean_options(raw_options):
-        cleaned = []
-        seen = set()
-        for x in list(raw_options or []):
-            s = str(x or "").strip()
-            if not s:
-                continue
-            key = s.lower()
-            if key in seen:
-                continue
-            cleaned.append(s)
-            seen.add(key)
-        return cleaned
-
-    ram_options = _clean_options(getattr(template, 'ram_options', []) or [])
-    version_options = _clean_options(getattr(template, 'version_options', []) or [])
-    color_options = _clean_options(getattr(template, 'color_options', []) or [])
-
-    # 常见别名映射：允许库存里存的是英文/简写，但模板配置的是中文时仍能命中
-    color_aliases = {
-        'black': ['黑色', '黑'],
-        'white': ['白色', '白'],
-        'silver': ['银色', '银'],
-        'gold': ['金色', '金'],
-        'blue': ['蓝色', '蓝'],
-        'green': ['绿色', '绿'],
-        'purple': ['紫色', '紫'],
-        'red': ['红色', '红'],
-        'pink': ['粉色', '粉'],
-        'gray': ['灰色', '灰', '深空灰', '深灰'],
-        'grey': ['灰色', '灰', '深空灰', '深灰'],
-        'spacegray': ['深空灰', '深空灰色', '深灰'],
-    }
-    version_aliases = {
-        'cn': ['国行'],
-        'china': ['国行'],
-        'guohang': ['国行'],
-        'hk': ['港版'],
-        'hongkong': ['港版'],
-        'us': ['美版'],
-        'usa': ['美版'],
-        'jp': ['日版'],
-        'japan': ['日版'],
-    }
-
-    ram = _ensure_option(device.ram, ram_options, '运行内存', allow_blank=(len(ram_options) == 0))
-    version = _ensure_option(
-        device.version,
-        version_options,
-        '版本',
-        allow_blank=(len(version_options) == 0),
-        aliases=version_aliases.get(_norm_token(device.version), [])
-    )
-    color = _ensure_option(
-        device.color,
-        color_options,
-        '颜色',
-        allow_blank=(len(color_options) == 0),
-        aliases=color_aliases.get(_norm_token(device.color), [])
-    )
+    storage = str(device.storage or '').strip()
+    if not storage:
+        raise ValueError('存储容量不能为空')
+    ram = str(device.ram or '').strip()
+    version = str(device.version or '').strip()
+    color = str(device.color or '').strip()
 
     # 若命中别名/规范化，顺带回写库存设备，保证库存与模板一致
     updated_fields = []
@@ -941,23 +830,10 @@ def create_verified_product_from_device(device, status='active', price_override=
 
     description = (getattr(device, 'listing_description', '') or '').strip()
     if not description:
-        if template and getattr(template, 'description_template', ''):
-            try:
-                description = template.description_template.format(
-                    brand=device.brand or '',
-                    model=device.model or '',
-                    storage=device.storage or '',
-                    condition=device.get_condition_display() if hasattr(device, 'get_condition_display') else device.condition,
-                    ram=device.ram or '',
-                    version=device.version or ''
-                )
-            except Exception:
-                description = f"{device.brand} {device.model} {device.storage}".strip()
-        else:
-            description = f"{device.brand} {device.model} {device.storage}".strip()
+        description = f"{device.brand} {device.model} {device.storage}".strip()
 
-    cover_image = device.cover_image or (template.default_cover_image if template else '')
-    detail_images = device.detail_images or (template.default_detail_images if template else [])
+    cover_image = device.cover_image or ''
+    detail_images = device.detail_images or []
 
     if price_override not in [None, '']:
         price = price_override

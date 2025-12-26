@@ -89,7 +89,6 @@ def _ensure_templates(rng: random.Random) -> None:
             device_type=device_type,
             brand=brand,
             model=model,
-            storages=storages,
             base_prices=base_prices,
             is_active=True,
         )
@@ -167,7 +166,7 @@ def _pick_template(rng: random.Random) -> RecycleDeviceTemplate:
 
 
 def _pick_storage(rng: random.Random, template: RecycleDeviceTemplate) -> str:
-    storages = template.storages or []
+    storages = list((template.base_prices or {}).keys())
     if not storages:
         return "128GB"
     return rng.choice(storages)
@@ -446,9 +445,9 @@ class Command(BaseCommand):
                 model=template.model,
                 storage=storage,
                 selected_storage=storage,
-                selected_color=rng.choice(template.color_options or ["黑色", "白色", "蓝色"]),
-                selected_ram=rng.choice(template.ram_options or ["6GB", "8GB", "12GB"]),
-                selected_version=rng.choice(template.version_options or ["国行", "港版"]),
+                selected_color=rng.choice(["黑色", "白色", "蓝色"]),
+                selected_ram=rng.choice(["6GB", "8GB", "12GB"]),
+                selected_version=rng.choice(["国行", "港版"]),
                 questionnaire_answers=answers,
                 condition=condition,
                 estimated_price=estimated_price,

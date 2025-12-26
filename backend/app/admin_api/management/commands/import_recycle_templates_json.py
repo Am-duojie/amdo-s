@@ -170,9 +170,9 @@ def _ensure_default_questions(template: RecycleDeviceTemplate) -> None:
             is_active=True,
         )
 
-        # Storage options are generated from `template.storages` in UI; we still create option records for completeness.
+        # Storage options are generated from base_prices keys; we still create option records for completeness.
         if q_data["key"] == "storage":
-            for idx, storage in enumerate(template.storages or []):
+            for idx, storage in enumerate(sorted((template.base_prices or {}).keys())):
                 RecycleQuestionOption.objects.create(
                     question_template=question,
                     value=storage,
@@ -250,9 +250,11 @@ class Command(BaseCommand):
                 errors.append(f"#{idx}: missing required fields (device_type/brand/model)")
                 continue
 
-            storages_raw = _normalize_str_list(t.get("storages"))
-            storages_raw = [_normalize_storage(s) for s in storages_raw]
             base_prices_raw = t.get("base_prices")
+            storages_raw = _normalize_str_list(t.get("storages"))
+            if not storages_raw and isinstance(base_prices_raw, dict):
+                storages_raw = list(base_prices_raw.keys())
+            storages_raw = [_normalize_storage(s) for s in storages_raw]
             base_prices, storages = _normalize_base_prices(base_prices_raw, storages_raw)
             if not storages or not base_prices:
                 stats.skipped += 1
@@ -260,15 +262,8 @@ class Command(BaseCommand):
                 continue
 
             defaults = {
-                "storages": storages,
                 "base_prices": base_prices,
                 "series": _norm_space(t.get("series", "")),
-                "ram_options": _normalize_str_list(t.get("ram_options")),
-                "version_options": _normalize_str_list(t.get("version_options")),
-                "color_options": _normalize_str_list(t.get("color_options")),
-                "default_cover_image": _norm_space(t.get("default_cover_image", "")),
-                "default_detail_images": _normalize_str_list(t.get("default_detail_images")),
-                "description_template": _norm_space(t.get("description_template", "")),
                 "is_active": bool(t.get("is_active", True)),
                 "created_by": admin_user,
             }

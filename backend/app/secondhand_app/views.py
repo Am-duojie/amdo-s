@@ -1277,13 +1277,9 @@ class RecycleCatalogView(APIView):
                 models_payload[dt][br].append({
                     'id': template.id,
                     'name': md,
-                    'storages': template.storages or [],
+                    'storages': sorted((template.base_prices or {}).keys()),
                     'series': template.series or None,
                     'base_prices': template.base_prices or {},
-                    'ram_options': template.ram_options or [],
-                    'version_options': template.version_options or [],
-                    'color_options': template.color_options or [],
-                    'default_cover_image': template.default_cover_image or '',
                 })
         
         # 排序
@@ -1371,7 +1367,6 @@ class RecycleQuestionTemplateView(APIView):
             'device_type': template.device_type,
             'brand': template.brand,
             'model': template.model,
-            'storages': template.storages,
             'questions': questions_data
         })
 

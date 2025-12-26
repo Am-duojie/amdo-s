@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="recycle-templates admin-page">
     <div class="page-header">
       <div>
@@ -98,19 +98,6 @@
         <el-table-column prop="brand" label="品牌" width="120" />
         <el-table-column prop="model" label="型号" min-width="200" />
         <el-table-column prop="series" label="系列" width="120" />
-        <el-table-column label="存储容量" width="150">
-          <template #default="{ row }">
-            <el-tag v-for="s in row.storages" :key="s" size="small" style="margin-right: 4px">{{ s }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="运行内存" width="150">
-          <template #default="{ row }">
-            <template v-if="row.ram_options && row.ram_options.length > 0">
-              <el-tag v-for="s in row.ram_options" :key="s" size="small" style="margin-right: 4px">{{ s }}</el-tag>
-            </template>
-            <el-text v-else type="info" size="small">未配置</el-text>
-          </template>
-        </el-table-column>
         <el-table-column label="基础价格" width="200">
           <template #default="{ row }">
             <div v-if="row.base_prices && Object.keys(row.base_prices).length > 0" class="base-prices-display">
@@ -232,104 +219,32 @@
           </el-select>
           <div class="form-hint">用于“库存设备一键上架”时自动设置官方验商品分类</div>
         </el-form-item>
-        <el-form-item label="存储容量">
-          <el-select
-            v-model="form.storages"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="选择或输入存储容量"
-            style="width: 100%"
-            @change="handleStoragesChange"
-          >
-            <el-option label="128GB" value="128GB" />
-            <el-option label="256GB" value="256GB" />
-            <el-option label="512GB" value="512GB" />
-            <el-option label="1TB" value="1TB" />
-          </el-select>
-          <div class="form-hint">可多选，也可以输入自定义容量</div>
-        </el-form-item>
-        <el-form-item label="运行内存" prop="ram_options">
-          <el-select
-            v-model="form.ram_options"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="选择或输入运行内存（RAM）"
-            style="width: 100%"
-          >
-            <el-option label="2GB" value="2GB" />
-            <el-option label="3GB" value="3GB" />
-            <el-option label="4GB" value="4GB" />
-            <el-option label="6GB" value="6GB" />
-            <el-option label="8GB" value="8GB" />
-            <el-option label="12GB" value="12GB" />
-            <el-option label="16GB" value="16GB" />
-            <el-option label="18GB" value="18GB" />
-            <el-option label="24GB" value="24GB" />
-          </el-select>
-          <div class="form-hint">用于区分同机型不同配置；会参与库存设备上架校验</div>
-        </el-form-item>
-        <el-form-item label="版本">
-          <el-select
-            v-model="form.version_options"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="选择或输入版本（可选）"
-            style="width: 100%"
-          >
-            <el-option label="标准版" value="标准版" />
-            <el-option label="Pro" value="Pro" />
-            <el-option label="Pro Max" value="Pro Max" />
-            <el-option label="Plus" value="Plus" />
-            <el-option label="Ultra" value="Ultra" />
-          </el-select>
-          <div class="form-hint">如不需要版本区分，可留空；配置后会参与库存设备上架校验</div>
-        </el-form-item>
-        <el-form-item label="颜色">
-          <el-select
-            v-model="form.color_options"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="选择或输入颜色（可选）"
-            style="width: 100%"
-          >
-            <el-option label="黑色" value="黑色" />
-            <el-option label="白色" value="白色" />
-            <el-option label="金色" value="金色" />
-            <el-option label="银色" value="银色" />
-            <el-option label="蓝色" value="蓝色" />
-            <el-option label="绿色" value="绿色" />
-            <el-option label="紫色" value="紫色" />
-            <el-option label="红色" value="红色" />
-            <el-option label="粉色" value="粉色" />
-          </el-select>
-          <div class="form-hint">如不需要颜色区分，可留空；配置后会参与库存设备上架校验</div>
-        </el-form-item>
         <el-form-item label="基础价格">
           <div class="base-prices-editor">
-            <div v-if="form.storages && form.storages.length > 0" class="prices-list">
-              <div v-for="storage in form.storages" :key="storage" class="price-item">
-                <span class="storage-label">{{ storage }}：</span>
+            <div class="prices-list">
+              <div v-for="(row, idx) in basePriceRows" :key="row.id" class="price-item">
+                <el-input
+                  v-model="row.storage"
+                  placeholder="存储容量（如 256GB）"
+                  style="width: 160px"
+                />
                 <el-input-number
-                  v-model="form.base_prices[storage]"
+                  v-model="row.price"
                   :min="0"
                   :precision="2"
                   :step="100"
-                  placeholder="请输入基础价格"
+                  placeholder="基础价格"
                   style="width: 200px"
                 />
                 <span class="price-unit">元</span>
+                <el-button text type="danger" @click="removeBasePriceRow(idx)">删除</el-button>
+              </div>
+              <div v-if="!basePriceRows.length" class="empty-hint">
+                <el-text type="info">请添加至少一个容量价格</el-text>
               </div>
             </div>
-            <div v-else class="empty-hint">
-              <el-text type="info">请先选择存储容量</el-text>
+            <div style="margin-top: 10px">
+              <el-button plain @click="addBasePriceRow">添加容量价格</el-button>
             </div>
             <div class="form-hint" style="margin-top: 12px">
               <strong>用途：</strong>为每个存储容量设置基础价格（良好成色），用于回收估价计算
@@ -456,7 +371,6 @@
 
         <el-table :data="options" style="width: 100%">
           <el-table-column prop="option_order" label="顺序" width="80" />
-          <el-table-column prop="value" label="选项值" width="150" />
           <el-table-column prop="label" label="选项标签" min-width="150" />
           <el-table-column prop="desc" label="描述" min-width="150" />
           <el-table-column prop="impact" label="影响" width="100">
@@ -492,25 +406,12 @@
         <el-form-item label="选项顺序" prop="option_order">
           <el-input-number v-model="optionForm.option_order" :min="0" />
         </el-form-item>
-        <el-form-item label="选项值" prop="value">
-          <el-input v-model="optionForm.value" placeholder="如：official, black, 256GB" />
-          <div class="form-hint">
-            <div><strong>用途：</strong>系统内部识别选项的唯一代码，用于程序处理和存储用户选择</div>
-            <div><strong>填写规范：</strong>使用英文小写字母、数字，多个单词用下划线或连字符连接</div>
-            <div><strong>示例：</strong></div>
-            <div style="margin-left: 16px;">
-              • 购买渠道：official（官方/直营）、operator（运营商/合约）<br/>
-              • 颜色：black（黑/深色）、white（白/浅色）<br/>
-              • 存储：256GB、512GB（直接使用容量值）
-            </div>
-            <div style="color: #f56c6c; margin-top: 4px;"><strong>注意：</strong>同一问题内，选项值不能重复</div>
-          </div>
-        </el-form-item>
         <el-form-item label="选项标签" prop="label">
           <el-input v-model="optionForm.label" placeholder="显示给用户的文本" />
           <div class="form-hint">
             <strong>用途：</strong>显示给用户看的选项文本，用户友好、清晰易懂即可
             <div style="margin-top: 4px;"><strong>示例：</strong>"官方/直营"、"黑/深色"、"256GB"</div>
+            <div style="color: #f56c6c; margin-top: 4px;"><strong>注意：</strong>同一问题内，选项标签不能重复</div>
           </div>
         </el-form-item>
         <el-form-item label="描述">
@@ -608,10 +509,6 @@ const form = reactive({
   brand: '',
   model: '',
   series: '',
-  storages: [],
-  ram_options: [],
-  version_options: [],
-  color_options: [],
   category: null,
   base_prices: {},  // 基础价格表：{ "128GB": 4500, "256GB": 5200, ... }
   is_active: true,
@@ -621,7 +518,40 @@ const formRules = {
   device_type: [{ required: true, message: '请选择设备类型', trigger: 'change' }],
   brand: [{ required: true, message: '请输入品牌', trigger: 'blur' }],
   model: [{ required: true, message: '请输入型号', trigger: 'blur' }],
-  ram_options: [{ type: 'array', required: true, min: 1, message: '请至少配置一个运行内存选项', trigger: 'change' }],
+}
+
+const basePriceRows = ref([])
+
+const hydrateBasePriceRows = (basePrices = {}) => {
+  const entries = Object.entries(basePrices || {})
+  basePriceRows.value = entries.map(([storage, price], idx) => ({
+    id: `${storage}-${idx}`,
+    storage,
+    price: Number(price || 0),
+  }))
+}
+
+const syncBasePricesFromRows = () => {
+  const next = {}
+  basePriceRows.value.forEach((row) => {
+    const key = String(row.storage || '').trim()
+    if (!key) return
+    const value = Number(row.price || 0)
+    next[key] = value
+  })
+  form.base_prices = next
+}
+
+const addBasePriceRow = () => {
+  basePriceRows.value.push({
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    storage: '',
+    price: 0,
+  })
+}
+
+const removeBasePriceRow = (idx) => {
+  basePriceRows.value.splice(idx, 1)
 }
 
 // 问卷管理
@@ -663,7 +593,6 @@ const currentOptionId = ref(null)
 const optionFormRef = ref(null)
 const optionForm = reactive({
   option_order: 0,
-  value: '',
   label: '',
   desc: '',
   impact: '',
@@ -671,7 +600,6 @@ const optionForm = reactive({
 })
 
 const optionFormRules = {
-  value: [{ required: true, message: '请输入选项值', trigger: 'blur' }],
   label: [{ required: true, message: '请输入选项标签', trigger: 'blur' }],
 }
 
@@ -876,17 +804,6 @@ const handleSizeChange = (size) => {
   load()
 }
 
-// 存储容量变化时，同步更新基础价格表
-const handleStoragesChange = (newStorages) => {
-  const oldPrices = { ...form.base_prices }
-  const newPrices = {}
-  // 保留已存在的价格，新增的容量初始化为0
-  newStorages.forEach(storage => {
-    newPrices[storage] = oldPrices[storage] || 0
-  })
-  form.base_prices = newPrices
-}
-
 // 加载分类列表
 const loadCategories = async () => {
   try {
@@ -938,14 +855,12 @@ const handleCreate = () => {
     brand: '',
     model: '',
     series: '',
-    storages: [],
-    ram_options: [],
-    version_options: [],
-    color_options: [],
     category: null,
     base_prices: {},
     is_active: true,
   })
+  hydrateBasePriceRows({})
+  if (!basePriceRows.value.length) addBasePriceRow()
   dialogVisible.value = true
 }
 
@@ -967,14 +882,11 @@ const handleEdit = async (row) => {
       brand: fullData.brand,
       model: fullData.model,
       series: fullData.series || '',
-      storages: fullData.storages || [],
-      ram_options: fullData.ram_options || [],
-      version_options: fullData.version_options || [],
-      color_options: fullData.color_options || [],
       category: fullData.category || null,
       base_prices: fullData.base_prices || {},
       is_active: fullData.is_active,
     })
+    hydrateBasePriceRows(fullData.base_prices || {})
   } catch (error) {
     // 如果获取失败，使用列表数据
     Object.assign(form, {
@@ -982,14 +894,11 @@ const handleEdit = async (row) => {
       brand: row.brand,
       model: row.model,
       series: row.series || '',
-      storages: row.storages || [],
-      ram_options: row.ram_options || [],
-      version_options: row.version_options || [],
-      color_options: row.color_options || [],
       category: row.category || null,
       base_prices: row.base_prices || {},
       is_active: row.is_active,
     })
+    hydrateBasePriceRows(row.base_prices || {})
   }
   dialogVisible.value = true
 }
@@ -997,6 +906,11 @@ const handleEdit = async (row) => {
 // 保存
 const handleSave = async () => {
   if (!formRef.value) return
+  syncBasePricesFromRows()
+  if (!Object.keys(form.base_prices || {}).length) {
+    ElMessage.warning('请至少配置一个基础价格')
+    return
+  }
   await formRef.value.validate(async (valid) => {
     if (!valid) return
     saving.value = true
@@ -1037,6 +951,7 @@ const handleDelete = async (row) => {
 // 对话框关闭
 const handleDialogClose = () => {
   formRef.value?.resetFields()
+  basePriceRows.value = []
 }
 
 // 管理问卷
@@ -1152,7 +1067,6 @@ const handleAddOption = () => {
   currentOptionId.value = null
   Object.assign(optionForm, {
     option_order: options.value.length,
-    value: '',
     label: '',
     desc: '',
     impact: '',
@@ -1167,7 +1081,6 @@ const handleEditOption = (row) => {
   currentOptionId.value = row.id
   Object.assign(optionForm, {
     option_order: row.option_order,
-    value: row.value,
     label: row.label,
     desc: row.desc || '',
     impact: row.impact || '',
@@ -1183,16 +1096,20 @@ const handleSaveOption = async () => {
     if (!valid) return
     savingOption.value = true
     try {
+      const payload = {
+        ...optionForm,
+        value: optionForm.label,
+      }
       if (isEditOption.value) {
         await adminApi.put(
           `/recycle-templates/${currentTemplate.value.id}/questions/${currentQuestion.value.id}/options/${currentOptionId.value}`,
-          optionForm
+          payload
         )
         ElMessage.success('更新成功')
       } else {
         await adminApi.post(
           `/recycle-templates/${currentTemplate.value.id}/questions/${currentQuestion.value.id}/options`,
-          optionForm
+          payload
         )
         ElMessage.success('创建成功')
       }

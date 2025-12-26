@@ -85,7 +85,8 @@ class RecycleQuestionOptionSerializer(serializers.ModelSerializer):
         model = RecycleQuestionOption
         fields = ['id', 'question_template', 'value', 'label', 'desc', 'impact', 'option_order', 'is_active', 'created_at', 'updated_at']
         extra_kwargs = {
-            'question_template': {'write_only': True, 'required': False}
+            'question_template': {'write_only': True, 'required': False},
+            'value': {'required': False, 'allow_blank': True},
         }
     
     def __init__(self, *args, **kwargs):
@@ -94,6 +95,12 @@ class RecycleQuestionOptionSerializer(serializers.ModelSerializer):
         if 'question_template' in self.fields:
             from .models import RecycleQuestionTemplate
             self.fields['question_template'].queryset = RecycleQuestionTemplate.objects.all()
+
+    def validate(self, attrs):
+        label = attrs.get('label')
+        if label is not None:
+            attrs['value'] = label
+        return attrs
 
 
 class RecycleQuestionTemplateSerializer(serializers.ModelSerializer):
@@ -125,9 +132,7 @@ class RecycleDeviceTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = RecycleDeviceTemplate
         fields = [
-            'id', 'device_type', 'brand', 'model', 'storages', 'base_prices', 'series',
-            'ram_options', 'version_options', 'color_options',
-            'default_cover_image', 'default_detail_images', 'description_template',
+            'id', 'device_type', 'brand', 'model', 'base_prices', 'series',
             'category', 'category_name',
             'is_active', 'created_by', 'created_by_username', 'questions',
             'created_at', 'updated_at'
@@ -142,9 +147,7 @@ class RecycleDeviceTemplateListSerializer(serializers.ModelSerializer):
     class Meta:
         model = RecycleDeviceTemplate
         fields = [
-            'id', 'device_type', 'brand', 'model', 'storages', 'base_prices', 'series',
-            'ram_options', 'version_options', 'color_options',
-            'default_cover_image', 'category_name',
+            'id', 'device_type', 'brand', 'model', 'base_prices', 'series',
             'is_active', 'created_by_username', 'question_count',
             'created_at', 'updated_at'
         ]

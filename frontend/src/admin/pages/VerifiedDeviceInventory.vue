@@ -274,88 +274,16 @@
           <el-input v-model="deviceForm.model" placeholder="例：iPhone 14 Pro" @blur="resolveTemplateForForm" />
         </el-form-item>
         <el-form-item label="容量" required>
-          <el-select
-            v-model="deviceForm.storage"
-            placeholder="请选择（来源：机型模板）"
-            style="width: 100%;"
-            :disabled="!templateResolved"
-          >
-            <el-option
-              v-for="s in (templateInfo?.storages || [])"
-              :key="s"
-              :label="s"
-              :value="s"
-            />
-          </el-select>
+          <el-input v-model="deviceForm.storage" placeholder="如 256GB" />
         </el-form-item>
         <el-form-item label="运行内存">
-          <el-select
-            v-model="deviceForm.ram"
-            filterable
-            clearable
-            placeholder="请选择（来源：机型模板）"
-            style="width: 100%;"
-            :disabled="!templateResolved || (templateInfo?.ram_options || []).length === 0"
-          >
-            <el-option
-              v-for="s in (templateInfo?.ram_options || [])"
-              :key="s"
-              :label="s"
-              :value="s"
-            />
-          </el-select>
+          <el-input v-model="deviceForm.ram" placeholder="如 8GB" />
         </el-form-item>
         <el-form-item label="版本/地区">
-          <el-select
-            v-model="deviceForm.version"
-            filterable
-            clearable
-            placeholder="请选择（来源：机型模板）"
-            style="width: 100%;"
-            :disabled="!templateResolved || (templateInfo?.version_options || []).length === 0"
-          >
-            <el-option
-              v-for="s in (templateInfo?.version_options || [])"
-              :key="s"
-              :label="s"
-              :value="s"
-            />
-          </el-select>
+          <el-input v-model="deviceForm.version" placeholder="如 国行/港版" />
         </el-form-item>
         <el-form-item label="颜色">
-          <el-select
-            v-model="deviceForm.color"
-            filterable
-            clearable
-            placeholder="请选择（来源：机型模板）"
-            style="width: 100%;"
-            :disabled="!templateResolved || (templateInfo?.color_options || []).length === 0"
-          >
-            <el-option
-              v-for="s in (templateInfo?.color_options || [])"
-              :key="s"
-              :label="s"
-              :value="s"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="templateResolved" label="模板快捷">
-          <el-space wrap>
-            <el-button
-              size="small"
-              :disabled="!(templateInfo?.default_cover_image || (templateInfo?.default_detail_images || []).length)"
-              @click="applyTemplateImages"
-            >
-              套用模板默认图
-            </el-button>
-            <el-button
-              size="small"
-              :disabled="!templateInfo?.description_template"
-              @click="applyTemplateDescription"
-            >
-              按模板生成描述
-            </el-button>
-          </el-space>
+          <el-input v-model="deviceForm.color" placeholder="如 黑色" />
         </el-form-item>
         <el-form-item v-if="templateResolveError">
           <el-alert
@@ -615,9 +543,7 @@ const importDefaults = reactive({
   suggested_price: null
 })
 
-const templateInfo = ref(null)
 const templateResolveError = ref('')
-const templateResolved = computed(() => !!templateInfo.value?.id)
 
 const deviceForm = reactive({
   template_id: null,
@@ -687,47 +613,8 @@ const handleDeviceDetailRemove = (file) => {
   syncDeviceImageLists()
 }
 
-const applyTemplateImages = async () => {
-  const t = templateInfo.value || {}
-  const nextCover = t.default_cover_image || ''
-  const nextDetails = t.default_detail_images || []
-  if (!nextCover && !(nextDetails || []).length) return
-
-  const willOverwrite =
-    (deviceForm.cover_image && deviceForm.cover_image !== nextCover) ||
-    ((deviceForm.detail_images || []).length && JSON.stringify(deviceForm.detail_images || []) !== JSON.stringify(nextDetails || []))
-
-  if (willOverwrite) {
-    try {
-      await ElMessageBox.confirm('当前已填写图片，确认要用模板默认图覆盖吗？', '确认覆盖', { type: 'warning' })
-    } catch {
-      return
-    }
-  }
-
-  deviceForm.cover_image = nextCover || deviceForm.cover_image || ''
-  deviceForm.detail_images = Array.isArray(nextDetails) ? [...nextDetails] : (deviceForm.detail_images || [])
-  syncDeviceImageLists()
-}
-
-const applyTemplateDescription = () => {
-  const t = templateInfo.value || {}
-  const tpl = (t.description_template || '').trim()
-  if (!tpl) return
-  const conditionText = getConditionText(deviceForm.condition)
-  deviceForm.listing_description = tpl
-    .replaceAll('{brand}', deviceForm.brand || '')
-    .replaceAll('{model}', deviceForm.model || '')
-    .replaceAll('{storage}', deviceForm.storage || '')
-    .replaceAll('{condition}', conditionText || deviceForm.condition || '')
-    .replaceAll('{ram}', deviceForm.ram || '')
-    .replaceAll('{version}', deviceForm.version || '')
-    .trim()
-}
-
 const resolveTemplateForForm = async () => {
   templateResolveError.value = ''
-  templateInfo.value = null
   deviceForm.template_id = null
 
   const brand = (deviceForm.brand || '').trim()
@@ -736,23 +623,7 @@ const resolveTemplateForForm = async () => {
 
   try {
     const res = await adminApi.get('/recycle-templates/resolve', { params: { brand, model } })
-    templateInfo.value = res.data
     deviceForm.template_id = res.data?.id || null
-
-    const t = res.data || {}
-    const ensureIn = (val, options) => (options || []).includes(val) ? val : ''
-
-    if ((t.storages || []).length === 1) deviceForm.storage = deviceForm.storage || t.storages[0]
-    else deviceForm.storage = ensureIn(deviceForm.storage, t.storages)
-
-    if ((t.ram_options || []).length === 1) deviceForm.ram = deviceForm.ram || t.ram_options[0]
-    else deviceForm.ram = ensureIn(deviceForm.ram, t.ram_options)
-
-    if ((t.version_options || []).length === 1) deviceForm.version = deviceForm.version || t.version_options[0]
-    else deviceForm.version = ensureIn(deviceForm.version, t.version_options)
-
-    if ((t.color_options || []).length === 1) deviceForm.color = deviceForm.color || t.color_options[0]
-    else deviceForm.color = ensureIn(deviceForm.color, t.color_options)
   } catch (error) {
     templateResolveError.value = error?.response?.data?.detail || '未找到机型模板（请先创建并启用）'
   }
@@ -860,7 +731,6 @@ const viewDetail = (row) => {
 
 const openEdit = async (row) => {
   editingDevice.value = row
-  templateInfo.value = null
   templateResolveError.value = ''
   Object.assign(deviceForm, {
     template_id: row.template_id || null,

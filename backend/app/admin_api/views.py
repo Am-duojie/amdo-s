@@ -2081,24 +2081,10 @@ class AdminVerifiedDeviceCreateFromRecycleOrderView(APIView):
                 seen.add(key)
             return cleaned
 
-        storages = _clean_options(getattr(template, 'storages', []) or [])
-        ram_options = _clean_options(getattr(template, 'ram_options', []) or [])
-        version_options = _clean_options(getattr(template, 'version_options', []) or [])
-        color_options = _clean_options(getattr(template, 'color_options', []) or [])
-
         raw_storage = (getattr(o, 'selected_storage', '') or o.storage or '')
         raw_ram = (getattr(o, 'selected_ram', '') or '')
         raw_version = (getattr(o, 'selected_version', '') or '')
         raw_color = (getattr(o, 'selected_color', '') or '')
-
-        # 兼容历史/简化回收流程：若回收订单未填写 RAM/版本/颜色，但模板要求这些选项，则使用模板的第一个选项兜底。
-        # 入库后仍可在库存编辑页手动修正。
-        if not str(raw_ram or '').strip() and len(ram_options) > 0:
-            raw_ram = ram_options[0]
-        if not str(raw_version or '').strip() and len(version_options) > 0:
-            raw_version = version_options[0]
-        if not str(raw_color or '').strip() and len(color_options) > 0:
-            raw_color = color_options[0]
 
         # 入库阶段不强制做模板选项校验：允许先入库，再在库存编辑/上架前补齐并纠正选项
         normalized_storage = str(raw_storage or '').strip()
@@ -2189,8 +2175,6 @@ class AdminVerifiedDeviceCreateFromRecycleOrderView(APIView):
                 location=location,
                 cost_price=cost_price,
                 suggested_price=suggested_price_val,
-                cover_image=getattr(template, 'default_cover_image', '') or '',
-                detail_images=getattr(template, 'default_detail_images', []) or [],
                 inspection_reports=inspection_reports or [],
                 inspection_note=inspection_note or '',
             )
@@ -2428,13 +2412,6 @@ class RecycleDeviceTemplateResolveView(APIView):
             'id': tpl.id,
             'brand': tpl.brand,
             'model': tpl.model,
-            'storages': tpl.storages or [],
-            'ram_options': tpl.ram_options or [],
-            'version_options': tpl.version_options or [],
-            'color_options': tpl.color_options or [],
-            'default_cover_image': tpl.default_cover_image or '',
-            'default_detail_images': tpl.default_detail_images or [],
-            'description_template': tpl.description_template or '',
             'category_id': getattr(tpl, 'category_id', None),
         })
 
@@ -4032,12 +4009,13 @@ class RecycleTemplateDownloadView(APIView):
                 
                 for template in templates:
                     # 机型基础信息
+                    storages = sorted((template.base_prices or {}).keys())
                     template_data.append({
                         '设备类型': template.device_type,
                         '品牌': template.brand,
                         '型号': template.model,
                         '系列': template.series or '',
-                        '存储容量': ','.join(template.storages),
+                        '存储容量': ','.join(storages),
                         '是否启用': '是' if template.is_active else '否'
                     })
                     
@@ -4434,7 +4412,6 @@ class RecycleTemplateImportView(APIView):
                         brand=device_data['brand'],
                         model=device_data['model'],
                         defaults={
-                            'storages': device_data['storages'],
                             'series': device_data['series'],
                             'is_active': device_data['is_active'],
                             'created_by': admin,
@@ -4443,7 +4420,6 @@ class RecycleTemplateImportView(APIView):
                     
                     if not created:
                         # 更新现有模板
-                        template.storages = device_data['storages']
                         template.series = device_data['series']
                         template.is_active = device_data['is_active']
                         template.save()

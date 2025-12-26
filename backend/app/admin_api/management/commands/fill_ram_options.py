@@ -1,12 +1,12 @@
 """
-为所有回收机型模板补齐常用 RAM 选项（ram_options）。
+为回收问卷中的 RAM 问题补齐常用选项。
 
 默认只做 dry-run；传入 --yes 才会写入数据库。
 """
 
 from django.core.management.base import BaseCommand
 
-from app.admin_api.models import RecycleDeviceTemplate
+from app.admin_api.models import RecycleQuestionOption, RecycleQuestionTemplate
 
 
 DEFAULT_RAM_OPTIONS = [
@@ -28,7 +28,7 @@ def _normalize_option(value: str) -> str:
 
 
 class Command(BaseCommand):
-    help = "Fill common RAM options into all RecycleDeviceTemplate.ram_options"
+    help = "Fill common RAM options into recycle question templates (key=ram)."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -39,25 +39,24 @@ class Command(BaseCommand):
         parser.add_argument(
             "--only-empty",
             action="store_true",
-            help="Only update templates whose ram_options is empty.",
+            help="Only update questions that currently have no options.",
         )
 
     def handle(self, *args, **options):
         apply_changes = bool(options.get("yes"))
         only_empty = bool(options.get("only_empty"))
 
-        qs = RecycleDeviceTemplate.objects.all().order_by("device_type", "brand", "model")
+        qs = RecycleQuestionTemplate.objects.filter(key="ram").order_by("device_template_id", "step_order")
         total = qs.count()
 
         changed = 0
         skipped = 0
 
-        for t in qs.iterator():
-            current = list(getattr(t, "ram_options", None) or [])
+        for q in qs.iterator():
+            current = list(q.options.values_list("label", flat=True))
             if only_empty and current:
                 skipped += 1
                 continue
-
             seen = {_normalize_option(x) for x in current if _normalize_option(x)}
             merged = list(current)
             for opt in DEFAULT_RAM_OPTIONS:
@@ -69,11 +68,19 @@ class Command(BaseCommand):
             if merged == current:
                 skipped += 1
                 continue
-
             changed += 1
             if apply_changes:
-                t.ram_options = merged
-                t.save(update_fields=["ram_options", "updated_at"])
+                RecycleQuestionOption.objects.filter(question_template=q).delete()
+                for idx, label in enumerate(merged):
+                    RecycleQuestionOption.objects.create(
+                        question_template=q,
+                        value=str(label).strip(),
+                        label=str(label).strip(),
+                        desc="",
+                        impact="",
+                        option_order=idx,
+                        is_active=True,
+                    )
 
         mode = "APPLIED" if apply_changes else "DRY-RUN"
         self.stdout.write(

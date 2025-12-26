@@ -58,7 +58,6 @@ export type RecycleQuestionTemplateResponse = {
   device_type: string
   brand: string
   model: string
-  storages?: string[]  // 存储容量列表
   questions: Array<{
     id: number
     step_order: number
@@ -124,7 +123,6 @@ export type RecycleOrderResponse = {
 export const createRecycleOrder = (payload: CreateRecycleOrderPayload) => {
   return api.post<RecycleOrderResponse>('/recycle-orders/', payload)
 }
-
 
 
 

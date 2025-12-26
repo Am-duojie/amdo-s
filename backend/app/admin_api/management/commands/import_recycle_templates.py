@@ -50,7 +50,7 @@ DEFAULT_QUESTIONS = [
         'helper': '选择存储容量以便精准估价',
         'question_type': 'single',
         'is_required': True,
-        'options': []  # 存储容量选项会从模板的 storages 字段动态生成
+        'options': []  # 存储容量选项由 base_prices 的 key 动态生成
     },
     {
         'step_order': 4,
@@ -59,7 +59,7 @@ DEFAULT_QUESTIONS = [
         'helper': '必选：用于区分配置（不影响存储容量选择）',
         'question_type': 'single',
         'is_required': True,
-        'options': []  # RAM 选项会从模板的 ram_options 字段动态生成
+        'options': []  # RAM 选项由默认列表填充
     },
     {
         'step_order': 5,
@@ -208,6 +208,18 @@ DEFAULT_QUESTIONS = [
     },
 ]
 
+DEFAULT_RAM_OPTIONS = [
+    "2GB",
+    "3GB",
+    "4GB",
+    "6GB",
+    "8GB",
+    "12GB",
+    "16GB",
+    "24GB",
+    "32GB",
+]
+
 
 class Command(BaseCommand):
     help = '从 LOCAL_PRICE_TABLE 导入机型数据到模板系统，并创建默认问卷'
@@ -280,7 +292,6 @@ class Command(BaseCommand):
                         brand=brand,
                         model=model_name,
                         defaults={
-                            'storages': storages,
                             'base_prices': base_prices,
                             'series': self._derive_series(model_name),
                             'is_active': True,
@@ -293,7 +304,6 @@ class Command(BaseCommand):
                         self.stdout.write(f'    [OK] 创建模板: {model_name} (存储: {", ".join(storages)})')
                     else:
                         # 更新存储容量和基础价格
-                        template.storages = storages
                         template.base_prices = base_prices
                         template.series = self._derive_series(model_name)
                         template.save()
@@ -319,7 +329,7 @@ class Command(BaseCommand):
                                 if q_data['key'] == 'storage':
                                     options_source = storages
                                 else:
-                                    options_source = (template.ram_options or [])
+                                    options_source = DEFAULT_RAM_OPTIONS
 
                                 for idx, opt in enumerate(options_source):
                                     RecycleQuestionOption.objects.create(
@@ -373,8 +383,6 @@ class Command(BaseCommand):
         if m:
             return f"{m.group(1)}系列"
         return ''
-
-
 
 
 

@@ -97,14 +97,6 @@
             <el-space wrap>
               <el-button size="small" @click="viewDetail(row)">详情</el-button>
               <el-button
-                v-if="hasPerm('verified:write') && row.status === 'pending'"
-                size="small"
-                type="primary"
-                @click="markPaid(row)"
-              >
-                标记已付款
-              </el-button>
-              <el-button
                 v-if="hasPerm('verified:write') && row.status === 'paid'"
                 size="small"
                 type="success"
@@ -121,7 +113,7 @@
                 确认收货
               </el-button>
               <el-button
-                v-if="hasPerm('verified:write') && ['pending', 'paid'].includes(row.status)"
+                v-if="hasPerm('verified:write') && row.status === 'pending'"
                 size="small"
                 type="danger"
                 @click="cancelOrder(row)"
@@ -283,22 +275,6 @@ const openDetailById = (orderId) => {
   if (!orderId) return
   currentOrder.value = { id: orderId }
   detailDialogVisible.value = true
-}
-
-const markPaid = async (row) => {
-  try {
-    await ElMessageBox.confirm('确认标记订单为已付款？', '确认操作', { type: 'warning' })
-    await adminApi.post(`/verified-orders/${row.id}/mark-paid`)
-    ElMessage.success('操作成功')
-    await loadOrders()
-  } catch (error) {
-    if (error !== 'cancel') {
-      const data = error.response?.data
-      const detail = data?.detail || data?.error
-      const message = detail || (typeof data === 'string' ? data : '操作失败')
-      ElMessage.error(message)
-    }
-  }
 }
 
 const shipOrder = (row) => {
@@ -494,7 +470,6 @@ watch(
   color: #909399;
 }
 </style>
-
 
 
 

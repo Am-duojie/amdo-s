@@ -481,37 +481,16 @@ const handleTemplateChange = async (templateId) => {
     // 自动填充表单
     form.brand = template.brand
     form.model = template.model
-    form.storage = template.storages?.[0] || ''
-    form.ram = template.ram_options?.[0] || ''
-    form.version = template.version_options?.[0] || ''
-    form.cover_image = template.default_cover_image || ''
-    form.detail_images = template.default_detail_images || []
+    form.storage = ''
+    form.ram = ''
+    form.version = ''
     
     // 生成标题
     form.title = `${template.brand} ${template.model} ${form.storage || ''} ${form.ram || ''}`.trim()
     
-    // 使用描述模板
-    if (template.description_template) {
-      form.description = template.description_template
-        .replace(/{brand}/g, template.brand)
-        .replace(/{model}/g, template.model)
-        .replace(/{storage}/g, form.storage)
-        .replace(/{ram}/g, form.ram)
-        .replace(/{version}/g, form.version)
-        .replace(/{condition}/g, form.condition)
-    }
-    
     // 设置分类
     if (template.category) {
       form.category_id = template.category
-    }
-    
-    // 更新文件列表显示
-    if (form.cover_image) {
-      coverFileList.value = [{ url: form.cover_image }]
-    }
-    if (form.detail_images && form.detail_images.length > 0) {
-      detailFileList.value = form.detail_images.map(url => ({ url }))
     }
     
     ElMessage.success('已从模板自动填充信息')
@@ -1200,4 +1179,3 @@ const unpublish = async () => {
   cursor: pointer;
 }
 </style>
-
