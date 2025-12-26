@@ -7,6 +7,8 @@ from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from django.contrib.auth.models import User
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q, Count, F
 from django.core.cache import cache
 from django.conf import settings
@@ -224,6 +226,11 @@ class UserViewSet(viewsets.ModelViewSet):
             'refund': 'Refund',
             'recycle': 'Recycle',
         }
+        business_display = {
+            'trade': '易淘',
+            'recycle': '回收',
+            'refund': '退款',
+        }
 
         orders = (
             Order.objects
@@ -238,9 +245,10 @@ class UserViewSet(viewsets.ModelViewSet):
                     'created_at': order.updated_at,
                     'transaction_type': 'refund',
                     'transaction_type_display': type_display['refund'],
+                    'business_name': business_display['refund'],
+                    'order_no': f"#{order.id}",
                     'amount': float(order.total_price),
                     'balance_after': None,
-                    'note': f"Order#{order.id}",
                 })
                 continue
 
@@ -253,9 +261,10 @@ class UserViewSet(viewsets.ModelViewSet):
                 'created_at': order.created_at,
                 'transaction_type': tx_type,
                 'transaction_type_display': type_display[tx_type],
+                'business_name': business_display['trade'],
+                'order_no': f"#{order.id}",
                 'amount': -float(order.total_price) if is_buyer else float(order.total_price),
                 'balance_after': None,
-                'note': f"Order#{order.id}",
             })
 
         recycle_orders = (
@@ -268,9 +277,10 @@ class UserViewSet(viewsets.ModelViewSet):
                 'created_at': recycle.paid_at or recycle.updated_at,
                 'transaction_type': 'recycle',
                 'transaction_type_display': type_display['recycle'],
+                'business_name': business_display['recycle'],
+                'order_no': f"#{recycle.id}",
                 'amount': float(amount),
                 'balance_after': None,
-                'note': f"Recycle#{recycle.id}",
             })
 
         transactions.sort(key=lambda x: x['created_at'], reverse=True)
@@ -312,6 +322,35 @@ class UserViewSet(viewsets.ModelViewSet):
         
         serializer = UserSerializer(user, context={'request': request})
         return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='change-password', permission_classes=[IsAuthenticated])
+    def change_password(self, request):
+        old_password = (request.data.get('old_password') or '').strip()
+        new_password = (request.data.get('new_password') or '').strip()
+        new_password2 = (request.data.get('new_password2') or '').strip()
+
+        if not old_password or not new_password:
+            return Response({'error': '旧密码和新密码不能为空'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not request.user.check_password(old_password):
+            return Response({'error': '原密码错误'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if new_password2 and new_password2 != new_password:
+            return Response({'error': '两次密码输入不一致'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            validate_password(new_password, user=request.user)
+        except DjangoValidationError as exc:
+            message = exc.messages[0] if exc.messages else '密码不符合要求'
+            return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
+
+        request.user.set_password(new_password)
+        request.user.save()
+
+        from rest_framework.authtoken.models import Token
+        token, _ = Token.objects.get_or_create(user=request.user)
+        return Response({'message': '密码修改成功', 'token': token.key})
+
     
     @action(detail=False, methods=['post'], permission_classes=[])
     def login(self, request):

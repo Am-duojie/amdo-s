@@ -1,6 +1,5 @@
 <template>
   <div class="verified-detail-page xianyu-style">
-    <AppPageHeader title="官方验商品详情" :subtitle="product?.title || ''" />
     <div v-if="loading" class="loading">
       <el-skeleton :rows="8" animated />
     </div>
@@ -146,7 +145,6 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import AppPageHeader from '@/components/AppPageHeader.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { PictureFilled, Star, StarFilled, ArrowDown, ChatDotRound } from '@element-plus/icons-vue'

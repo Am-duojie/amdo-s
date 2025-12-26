@@ -1,6 +1,5 @@
 <template>
   <div class="seller-home">
-    <AppPageHeader title="卖家主页" :subtitle="sellerDisplayName" />
     <section class="seller-hero">
       <div class="seller-hero-card">
         <div class="seller-main">
@@ -128,7 +127,6 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import AppPageHeader from '@/components/AppPageHeader.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/utils/api'

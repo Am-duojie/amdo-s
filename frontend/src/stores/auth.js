@@ -125,7 +125,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   const changePassword = async (oldPassword, newPassword, newPassword2) => {
     try {
-      const response = await api.post('/users/change_password/', {
+      const response = await api.post('/users/change-password/', {
         old_password: oldPassword,
         new_password: newPassword,
         new_password2: newPassword2
@@ -161,7 +161,6 @@ export const useAuthStore = defineStore('auth', () => {
     logout
   }
 })
-
 
 
 

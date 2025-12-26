@@ -1,6 +1,6 @@
 <template>
   <div class="checkout-page">
-    
+
     <!-- 加载中 -->
     <div v-if="loading" class="loading-container">
       <el-skeleton :rows="8" animated />

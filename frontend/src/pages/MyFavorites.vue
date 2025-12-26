@@ -1,6 +1,6 @@
 <template>
   <div class="my-favorites-page">
-    
+
     <div class="container">
       <el-card class="favorites-card">
         <template #header>
@@ -276,8 +276,6 @@ const formatDate = (dateString) => {
   }
 }
 </style>
-
-
 
 
 

@@ -1,6 +1,5 @@
 <template>
   <div class="xy-product-list">
-    <AppPageHeader title="商品列表" />
 
     <!-- 主内容区域 -->
     <main class="main-content">
@@ -153,7 +152,6 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import AppPageHeader from '@/components/AppPageHeader.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Document, List, Star, ChatDotRound, User, SwitchButton } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'

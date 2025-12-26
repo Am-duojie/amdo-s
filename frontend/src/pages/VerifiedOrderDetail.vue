@@ -1,6 +1,6 @@
 <template>
   <div class="verified-order-detail-page">
-    
+
     
     <div class="container">
       <div class="breadcrumb">

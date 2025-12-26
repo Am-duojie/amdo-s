@@ -1,6 +1,5 @@
 <template>
   <div class="xy-home">
-    <AppPageHeader title="首页" />
 
     <!-- 1) 促销网格区域 -->
     <div class="promo-section">
@@ -163,7 +162,6 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import AppPageHeader from '@/components/AppPageHeader.vue'
 import { ArrowRight, Document, List, Star, ChatDotRound, User, SwitchButton, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'

@@ -1,6 +1,6 @@
 <template>
   <div class="verified-products-page">
-    
+
     
     <!-- 主内容区域 -->
     <div class="main-container">

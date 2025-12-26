@@ -8,8 +8,8 @@
           <BaseCard class="hero-card" padding="normal">
             <template #header>
               <div class="hero-header">
-                <div class="hero-title">选择设备，填写估价信息</div>
-                <div class="hero-desc">先选机型 → 进入 13 步"估价信息"问卷 → 再提交回收订单</div>
+                <div class="hero-title">选择设备，填写估价问卷</div>
+                <div class="hero-desc">先选机型 → 填写估价信息 → 再提交回收订单</div>
               </div>
             </template>
             
@@ -27,21 +27,26 @@
           </BaseCard>
 
           <BaseCard class="hot-card" padding="normal">
-            <div class="hot-content">
-              <div class="hot-left">
-                <div class="hot-title">热门估价</div>
-                <div class="hot-model">苹果 iPhone 13</div>
-                <div class="hot-tip">点击后进入问卷（示例）</div>
+            <div class="flow-content">
+              <div class="flow-title">四步换钱·质检通过再一寄售秒打款</div>
+              <div class="flow-steps">
+                <div class="flow-step">
+                  <span class="flow-icon">1</span>
+                  <span class="flow-text">估价下单</span>
+                </div>
+                <div class="flow-step">
+                  <span class="flow-icon">2</span>
+                  <span class="flow-text">快递取件</span>
+                </div>
+                <div class="flow-step">
+                  <span class="flow-icon">3</span>
+                  <span class="flow-text">专业质检</span>
+                </div>
+                <div class="flow-step">
+                  <span class="flow-icon">4</span>
+                  <span class="flow-text">极速打款</span>
+                </div>
               </div>
-              <el-button 
-                type="primary" 
-                round 
-                size="large"
-                class="hot-button"
-                @click="quickToModel('手机', '苹果', 'iPhone 13')"
-              >
-                立即估价
-              </el-button>
             </div>
           </BaseCard>
         </section>
@@ -187,7 +192,7 @@ const selection = computed(() => draft.selection);
 const activeDeviceType = ref<string>(selection.value.device_type || "手机");
 const keyword = ref<string>(selection.value.q || "");
 const selectedEstimateOption = ref<number>(0);
-const estimateOptions = ["专业估价", "深度时间", "华上估价", "资料便捷"];
+const estimateOptions = ["专业质检", "极速打款", "线上估价", "透明复检"];
 
 const deviceTypes = computed(() => (catalog.value.device_types?.length ? catalog.value.device_types : ["手机"]));
 const primaryTabs = computed(() => deviceTypes.value.slice(0, 5));
@@ -365,12 +370,6 @@ function pickModel(m: string) {
   });
 }
 
-function quickToModel(device_type: string, brand: string, model: string) {
-  activeDeviceType.value = device_type;
-  draft.setSelection({ device_type, brand, series: "全部", model, q: "" });
-  keyword.value = "";
-  router.push({ path: "/recycle/estimate", query: { device_type, brand, model } });
-}
 </script>
 
 <style scoped>
@@ -391,6 +390,9 @@ function quickToModel(device_type: string, brand: string, model: string) {
 /* Hero 卡片 */
 .hero-card {
   margin-bottom: 0;
+  background: linear-gradient(135deg, #fff7ed, #ffffff 45%, #fff0e0);
+  border: 1px solid #fde3c6;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
 }
 
 .hero-header {
@@ -398,17 +400,17 @@ function quickToModel(device_type: string, brand: string, model: string) {
 }
 
 .hero-title { 
-  font-size: 20px; 
-  font-weight: 700; 
+  font-size: 20px;
+  font-weight: 800;
   color: var(--text-primary, #111827);
   line-height: 1.4;
   margin-bottom: 8px;
 }
 
 .hero-desc { 
-  color: var(--text-secondary, #6b7280); 
-  font-size: 13px; 
-  line-height: 1.6; 
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .hero-pills { 
@@ -422,65 +424,94 @@ function quickToModel(device_type: string, brand: string, model: string) {
   padding: 12px 16px;
   border-radius: var(--radius-md, 12px);
   border: 1px solid #e5e7eb;
-  background: #f3f4f6;
+  background: #ffffff;
   color: var(--text-primary, #111827);
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
   text-align: center;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
 }
 
 .pill-button:hover {
-  background: #e5e7eb;
-  border-color: var(--el-color-primary, #ff6a00);
+  background: #fff7ed;
+  border-color: #f59e0b;
+  transform: translateY(-1px);
 }
 
 .pill-button.active {
-  background: var(--el-color-primary, #ff6a00);
+  background: linear-gradient(135deg, #ff8a00, #ff6a00);
   color: #fff;
-  border-color: var(--el-color-primary, #ff6a00);
-  font-weight: 600;
+  border-color: #ff6a00;
+  font-weight: 700;
 }
 
-/* 热门估价卡片 */
+/* 流程说明卡片 */
 .hot-card {
   margin-bottom: 0;
+  background: linear-gradient(180deg, #fff7ed, #ffffff 60%);
+  border: 1px solid #f3e3cf;
 }
 
-.hot-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
+.flow-content {
+  width: 100%;
 }
 
-.hot-left {
-  flex: 1;
-}
-
-.hot-title {
+.flow-title {
   font-weight: 700;
   color: var(--text-primary, #111827);
   font-size: 16px;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
-.hot-model { 
-  font-weight: 600; 
-  font-size: 16px;
+.flow-steps {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: nowrap;
+  position: relative;
+  padding: 8px 0;
+}
+
+.flow-steps::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 22px;
+  height: 2px;
+  background: linear-gradient(90deg, #ffd39e, #f59e0b, #ffd39e);
+  opacity: 0.6;
+}
+
+.flow-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 64px;
+  z-index: 1;
+}
+
+.flow-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 2px solid #f59e0b;
   color: var(--text-primary, #111827);
-  margin-bottom: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 13px;
+  box-shadow: 0 6px 14px rgba(245, 158, 11, 0.2);
 }
 
-.hot-tip { 
-  font-size: 12px; 
-  color: var(--text-light, #6b7280); 
-}
-
-.hot-button {
-  flex-shrink: 0;
-  padding: 12px 24px;
+.flow-text {
+  font-size: 13px;
+  color: var(--text-primary, #111827);
   font-weight: 600;
 }
 

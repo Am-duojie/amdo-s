@@ -1,6 +1,6 @@
 <template>
   <div class="profile-page xianyu-style">
-    
+
     <div class="profile-container">
       <!-- 左侧边栏 -->
       <div class="sidebar">
@@ -777,9 +777,14 @@
                   </span>
                 </template>
               </el-table-column>
-              <el-table-column prop="note" label="备注" min-width="200">
+              <el-table-column prop="business_name" label="业务类型" width="120">
                 <template #default="{ row }">
-                  {{ formatTransactionNote(row) }}
+                  {{ row.business_name || '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="order_no" label="订单号" min-width="160">
+                <template #default="{ row }">
+                  {{ row.order_no || '-' }}
                 </template>
               </el-table-column>
               
@@ -1399,10 +1404,6 @@ const getTransactionTypeLabel = (row) => {
   return labelMap[row.transaction_type] || row.transaction_type_display || row.transaction_type || '-'
 }
 
-const formatTransactionNote = (row) => {
-  if (!row.note) return '-'
-  return row.note
-}
 
 const formatTime = (time) => {
   if (!time) return '-'
@@ -1936,7 +1937,7 @@ const handleChangePassword = async () => {
   
   passwordLoading.value = true
   try {
-    await api.post('/users/change_password/', {
+    await api.post('/users/change-password/', {
       old_password: passwordForm.old_password,
       new_password: passwordForm.new_password
     })

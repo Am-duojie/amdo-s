@@ -2,8 +2,13 @@
   <header class="header-sticky" :class="{ 'blue-theme': props.theme === 'blue' }">
     <div class="header-content">
       <!-- Logo -->
-      <div class="brand-logo" @click="goHome">
+      <div v-if="!props.verifiedMode" class="brand-logo" @click="goHome">
         <span class="logo-text">{{ brandText }}</span>
+      </div>
+      <div v-else class="brand-switch">
+        <button class="brand-chip" @click="goToYiTao">易淘</button>
+        <span class="brand-sep">/</span>
+        <button class="brand-chip active" @click="goHome">官方验</button>
       </div>
 
       
@@ -67,22 +72,18 @@
                 <div class="profile-menu">
                   <div class="profile-menu-item" @click="handleUserMenuCommand('trade')">
                     <span class="menu-text">我的交易</span>
-                    <span class="menu-count">0</span>
                     <span class="menu-arrow">›</span>
                   </div>
                   <div class="profile-menu-item" @click="handleUserMenuCommand('favorites')">
                     <span class="menu-text">我的收藏</span>
-                    <span class="menu-count">0</span>
                     <span class="menu-arrow">›</span>
                   </div>
                   <div class="profile-menu-item" @click="handleUserMenuCommand('settings')">
                     <span class="menu-text">账户设置</span>
-                    <span class="menu-count">0</span>
                     <span class="menu-arrow">›</span>
                   </div>
                   <div class="profile-menu-item" @click="switchZone">
                     <span class="menu-text">{{ props.verifiedMode ? '切换到易淘' : '进入官方验' }}</span>
-                    <span class="menu-count"></span>
                     <span class="menu-arrow">&gt;</span>
                   </div>
                 </div>
@@ -260,6 +261,10 @@ const goHome = () => {
   router.push(props.verifiedMode ? '/verified-products' : '/')
 }
 
+const goToYiTao = () => {
+  router.push('/')
+}
+
 const switchZone = () => {
   if (props.verifiedMode) {
     router.push('/')
@@ -330,13 +335,51 @@ onMounted(() => {
   .brand-logo:hover { 
     opacity: 0.9;
   }
-  .logo-text { 
-    font-size: 28px; 
-    font-weight: 800; 
-    color: #2b2b2b;
-    line-height: 1;
-    letter-spacing: 0.5px;
-  }
+.logo-text { 
+  font-size: 28px; 
+  font-weight: 800; 
+  color: #2b2b2b;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+}
+
+.brand-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.brand-chip {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #111827;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.brand-chip:hover {
+  border-color: #c7d2fe;
+  color: #1d4ed8;
+}
+
+.brand-chip.active {
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+}
+
+.brand-sep {
+  color: #9ca3af;
+  font-size: 12px;
+}
 
 /* 官方质检回收入口 */
 /* 头部不再显示回收入口 */
@@ -382,6 +425,12 @@ onMounted(() => {
   background: #fff;
   border-color: #1890ff;
   color: #1890ff;
+}
+
+.blue-theme .brand-chip.active {
+  background: #1890ff;
+  color: #fff;
+  border-color: #1890ff;
 }
 
 /* 蓝色主题下的登录按钮 */
@@ -628,11 +677,6 @@ onMounted(() => {
   flex: 1;
 }
 
-.menu-count {
-  font-size: 12px;
-  color: #666;
-  margin-right: 8px;
-}
 
 .menu-arrow {
   font-size: 16px;
