@@ -1123,6 +1123,7 @@ const getStepTime = (stepValue) => {
     quoted: detail.value.created_at,
     confirmed: detail.value.created_at,
     shipped: detail.value.shipped_at,
+    received: detail.value.received_at,
     inspected: detail.value.inspected_at,
     completed: detail.value.updated_at,
     paid: detail.value.paid_at
@@ -1373,6 +1374,15 @@ const processPayment = async () => {
 
 const cancelOrder = async () => {
   try {
+    await ElMessageBox.confirm(
+      '确认要取消该回收订单吗？此操作不可撤销。',
+      '二次确认',
+      {
+        confirmButtonText: '继续取消',
+        cancelButtonText: '返回',
+        type: 'warning'
+      }
+    )
     const { value: reason } = await ElMessageBox.prompt(
       '请输入取消原因',
       '取消订单',

@@ -13,6 +13,7 @@ from django.db.models import Q, Count, F
 from django.core.cache import cache
 from django.conf import settings
 from django.utils import timezone
+from django.db.utils import DatabaseError, OperationalError
 import re
 import logging
 import requests
@@ -21,7 +22,7 @@ import ipaddress
 logger = logging.getLogger(__name__)
 from .models import (
     Category, Product, ProductImage, Order, Message, Favorite, Address, UserProfile, RecycleOrder,
-    VerifiedProduct, VerifiedProductImage, VerifiedOrder, VerifiedFavorite
+    VerifiedProduct, VerifiedProductImage, VerifiedOrder, VerifiedFavorite, PlatformRecipient
 )
 try:
     from app.admin_api.models import RecycleDeviceTemplate, RecycleQuestionTemplate, RecycleQuestionOption
@@ -35,7 +36,8 @@ from .serializers import (
     UserSerializer, UserRegisterSerializer, UserUpdateSerializer,
     CategorySerializer, ProductSerializer, OrderSerializer,
     MessageSerializer, FavoriteSerializer, AddressSerializer, RecycleOrderSerializer,
-    VerifiedProductSerializer, VerifiedProductImageSerializer, VerifiedOrderSerializer, VerifiedFavoriteSerializer
+    VerifiedProductSerializer, VerifiedProductImageSerializer, VerifiedOrderSerializer, VerifiedFavoriteSerializer,
+    PlatformRecipientSerializer
 )
 from .pagination import LatestProductsPagination
 
@@ -78,12 +80,42 @@ def _get_support_service_user():
     return user
 
 
+def _get_platform_recipient():
+    defaults = getattr(settings, 'PLATFORM_RECIPIENT_DEFAULT', {}) or {}
+    try:
+        obj = PlatformRecipient.objects.first()
+        if obj:
+            return obj
+        return PlatformRecipient.objects.create(
+            name=defaults.get('name', ''),
+            phone=defaults.get('phone', ''),
+            address=defaults.get('address', '')
+        )
+    except (OperationalError, DatabaseError):
+        return None
+
+
 class SupportServiceUserView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = _get_support_service_user()
         return Response({'id': user.id, 'username': user.username})
+
+
+class PlatformRecipientView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        obj = _get_platform_recipient()
+        if obj:
+            return Response(PlatformRecipientSerializer(obj).data)
+        defaults = getattr(settings, 'PLATFORM_RECIPIENT_DEFAULT', {}) or {}
+        return Response({
+            'name': defaults.get('name', ''),
+            'phone': defaults.get('phone', ''),
+            'address': defaults.get('address', '')
+        })
 
 
 class GeoIpView(APIView):

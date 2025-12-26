@@ -70,7 +70,7 @@ export function getRecycleStatusTag(order: RecycleOrderLike | null | undefined):
   if (status === 'completed' && confirmed) return { text: '待打款', type: 'warning' }
 
   const base: Record<string, { text: string; type: TagType }> = {
-    pending: { text: '待估价', type: 'info' },
+    pending: { text: '待寄出', type: 'info' },
     shipped: { text: '已寄出', type: 'primary' },
     received: { text: '已收货', type: 'success' },
     inspected: { text: '已检测', type: 'success' },

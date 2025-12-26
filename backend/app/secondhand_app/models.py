@@ -211,6 +211,22 @@ class Address(models.Model):
         return f"{self.user.username} - {self.name} - {self.detail_address}"
 
 
+class PlatformRecipient(models.Model):
+    """平台收件信息（回收邮寄地址）"""
+    name = models.CharField(max_length=50, verbose_name='收件人')
+    phone = models.CharField(max_length=32, verbose_name='电话')
+    address = models.TextField(verbose_name='地址')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        verbose_name = '平台收件信息'
+        verbose_name_plural = '平台收件信息'
+
+    def __str__(self):
+        return f"{self.name} / {self.phone}"
+
+
 class UserProfile(models.Model):
     """用户扩展信息"""
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile', verbose_name='用户')

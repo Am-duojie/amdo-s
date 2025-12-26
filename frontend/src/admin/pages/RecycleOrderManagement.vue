@@ -332,6 +332,9 @@ const loadOrders = async () => {
     if (statusFilter.value) {
       params.status = statusFilter.value
     }
+    if (paymentFilter.value) {
+      params.payment_status = paymentFilter.value
+    }
     if (search.value) {
       params.search = search.value
     }
@@ -489,6 +492,7 @@ const formatTime = (time) => {
 }
 
 onMounted(async () => {
+  applyRouteFilters()
   await loadOrders()
   const orderId = parseInt(route.query.order_id, 10)
   if (orderId) {
@@ -496,12 +500,35 @@ onMounted(async () => {
   }
 })
 
+const applyRouteFilters = () => {
+  const status = typeof route.query.status === 'string' ? route.query.status : ''
+  const payment = typeof route.query.payment_status === 'string' ? route.query.payment_status : ''
+  const keyword = typeof route.query.search === 'string' ? route.query.search : ''
+  const changed = status !== statusFilter.value || payment !== paymentFilter.value || keyword !== search.value
+  if (changed) {
+    statusFilter.value = status
+    paymentFilter.value = payment
+    search.value = keyword
+    pagination.value.current = 1
+  }
+  return changed
+}
+
 watch(
   () => route.query.order_id,
   (value) => {
     const orderId = parseInt(value, 10)
     if (orderId) {
       openDetailById(orderId)
+    }
+  }
+)
+
+watch(
+  () => [route.query.status, route.query.payment_status, route.query.search],
+  () => {
+    if (applyRouteFilters()) {
+      loadOrders()
     }
   }
 )

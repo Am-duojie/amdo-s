@@ -47,6 +47,7 @@ urlpatterns = [
     path('api/recycle-templates/question-template/', views.RecycleQuestionTemplateView.as_view(), name='recycle_question_template'),
     path('api/geo/ip/', views.GeoIpView.as_view(), name='geo_ip'),
     path('api/support/service-user/', views.SupportServiceUserView.as_view(), name='support_service_user'),
+    path('api/settings/recipient/', views.PlatformRecipientView.as_view(), name='platform_recipient'),
     path('api/', include(router.urls)),
     path('admin-api/', include('app.admin_api.urls')),
     # 使用SimpleJWT进行认证

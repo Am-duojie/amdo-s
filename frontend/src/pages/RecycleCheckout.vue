@@ -110,15 +110,6 @@
             </div>
           </div>
 
-        <!-- 平台回收承担快递费用概览 -->
-        <div class="fee-overview-section">
-          <div class="section-title">平台回收承担快递费用概览</div>
-          <el-table :data="feeOverviewData" border style="width: 100%">
-            <el-table-column prop="category" label="回收品类" width="150" />
-            <el-table-column prop="doorPickup" label="快递上门取件" />
-            <el-table-column prop="selfPost" label="自己寄快递" />
-          </el-table>
-        </div>
       </div>
 
       <div class="actions">
@@ -218,25 +209,26 @@ const loadWalletAlipay = async () => {
 };
 
 // 平台收件信息（自行邮寄时显示）
-const platformRecipient = ref({
+const defaultRecipient = {
   name: "TESTV回收",
   phone: "15608348253",
   address: "重庆市九龙坡区经纬大道1099号附78号",
-});
+};
+const platformRecipient = ref({ ...defaultRecipient });
 
-// 费用概览数据
-const feeOverviewData = [
-  {
-    category: "笔记本/无人机",
-    doorPickup: "承担上限 40元",
-    selfPost: "承担上限12元",
-  },
-  {
-    category: "其他品类",
-    doorPickup: "承担上限 25元",
-    selfPost: "承担上限12元",
-  },
-];
+const loadPlatformRecipient = async () => {
+  try {
+    const res = await api.get("/settings/recipient");
+    const data = res.data || {};
+    platformRecipient.value = {
+      name: data.name || defaultRecipient.name,
+      phone: data.phone || defaultRecipient.phone,
+      address: data.address || defaultRecipient.address,
+    };
+  } catch (error) {
+    platformRecipient.value = { ...defaultRecipient };
+  }
+};
 
 
 // 编辑收款信息
@@ -271,6 +263,7 @@ onMounted(async () => {
     await authStore.init();
   }
   await loadWalletAlipay();
+  await loadPlatformRecipient();
 
   // 检查是否有必要信息进行估价
   const hasBasicInfo = draft.selection.device_type && draft.selection.brand && draft.selection.model && draft.storage;

@@ -9,7 +9,7 @@ from .views import (
     PermissionsView, MenusView, CategoriesAdminView, ProductsAdminView, UsersFrontendAdminView,
     MessagesAdminView, AddressesAdminView, AdminServiceConversationsView, AdminServiceMessagesView, AdminServiceReadView, AdminServiceTokenView,
     AdminServiceOrderItemsView, AdminServiceProductMessageView, AdminServiceImageMessageView,
-    AdminUploadImageView, AdminUploadReportView,
+    AdminUploadImageView, AdminUploadReportView, PlatformRecipientSettingView,
     AdminVerifiedProductListView, AdminVerifiedProductDetailView,
     AdminVerifiedProductPublishView, AdminVerifiedProductUnpublishView,
     # 新增：官方验设备库存
@@ -96,6 +96,7 @@ urlpatterns = [
     path('service/messages/image', AdminServiceImageMessageView.as_view()),
     path('addresses', AddressesAdminView.as_view()),
     path('addresses/<int:aid>', AddressesAdminView.as_view()),
+    path('settings/recipient', PlatformRecipientSettingView.as_view()),
     # 回收机型模板管理
     path('recycle-templates', RecycleDeviceTemplateView.as_view()),
     path('recycle-templates/<int:template_id>', RecycleDeviceTemplateView.as_view()),

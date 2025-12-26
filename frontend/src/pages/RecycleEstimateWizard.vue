@@ -1,93 +1,95 @@
 <template>
   <div class="wizard-wrap" v-if="deviceReady">
-    <div class="top-bar">
-      <div>
-        <div class="title">估价信息</div>
-        <div class="subtitle">步骤 {{ currentStep }} / {{ totalSteps }}</div>
-        <div class="device-line">
-          <span class="device-chip">{{ deviceType }}</span>
-          <span class="sep">/</span>
-          <span class="device-chip">{{ brand }}</span>
-          <span class="sep">/</span>
-          <span class="device-chip">{{ model }}</span>
-          <el-tag v-if="selectedStorage" round size="small" class="storage-tag">{{ selectedStorage }}</el-tag>
+    <div class="wizard-box">
+      <div class="top-bar">
+        <div>
+          <div class="title">估价信息</div>
+          <div class="subtitle">步骤 {{ currentStep }} / {{ totalSteps }}</div>
+          <div class="device-line">
+            <span class="device-chip">{{ deviceType }}</span>
+            <span class="sep">/</span>
+            <span class="device-chip">{{ brand }}</span>
+            <span class="sep">/</span>
+            <span class="device-chip">{{ model }}</span>
+            <el-tag v-if="selectedStorage" round size="small" class="storage-tag">{{ selectedStorage }}</el-tag>
+          </div>
         </div>
       </div>
-    </div>
 
-    <el-row :gutter="16" class="wizard-body">
-      <el-col :span="24">
-        <el-card shadow="never" class="card questions-card">
-          <el-collapse v-model="activeCollapseStep" accordion>
-            <el-collapse-item
-              v-for="(step, idx) in allSteps"
-              :key="step.key"
-              :name="String(idx + 1)"
-            >
-              <template #title>
-                <div class="step-title">
-                  <span class="step-num">
-                    {{ idx + 1 }}. {{ step.title }}
-                    <el-tag v-if="step.is_required !== false" size="small" type="danger" style="margin-left: 8px">必填</el-tag>
-                    <el-tag v-else size="small" type="info" style="margin-left: 8px">选填</el-tag>
-                  </span>
-                  <span v-if="hasAnswer(step.key)" class="selected-val">
-                    已选: {{ getAnswerText(step.key) }} <el-icon><Check /></el-icon>
-                  </span>
-                  <span v-else-if="step.is_required === false" class="optional-hint">
-                    可选
-                  </span>
-                </div>
-              </template>
+      <el-row :gutter="16" class="wizard-body">
+        <el-col :span="24">
+          <el-card shadow="never" class="card questions-card">
+            <el-collapse v-model="activeCollapseStep" accordion>
+              <el-collapse-item
+                v-for="(step, idx) in allSteps"
+                :key="step.key"
+                :name="String(idx + 1)"
+              >
+                <template #title>
+                  <div class="step-title">
+                    <span class="step-num">
+                      {{ idx + 1 }}. {{ step.title }}
+                      <el-tag v-if="step.is_required !== false" size="small" type="danger" style="margin-left: 8px">必填</el-tag>
+                      <el-tag v-else size="small" type="info" style="margin-left: 8px">选填</el-tag>
+                    </span>
+                    <span v-if="hasAnswer(step.key)" class="selected-val">
+                      已选: {{ getAnswerText(step.key) }} <el-icon><Check /></el-icon>
+                    </span>
+                    <span v-else-if="step.is_required === false" class="optional-hint">
+                      可选
+                    </span>
+                  </div>
+                </template>
 
-              <div class="question-content">
-                <div class="step-hint" v-if="step.helper">{{ step.helper }}</div>
-                <el-tag v-if="step.type === 'multi'" size="small" style="margin-bottom: 12px">可多选</el-tag>
+                <div class="question-content">
+                  <div class="step-hint" v-if="step.helper">{{ step.helper }}</div>
+                  <el-tag v-if="step.type === 'multi'" size="small" style="margin-bottom: 12px">可多选</el-tag>
 
-                <el-alert
-                  v-if="loadError && step.key === 'storage'"
-                  :title="loadError"
-                  type="error"
-                  :closable="false"
-                  show-icon
-                  style="margin-bottom: 12px"
-                />
+                  <el-alert
+                    v-if="loadError && step.key === 'storage'"
+                    :title="loadError"
+                    type="error"
+                    :closable="false"
+                    show-icon
+                    style="margin-bottom: 12px"
+                  />
 
-                <div class="options-grid">
-                  <div
-                    v-for="opt in step.options"
-                    :key="opt.value"
-                    class="option-item"
-                    :class="{ active: isSelected(step.key, opt) }"
-                    @click="handleSelectOption(step, opt, idx + 1)"
-                  >
-                    <div class="option-label">{{ opt.label }}</div>
-                    <div class="option-desc" v-if="opt.desc">{{ opt.desc }}</div>
+                  <div class="options-grid">
+                    <div
+                      v-for="opt in step.options"
+                      :key="opt.value"
+                      class="option-item"
+                      :class="{ active: isSelected(step.key, opt) }"
+                      @click="handleSelectOption(step, opt, idx + 1)"
+                    >
+                      <div class="option-label">{{ opt.label }}</div>
+                      <div class="option-desc" v-if="opt.desc">{{ opt.desc }}</div>
+                    </div>
+                  </div>
+
+                  <div v-if="step.key === 'storage' && !storageOptions.length && !loadingCatalog" class="empty-tip">
+                    该机型暂未提供容量信息，请返回重新选择机型。
+                  </div>
+                  <div v-if="loadingCatalog && step.key === 'storage'" class="empty-tip">容量数据加载中...</div>
+
+                  <!-- 最后一步显示提交按钮 -->
+                  <div v-if="idx + 1 === totalSteps" class="submit-area">
+                    <el-button
+                      type="primary"
+                      size="large"
+                      :disabled="!canCheckout"
+                      @click="goCheckout"
+                    >
+                      立即查看报价
+                    </el-button>
                   </div>
                 </div>
-
-                <div v-if="step.key === 'storage' && !storageOptions.length && !loadingCatalog" class="empty-tip">
-                  该机型暂未提供容量信息，请返回重新选择机型。
-                </div>
-                <div v-if="loadingCatalog && step.key === 'storage'" class="empty-tip">容量数据加载中...</div>
-
-                <!-- 最后一步显示提交按钮 -->
-                <div v-if="idx + 1 === totalSteps" class="submit-area">
-                  <el-button
-                    type="primary"
-                    size="large"
-                    :disabled="!canCheckout"
-                    @click="goCheckout"
-                  >
-                    立即查看报价
-                  </el-button>
-                </div>
-              </div>
-            </el-collapse-item>
-          </el-collapse>
-        </el-card>
-      </el-col>
-    </el-row>
+              </el-collapse-item>
+            </el-collapse>
+          </el-card>
+        </el-col>
+      </el-row>
+    </div>
   </div>
 
   <div v-else class="wizard-wrap">
@@ -802,6 +804,15 @@ onMounted(async () => {
 
 <style scoped>
 .wizard-wrap { background: #f6f7fb; min-height: 100vh; padding: 18px; }
+.wizard-box {
+  background: #ffffff;
+  border: 1px solid #e6e8ee;
+  border-radius: 20px;
+  padding: 18px;
+  max-width: 1200px;
+  margin: 0 auto;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+}
 .card { border-radius: 18px; border: 1px solid #e6e8ee; }
 .top-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .title { font-size: 20px; font-weight: 900; }

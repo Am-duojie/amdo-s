@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.db.models import Count, Q, Sum, F, Value, FloatField, ExpressionWrapper
 from django.db.models.functions import TruncDate, Coalesce
 from django.db import IntegrityError
+from django.db.utils import DatabaseError, OperationalError
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
@@ -21,7 +22,7 @@ from .models import (
 from .permissions import PERMISSIONS, validate_permissions
 from app.secondhand_app.models import (
     RecycleOrder, VerifiedProduct, VerifiedOrder, Order, Category, Product, Message, Address,
-    VerifiedDevice, create_verified_product_from_device
+    PlatformRecipient, VerifiedDevice, create_verified_product_from_device
 )
 from app.secondhand_app.alipay_client import AlipayClient
 from .serializers import (
@@ -29,7 +30,10 @@ from .serializers import (
     VerifiedDeviceListSerializer, OfficialInventorySerializer,
     RecycleDeviceTemplateSerializer, RecycleDeviceTemplateListSerializer, RecycleQuestionTemplateSerializer, RecycleQuestionOptionSerializer
 )
-from app.secondhand_app.serializers import OrderSerializer, VerifiedProductSerializer, VerifiedDeviceSerializer, MessageSerializer, UserSerializer
+from app.secondhand_app.serializers import (
+    OrderSerializer, VerifiedProductSerializer, VerifiedDeviceSerializer, MessageSerializer, UserSerializer,
+    PlatformRecipientSerializer
+)
 from .jwt import encode as jwt_encode, decode as jwt_decode
 from django.contrib.auth.hashers import check_password, make_password
 from django.views.decorators.csrf import csrf_exempt
@@ -79,6 +83,21 @@ def _get_service_user():
             pass
         user.save()
     return user
+
+
+def _get_platform_recipient():
+    defaults = getattr(settings, 'PLATFORM_RECIPIENT_DEFAULT', {}) or {}
+    try:
+        obj = PlatformRecipient.objects.first()
+        if obj:
+            return obj
+        return PlatformRecipient.objects.create(
+            name=defaults.get('name', ''),
+            phone=defaults.get('phone', ''),
+            address=defaults.get('address', '')
+        )
+    except (OperationalError, DatabaseError):
+        return None
 
 def _get_product_cover(product):
     if not product:
@@ -1380,6 +1399,8 @@ class InspectionOrderDetailView(APIView):
             if status_val == 'cancelled' and reject_reason:
                 o.reject_reason = reject_reason
             # 状态变更时更新时间戳
+            if status_val == 'received' and not o.received_at:
+                o.received_at = timezone.now()
             if status_val == 'inspected' and not o.inspected_at:
                 o.inspected_at = timezone.now()
                 # 如果没有收到时间，自动设置收到时间
@@ -1717,7 +1738,11 @@ class InspectionOrdersBatchUpdateView(APIView):
         if not ids or not new_status:
             return Response({'success': False, 'detail': '参数不完整'}, status=400)
         try:
-            count = RecycleOrder.objects.filter(id__in=ids).update(status=new_status)
+            qs = RecycleOrder.objects.filter(id__in=ids)
+            if new_status == 'received':
+                count = qs.update(status=new_status, received_at=timezone.now())
+            else:
+                count = qs.update(status=new_status)
             AdminAuditLog.objects.create(actor=admin, target_type='RecycleOrder', target_id=0, action='batch_update', snapshot_json={'ids': ids, 'status': new_status, 'count': count})
             return Response({'success': True, 'count': count})
         except Exception as e:
@@ -3852,6 +3877,36 @@ class AddressesAdminView(APIView):
             return Response({'success': True})
         except Address.DoesNotExist:
             return Response({'detail': '地址不存在'}, status=404)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class PlatformRecipientSettingView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    @admin_required(['address:view'])
+    def get(self, request):
+        obj = _get_platform_recipient()
+        if not obj:
+            defaults = getattr(settings, 'PLATFORM_RECIPIENT_DEFAULT', {}) or {}
+            return Response({
+                'name': defaults.get('name', ''),
+                'phone': defaults.get('phone', ''),
+                'address': defaults.get('address', '')
+            })
+        serializer = PlatformRecipientSerializer(obj)
+        return Response(serializer.data)
+
+    @admin_required(['address:write'])
+    def put(self, request):
+        obj = _get_platform_recipient()
+        if not obj:
+            return Response({'detail': '请先执行数据库迁移以启用平台设置'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        serializer = PlatformRecipientSerializer(obj, data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.save()
+        return Response(serializer.data)
 
 
 # ==================== 回收机型模板管理 ====================

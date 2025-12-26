@@ -29,6 +29,7 @@ PERMISSIONS = [
     'message:delete',
     'message:service',
     'address:view',
+    'address:write',
     'address:delete',
     'recycle_template:view',
     'recycle_template:create',

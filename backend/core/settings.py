@@ -28,6 +28,13 @@ SECRET_KEY = 'django-insecure-@#)0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0=0
 SUPPORT_SERVICE_USERNAME = os.getenv('SUPPORT_SERVICE_USERNAME', 'support_service')
 SUPPORT_SERVICE_EMAIL = os.getenv('SUPPORT_SERVICE_EMAIL', 'support@example.com')
 
+# 平台收件信息默认值（用于回收订单邮寄地址）
+PLATFORM_RECIPIENT_DEFAULT = {
+    'name': os.getenv('PLATFORM_RECIPIENT_NAME', 'TESTV回收'),
+    'phone': os.getenv('PLATFORM_RECIPIENT_PHONE', '15608348253'),
+    'address': os.getenv('PLATFORM_RECIPIENT_ADDRESS', '重庆市九龙坡区经纬大道1099号附78号'),
+}
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 

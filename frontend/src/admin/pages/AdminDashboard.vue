@@ -52,12 +52,12 @@
             <div class="todo-item">
               <div class="todo-label">待质检</div>
               <el-tag type="warning">{{ counts.recyclePendingInspection }}</el-tag>
-              <el-button text type="primary" @click="go('/admin/inspection-orders')">去处理</el-button>
+              <el-button text type="primary" @click="goRecycleOrders({ status: 'received' })">去处理</el-button>
             </div>
             <div class="todo-item">
               <div class="todo-label">已完成待打款</div>
               <el-tag type="danger">{{ counts.recyclePendingPayment }}</el-tag>
-              <el-button text type="primary" @click="go('/admin/inspection-orders')">去打款</el-button>
+              <el-button text type="primary" @click="goRecycleOrders({ status: 'completed', payment_status: 'pending' })">去打款</el-button>
             </div>
           </div>
         </el-card>
@@ -122,7 +122,7 @@
           </template>
           <div class="quick-actions">
             <el-button type="primary" plain @click="go('/admin/recycle-orders')">回收订单</el-button>
-            <el-button type="primary" plain @click="go('/admin/inspection-orders')">回收质检</el-button>
+            <el-button type="primary" plain @click="goRecycleOrders({ status: 'received' })">回收质检</el-button>
             <el-button type="primary" plain @click="go('/admin/verified-products')">官方验商品</el-button>
             <el-button type="primary" plain @click="go('/admin/verified-orders')">官方验订单</el-button>
             <el-button type="primary" plain @click="go('/admin/secondhand-orders')">易淘订单</el-button>
@@ -165,8 +165,6 @@ import adminApi from '@/utils/adminApi'
 import { ElMessage } from 'element-plus'
 import {
   Odometer,
-  ShoppingBag,
-  DocumentChecked,
   Goods,
   Money,
   Clock,
@@ -221,8 +219,8 @@ const loadDashboard = async () => {
       secondhandShip,
       settlementFailed
     ] = await Promise.all([
-      fetchCount('/inspection-orders', { status: 'shipped' }),
-      fetchCount('/inspection-orders', { status: 'completed' }),
+      fetchCount('/inspection-orders', { status: 'received' }),
+      fetchCount('/inspection-orders', { status: 'completed', payment_status: 'pending' }),
       fetchCount('/verified-listings', { status: 'pending' }),
       fetchCount('/verified-orders', { status: 'paid' }),
       fetchCount('/payment/orders', { status: 'paid' }),
@@ -247,6 +245,7 @@ const loadDashboard = async () => {
 }
 
 const go = (path) => router.push(path)
+const goRecycleOrders = (query) => router.push({ path: '/admin/recycle-orders', query })
 
 const formatMoney = (amount) => {
   if (!amount) return '0.00'
@@ -400,9 +399,9 @@ onUnmounted(() => {
 }
 
 .todo-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 56px auto;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
   padding: 10px 12px;
   background: #f9fafb;
@@ -412,6 +411,12 @@ onUnmounted(() => {
 .todo-label {
   font-weight: 600;
   color: #374151;
+}
+
+.todo-item .el-tag {
+  justify-self: center;
+  min-width: 36px;
+  text-align: center;
 }
 
 .quick-actions {

@@ -8,6 +8,7 @@ import uuid
 from .models import (
     Category, Product, ProductImage, Order, Message, Favorite, Address, UserProfile, RecycleOrder,
     VerifiedProduct, VerifiedProductImage, VerifiedOrder, VerifiedFavorite, Shop, VerifiedDevice,
+    PlatformRecipient,
 )
 from app.admin_api.models import RecycleDeviceTemplate
 
@@ -76,6 +77,12 @@ class UserSerializer(serializers.ModelSerializer):
         except AttributeError:
             pass
         return ''
+
+
+class PlatformRecipientSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlatformRecipient
+        fields = ['id', 'name', 'phone', 'address', 'created_at', 'updated_at']
 
 
 class UserRegisterSerializer(serializers.ModelSerializer):

@@ -158,8 +158,6 @@ const routes = [
       // 回收业务
       { path: 'recycle-orders', name: 'RecycleOrderManagement', component: () => import('@/admin/pages/RecycleOrderManagement.vue'), meta: { requiresAdminAuth: true, title: '回收订单', icon: 'Tickets', group: 'recycle' } },
       { path: 'recycle-templates', name: 'RecycleTemplates', component: () => import('@/admin/pages/RecycleTemplates.vue'), meta: { requiresAdminAuth: true, title: '机型模板', icon: 'List', group: 'recycle', perm: 'recycle_template:view' } },
-      { path: 'inspection-orders', name: 'InspectionOrders', component: () => import('@/admin/pages/InspectionOrders.vue'), meta: { requiresAdminAuth: true, title: '回收质检', icon: 'DocumentChecked', group: 'recycle' } },
-      { path: 'inspection-orders/:id', name: 'InspectionOrderDetail', component: () => import('@/admin/pages/InspectionOrderDetail.vue'), meta: { requiresAdminAuth: true, title: '质检详情', icon: 'DocumentChecked', group: 'recycle', hidden: true } },
       // 官方验业务
       { path: 'verified-devices', name: 'AdminVerifiedDeviceInventory', component: () => import('@/admin/pages/VerifiedDeviceInventory.vue'), meta: { requiresAdminAuth: true, title: '官方验库存', icon: 'Box', group: 'verified' } },
       { path: 'verified-products', name: 'VerifiedProductManagement', component: () => import('@/admin/pages/VerifiedProductManagement.vue'), meta: { requiresAdminAuth: true, title: '官方验商品', icon: 'Goods', group: 'verified' } },
@@ -181,6 +179,7 @@ const routes = [
       { path: 'messages', name: 'AdminMessages', component: () => import('@/admin/pages/Messages.vue'), meta: { requiresAdminAuth: true, title: '消息管理', icon: 'ChatDotSquare', group: 'system', perm: 'message:view' } },
       { path: 'service-chat', name: 'AdminServiceChat', component: () => import('@/admin/pages/ServiceChat.vue'), meta: { requiresAdminAuth: true, title: '客服对话', icon: 'ChatDotSquare', group: 'system', perm: 'message:service' } },
       { path: 'addresses', name: 'AdminAddresses', component: () => import('@/admin/pages/Addresses.vue'), meta: { requiresAdminAuth: true, title: '地址管理', icon: 'Location', group: 'system', perm: 'address:view' } },
+      { path: 'platform-settings', name: 'AdminPlatformSettings', component: () => import('@/admin/pages/PlatformSettings.vue'), meta: { requiresAdminAuth: true, title: '平台设置', icon: 'Setting', group: 'system' } },
       { path: ':pathMatch(.*)*', redirect: { name: 'AdminLogin' }, meta: { hideSearch: true, admin: true, hidden: true } },
     ]
   },
