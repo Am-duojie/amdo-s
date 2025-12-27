@@ -474,7 +474,7 @@ class VerifiedProduct(models.Model):
     repair_status = models.CharField(max_length=100, blank=True, verbose_name='拆修和功能')  # 未拆未修、功能正常等
     battery_health = models.CharField(max_length=20, blank=True, verbose_name='电池健康度')
     verified_at = models.DateTimeField(null=True, blank=True, verbose_name='验货时间')
-    verified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_products_verified', verbose_name='验货人')
+    verified_by = models.ForeignKey('admin_api.AdminUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_products_verified', verbose_name='验货人')
     # 新增媒体与质检字段
     cover_image = models.CharField(max_length=500, blank=True, verbose_name='封面图')
     detail_images = models.JSONField(default=list, verbose_name='详情图列表')

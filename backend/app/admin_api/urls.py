@@ -7,7 +7,7 @@ from .views import (
     PaymentOrdersView, PaymentOrderDetailView, PaymentOrderActionView, PaymentOrderSettlementView,
     SettlementSummaryView, VerifiedOrdersAdminView, AuthMeView, ChangePasswordView,
     PermissionsView, MenusView, CategoriesAdminView, ProductsAdminView, UsersFrontendAdminView,
-    MessagesAdminView, AddressesAdminView, AdminServiceConversationsView, AdminServiceMessagesView, AdminServiceReadView, AdminServiceTokenView,
+    MessagesAdminView, AdminServiceConversationsView, AdminServiceMessagesView, AdminServiceReadView, AdminServiceTokenView,
     AdminServiceOrderItemsView, AdminServiceProductMessageView, AdminServiceImageMessageView,
     AdminUploadImageView, AdminUploadReportView, PlatformRecipientSettingView,
     AdminVerifiedProductListView, AdminVerifiedProductDetailView,
@@ -68,6 +68,7 @@ urlpatterns = [
     path('users', UsersView.as_view()),
     path('users/<int:uid>', UsersView.as_view()),
     path('roles', RolesView.as_view()),
+    path('roles/<int:rid>', RolesView.as_view()),
     path('payment/orders', PaymentOrdersView.as_view()),
     path('payment/orders/<int:order_id>', PaymentOrderDetailView.as_view()),
     # 将更具体的分账路由置于通配action路由之前，避免被匹配到action视图
@@ -94,8 +95,6 @@ urlpatterns = [
     path('service/order-items', AdminServiceOrderItemsView.as_view()),
     path('service/messages/product', AdminServiceProductMessageView.as_view()),
     path('service/messages/image', AdminServiceImageMessageView.as_view()),
-    path('addresses', AddressesAdminView.as_view()),
-    path('addresses/<int:aid>', AddressesAdminView.as_view()),
     path('settings/recipient', PlatformRecipientSettingView.as_view()),
     # 回收机型模板管理
     path('recycle-templates', RecycleDeviceTemplateView.as_view()),

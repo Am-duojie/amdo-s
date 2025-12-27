@@ -415,7 +415,7 @@ class AuthMeView(APIView):
     authentication_classes = []
     permission_classes = []
     
-    @admin_required()
+    @admin_required(['system:view'])
     def get(self, request):
         admin = request.admin
         user_data = AdminUserSerializer(admin).data
@@ -427,7 +427,7 @@ class ChangePasswordView(APIView):
     authentication_classes = []
     permission_classes = []
     
-    @admin_required()
+    @admin_required(['system:write'])
     def post(self, request):
         admin = request.admin
         old_password = request.data.get('old_password', '').strip()
@@ -444,7 +444,7 @@ class PermissionsView(APIView):
     authentication_classes = []
     permission_classes = []
     
-    @admin_required()
+    @admin_required(['role:view'])
     def get(self, request):
         admin = request.admin
         perms = admin.role.permissions if admin.role else []
@@ -456,7 +456,7 @@ class MenusView(APIView):
     authentication_classes = []
     permission_classes = []
     
-    @admin_required()
+    @admin_required(['system:view'])
     def get(self, request):
         admin = request.admin
         perms = admin.role.permissions if admin.role else []
@@ -1753,7 +1753,7 @@ class InspectionOrdersBatchUpdateView(APIView):
 class AdminUploadImageView(APIView):
     authentication_classes = []
     permission_classes = []
-    @admin_required()
+    @admin_required(['system:write'])
     def post(self, request):
         admin = request.admin
         f = request.FILES.get('file')
@@ -1767,7 +1767,7 @@ class AdminUploadImageView(APIView):
 class AdminUploadReportView(APIView):
     authentication_classes = []
     permission_classes = []
-    @admin_required()
+    @admin_required(['system:write'])
     def post(self, request):
         admin = request.admin
         f = request.FILES.get('file')
@@ -2771,6 +2771,19 @@ class RolesView(APIView):
         _audit(admin, 'role:upsert', 'AdminRole', role.id, {'name': role.name, 'permissions': perms})
         return Response({'success': True, 'id': role.id})
 
+    @admin_required(['role:delete'])
+    def delete(self, request, rid):
+        admin = request.admin
+        try:
+            role = AdminRole.objects.get(id=rid)
+        except AdminRole.DoesNotExist:
+            return Response({'detail': 'role not found'}, status=404)
+        if AdminUser.objects.filter(role=role).exists():
+            return Response({'detail': 'role in use'}, status=400)
+        role.delete()
+        _audit(admin, 'role:delete', 'AdminRole', rid, {'name': role.name})
+        return Response({'success': True})
+
 class PaymentOrdersView(APIView):
 
     # 禁用REST Framework的默认认证和权限检查，因为我们手动处理
@@ -3392,44 +3405,98 @@ class UsersFrontendAdminView(APIView):
     @admin_required(['user:view'])
     def get(self, request, uid=None):
         admin = request.admin
+        service_username = getattr(settings, 'SUPPORT_SERVICE_USERNAME', 'support_service')
         if uid:
             try:
                 from django.contrib.auth.models import User
                 u = User.objects.get(id=uid)
-                return Response({'id': u.id, 'username': u.username, 'email': u.email, 'is_active': u.is_active, 'is_staff': u.is_staff})
+                if u.username == service_username:
+                    return Response({'detail': '系统客服账号不可查看'}, status=403)
+                return Response({'id': u.id, 'username': u.username, 'email': u.email, 'is_active': u.is_active, })
             except User.DoesNotExist:
                 return Response({'detail': '用户不存在'}, status=404)
         from django.contrib.auth.models import User
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
-        qs = User.objects.all().order_by('-date_joined')
+        qs = User.objects.exclude(username=service_username).order_by('-date_joined')
         total = qs.count()
         items = qs[(page-1)*page_size: page*page_size]
-        data = [{'id': u.id, 'username': u.username, 'email': u.email, 'is_active': u.is_active, 'is_staff': u.is_staff, 'date_joined': u.date_joined.isoformat()} for u in items]
+        data = [{'id': u.id, 'username': u.username, 'email': u.email, 'is_active': u.is_active, 'date_joined': u.date_joined.isoformat()} for u in items]
         return Response({'results': data, 'count': total})
     @admin_required(['user:write'])
     def post(self, request, uid):
         admin = request.admin
-        from django.contrib.auth.models import User
+        from django.contrib.auth import get_user_model
         try:
+            User = get_user_model()
             u = User.objects.get(id=uid)
-            action = request.data.get('action')
-            if action == 'toggle_active':
-                u.is_active = not u.is_active
-            elif action == 'toggle_staff':
-                u.is_staff = not u.is_staff
-            u.save()
+            if u.username == getattr(settings, 'SUPPORT_SERVICE_USERNAME', 'support_service'):
+                return Response({'detail': '系统客服账号不可编辑'}, status=403)
+            updated = False
+            if 'is_active' in request.data:
+                u.is_active = bool(request.data.get('is_active'))
+                updated = True
+            password = request.data.get('password')
+            if password:
+                if len(password) < 6:
+                    return Response({'detail': '密码长度至少6位'}, status=400)
+                u.set_password(password)
+                updated = True
+            if updated:
+                u.save()
             return Response({'success': True})
         except User.DoesNotExist:
             return Response({'detail': '用户不存在'}, status=404)
+
+    @admin_required(['user:write'])
+    def put(self, request, uid):
+        return self.post(request, uid)
+
     @admin_required(['user:delete'])
     def delete(self, request, uid):
         admin = request.admin
-        from django.contrib.auth.models import User
+        from django.contrib.auth import get_user_model
+        from django.apps import apps
+        from django.db import connection, transaction
+        from django.db.models import Q
+        from app.secondhand_app.models import (
+            Shop, Product, Order, Message, Favorite, Address, UserProfile,
+            RecycleOrder, VerifiedDevice, VerifiedProduct, VerifiedOrder, VerifiedFavorite
+        )
         try:
+            User = get_user_model()
             u = User.objects.get(id=uid)
-            u.delete()
-            return Response({'success': True})
+            if u.username == getattr(settings, 'SUPPORT_SERVICE_USERNAME', 'support_service'):
+                return Response({'detail': '系统客服账号不可删除'}, status=403)
+            deleted = {}
+            with transaction.atomic():
+                deleted_tokens = 0
+                Token = None
+                try:
+                    Token = apps.get_model('authtoken', 'Token')
+                except Exception:
+                    Token = None
+                if Token is not None:
+                    deleted_tokens += Token.objects.filter(user_id=u.id).delete()[0]
+                with connection.cursor() as cursor:
+                    cursor.execute('DELETE FROM authtoken_token WHERE user_id = %s', [u.id])
+                    deleted_tokens = max(deleted_tokens, cursor.rowcount)
+                deleted['tokens'] = deleted_tokens
+                deleted['messages'] = Message.objects.filter(Q(sender=u) | Q(receiver=u)).delete()[0]
+                deleted['favorites'] = Favorite.objects.filter(user=u).delete()[0]
+                deleted['addresses'] = Address.objects.filter(user=u).delete()[0]
+                deleted['profile'] = UserProfile.objects.filter(user=u).delete()[0]
+                deleted['orders'] = Order.objects.filter(buyer=u).delete()[0]
+                deleted['verified_orders'] = VerifiedOrder.objects.filter(buyer=u).delete()[0]
+                deleted['recycle_orders'] = RecycleOrder.objects.filter(user=u).delete()[0]
+                deleted['verified_favorites'] = VerifiedFavorite.objects.filter(user=u).delete()[0]
+                deleted['products'] = Product.objects.filter(seller=u).delete()[0]
+                deleted['verified_products'] = VerifiedProduct.objects.filter(seller=u).delete()[0]
+                deleted['verified_devices'] = VerifiedDevice.objects.filter(seller=u).delete()[0]
+                deleted['shops'] = Shop.objects.filter(owner=u).delete()[0]
+                u.delete()
+                deleted['user'] = 1
+            return Response({'success': True, 'deleted': deleted})
         except User.DoesNotExist:
             return Response({'detail': '用户不存在'}, status=404)
 

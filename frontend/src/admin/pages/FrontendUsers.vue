@@ -24,11 +24,6 @@
           <el-tag :type="row.is_active ? 'success' : 'danger'">{{ row.is_active ? '活跃' : '禁用' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="is_staff" label="管理员" width="100">
-        <template #default="{ row }">
-          <el-tag :type="row.is_staff ? 'warning' : 'info'">{{ row.is_staff ? '是' : '否' }}</el-tag>
-        </template>
-      </el-table-column>
       <el-table-column prop="date_joined" label="注册时间" width="180" />
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
@@ -51,25 +46,28 @@
     </div>
 
     <el-dialog v-model="dialogVisible" title="编辑用户" width="500px">
-      <el-form :model="form" label-width="100px">
-        <el-form-item label="用户名">
-          <el-input v-model="form.username" disabled />
-        </el-form-item>
-        <el-form-item label="邮箱">
-          <el-input v-model="form.email" disabled />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-switch v-model="form.is_active" active-text="活跃" inactive-text="禁用" />
-        </el-form-item>
-        <el-form-item label="管理员">
-          <el-switch v-model="form.is_staff" active-text="是" inactive-text="否" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="save">保存</el-button>
-      </template>
-    </el-dialog>
+  <el-form :model="form" label-width="100px">
+    <el-form-item label="用户名">
+      <el-input v-model="form.username" disabled />
+    </el-form-item>
+    <el-form-item label="邮箱">
+      <el-input v-model="form.email" disabled />
+    </el-form-item>
+    <el-form-item label="状态">
+      <el-switch v-model="form.is_active" active-text="活跃" inactive-text="禁用" />
+    </el-form-item>
+    <el-form-item label="新密码">
+      <el-input v-model="form.password" type="password" show-password placeholder="不修改请留空" />
+    </el-form-item>
+    <el-form-item label="确认密码">
+      <el-input v-model="form.password_confirm" type="password" show-password placeholder="再次输入新密码" />
+    </el-form-item>
+  </el-form>
+  <template #footer>
+    <el-button @click="dialogVisible = false">取消</el-button>
+    <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+  </template>
+</el-dialog>
   </div>
 </template>
 
@@ -93,7 +91,8 @@ const form = reactive({
   username: '',
   email: '',
   is_active: true,
-  is_staff: false
+  password: '',
+  password_confirm: '',
 })
 
 const load = async () => {
@@ -124,20 +123,37 @@ const edit = (row) => {
     username: row.username,
     email: row.email,
     is_active: row.is_active,
-    is_staff: row.is_staff
+    password: '',
+    password_confirm: '',
   })
 }
 
 const save = async () => {
   if (!currentId.value) return
+  if (form.password || form.password_confirm) {
+    if (form.password !== form.password_confirm) {
+      ElMessage.error('\u4e24\u6b21\u8f93\u5165\u7684\u5bc6\u7801\u4e0d\u4e00\u81f4')
+      return
+    }
+    if (form.password.length < 6) {
+      ElMessage.error('\u5bc6\u7801\u957f\u5ea6\u81f3\u5c116\u4f4d')
+      return
+    }
+  }
   saving.value = true
   try {
-    await adminApi.put(`/frontend-users/${currentId.value}`, form)
-    ElMessage.success('更新成功')
+    const payload = {
+      is_active: form.is_active
+    }
+    if (form.password) {
+      payload.password = form.password
+    }
+    await adminApi.put(`/frontend-users/${currentId.value}`, payload)
+    ElMessage.success('\u66f4\u65b0\u6210\u529f')
     dialogVisible.value = false
     await load()
   } catch (error) {
-    ElMessage.error('更新失败')
+    ElMessage.error('\u66f4\u65b0\u5931\u8d25')
   } finally {
     saving.value = false
   }
@@ -145,11 +161,11 @@ const save = async () => {
 
 const remove = async (row) => {
   try {
-    await ElMessageBox.confirm(`确认删除用户 "${row.username}" 吗？`, '提示', {
+    await ElMessageBox.confirm(`确认删除用户 "${row.username}" 吗？该操作会删除该账号的所有相关数据。`, '提示', {
       type: 'warning'
     })
     await adminApi.delete(`/frontend-users/${row.id}`)
-    ElMessage.success('删除成功')
+    ElMessage.success('删除成功，已清理该账号的相关数据')
     await load()
   } catch (error) {
     if (error !== 'cancel') {
@@ -157,7 +173,6 @@ const remove = async (row) => {
     }
   }
 }
-
 onMounted(() => {
   load()
 })

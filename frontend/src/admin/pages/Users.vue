@@ -35,8 +35,7 @@
         <el-form-item :label="labels.username"><el-input v-model="form.username" /></el-form-item>
         <el-form-item :label="labels.role">
           <el-select v-model="form.role">
-            <el-option :label="labels.roleSuper" value="super" />
-            <el-option :label="labels.roleAuditor" value="auditor" />
+            <el-option v-for="role in roles" :key="role.name" :label="role.name" :value="role.name" />
           </el-select>
         </el-form-item>
         <el-form-item :label="labels.email"><el-input v-model="form.email" /></el-form-item>
@@ -84,6 +83,7 @@ const labels = {
 
 const items = ref([])
 const pagination = ref({ current: 1, pageSize: 10, total: 0 })
+const roles = ref([])
 const createVisible = ref(false)
 const isEdit = ref(false)
 const creating = ref(false)
@@ -95,7 +95,7 @@ const openCreate = () => {
   currentEditId.value = null
   createVisible.value = true
   form.username = ''
-  form.role = 'auditor'
+  form.role = roles.value[0]?.name || 'auditor'
   form.email = ''
   form.password = ''
 }
@@ -120,7 +120,7 @@ const edit = (row) => {
   createVisible.value = true
   form.username = row.username
   form.email = row.email || ''
-  form.role = row.role || 'auditor'
+  form.role = row.role || roles.value[0]?.name || 'auditor'
   form.password = ''
 }
 
@@ -158,6 +158,9 @@ const saveEdit = async () => {
 
 const load = async () => {
   try {
+    if (!roles.value.length) {
+      await loadRoles()
+    }
     const res = await adminApi.get('/users', {
       params: { page: pagination.value.current, page_size: pagination.value.pageSize }
     })
@@ -169,7 +172,22 @@ const load = async () => {
 
 const handlePageChange = () => load()
 
-onMounted(load)
+const loadRoles = async () => {
+  try {
+    const res = await adminApi.get('/roles')
+    roles.value = res.data?.results || []
+    if (!roles.value.length) {
+      roles.value = [{ name: 'super' }, { name: 'auditor' }]
+    }
+  } catch {
+    roles.value = [{ name: 'super' }, { name: 'auditor' }]
+  }
+}
+
+onMounted(async () => {
+  await loadRoles()
+  await load()
+})
 </script>
 
 <style scoped>

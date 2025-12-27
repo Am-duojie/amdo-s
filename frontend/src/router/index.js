@@ -178,7 +178,6 @@ const routes = [
       { path: 'frontend-users', name: 'AdminFrontendUsers', component: () => import('@/admin/pages/FrontendUsers.vue'), meta: { requiresAdminAuth: true, title: '前端用户', icon: 'Avatar', group: 'system', perm: 'user:view' } },
       { path: 'messages', name: 'AdminMessages', component: () => import('@/admin/pages/Messages.vue'), meta: { requiresAdminAuth: true, title: '消息管理', icon: 'ChatDotSquare', group: 'system', perm: 'message:view' } },
       { path: 'service-chat', name: 'AdminServiceChat', component: () => import('@/admin/pages/ServiceChat.vue'), meta: { requiresAdminAuth: true, title: '客服对话', icon: 'ChatDotSquare', group: 'system', perm: 'message:service' } },
-      { path: 'addresses', name: 'AdminAddresses', component: () => import('@/admin/pages/Addresses.vue'), meta: { requiresAdminAuth: true, title: '地址管理', icon: 'Location', group: 'system', perm: 'address:view' } },
       { path: 'platform-settings', name: 'AdminPlatformSettings', component: () => import('@/admin/pages/PlatformSettings.vue'), meta: { requiresAdminAuth: true, title: '平台设置', icon: 'Setting', group: 'system' } },
       { path: ':pathMatch(.*)*', redirect: { name: 'AdminLogin' }, meta: { hideSearch: true, admin: true, hidden: true } },
     ]
